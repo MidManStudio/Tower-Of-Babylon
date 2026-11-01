@@ -1,12 +1,7 @@
 // Brought to u by MidManStudio
 // The folders of the repository and a README. Notes are in docs/repo.md, section ".mdix/project_structure/project_structure.mdix".
 
-@CONFIG(
-  version    -> "1.0.0"
-  author     -> "MidManStudio"
-  features   -> "quickfuncs,data"
-  debug_mode -> "off"
-)
+
 
 @QUICKFUNCS(
 
