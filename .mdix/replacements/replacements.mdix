@@ -1,12 +1,6 @@
 // Brought to u by MidManStudio
 // How an update tarball dropped next to this file is applied. Notes are in docs/repo.md, section ".mdix/replacements/replacements.mdix".
 
-@CONFIG(
-  version    -> "1.0.0"
-  author     -> "MidManStudio"
-  features   -> "quickfuncs,data"
-  debug_mode -> "off"
-)
 
 @QUICKFUNCS(
 
