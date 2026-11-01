@@ -1,0 +1,86 @@
+// Brought to u by MidManStudio
+// Projectile configs: how a shot flies, how it fades with distance and how its tracer looks.
+// A weapon in weapons.mdix names one of these by `id` (the Unity project's weapon -> projectile
+// config reference). Notes on writing this file are in docs/config.md.
+@CONFIG(
+  version  -> "1.0.0"
+  author   -> "MidManStudio"
+  features -> "enums,data"
+)
+
+// Values are written out because the C side mirrors them (src/projectiles/projectile_types.h).
+// The numbers match Unity's ProjectileMovementType and ProjectilePiercingType.
+@ENUMS(
+  Motion   { STRAIGHT = 0, GUIDED = 2, TELEPORT = 3, WAVE = 4, CIRCULAR = 5 }
+  Piercing { NONE = 0, PIERCER = 1, RANDOM = 2 }
+)
+
+@DATA(
+  config_version<int> = 1
+
+  // speed_min..speed_max     metres per second; each shot of a pellet group picks its own in this range
+  // lifetime, max_range      seconds and metres: the shot ends at whichever comes first
+  // gravity                  1.0 falls like a dropped stone (9.8 m/s per second); 0.0 flies dead straight
+  // radius                   added to the target's own radius when testing a hit, metres
+  // falloff_*                full damage up to falloff_start metres, then fading to damage * falloff_min at falloff_end
+  // piercing, max_hits       NONE ends at the first hit; PIERCER goes on through max_hits - 1 targets
+  // trail_length, trail_width   the glowing streak, metres; colours are 0xRRGGBB
+  projectiles::
+    {
+      id            = "pistol_round",
+      motion        = Motion.STRAIGHT,
+      speed_min     = 55.0f,
+      speed_max     = 55.0f,
+      lifetime      = 1.3f,
+      max_range     = 60.0f,
+      gravity       = 0.05f,
+      radius        = 0.10f,
+      falloff_start = 25.0f,
+      falloff_end   = 60.0f,
+      falloff_min   = 0.60f,
+      piercing      = Piercing.NONE,
+      max_hits      = 1,
+      trail_length  = 1.1f,
+      trail_width   = 0.035f,
+      color_core    = 0xFFF0C0,
+      color_glow    = 0xFFA020
+    },
+    {
+      id            = "buckshot",
+      motion        = Motion.STRAIGHT,
+      speed_min     = 42.0f,
+      speed_max     = 52.0f,
+      lifetime      = 0.6f,
+      max_range     = 24.0f,
+      gravity       = 0.12f,
+      radius        = 0.08f,
+      falloff_start = 5.0f,
+      falloff_end   = 22.0f,
+      falloff_min   = 0.15f,
+      piercing      = Piercing.NONE,
+      max_hits      = 1,
+      trail_length  = 0.55f,
+      trail_width   = 0.025f,
+      color_core    = 0xFFE0A0,
+      color_glow    = 0xFF6010
+    },
+    {
+      id            = "rifle_round",
+      motion        = Motion.STRAIGHT,
+      speed_min     = 85.0f,
+      speed_max     = 85.0f,
+      lifetime      = 1.2f,
+      max_range     = 70.0f,
+      gravity       = 0.0f,
+      radius        = 0.10f,
+      falloff_start = 35.0f,
+      falloff_end   = 70.0f,
+      falloff_min   = 0.70f,
+      piercing      = Piercing.NONE,
+      max_hits      = 1,
+      trail_length  = 1.8f,
+      trail_width   = 0.030f,
+      color_core    = 0xFFFFFF,
+      color_glow    = 0xFFD060
+    }
+)

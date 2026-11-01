@@ -1,0 +1,137 @@
+// Brought to u by MidManStudio
+// Every weapon the player can hold, in the order of WeaponId (src/weapons/weapons.h).
+// A gun names its projectile config from projectiles.mdix by `projectile`. Notes on writing this
+// file are in docs/config.md.
+@CONFIG(
+  version  -> "1.0.0"
+  author   -> "MidManStudio"
+  features -> "enums,data"
+)
+
+// Values are written out because the C side mirrors them (src/weapons/weapons.h).
+@ENUMS(
+  Kind     { UNARMED = 0, MELEE = 1, GUN = 2 }
+  FireMode { SEMI = 0, AUTO = 1, PUMP = 2 }
+  Ammo     { NONE = 0, PISTOL = 1, SHELLS = 2, RIFLE = 3 }
+  Pattern  { CONE = 0, FAN = 1 }
+)
+
+@DATA(
+  config_version<int> = 1
+
+  // Every weapon:
+  //   id, name        the id is what the game looks the row up by; the name is what the player reads
+  //   kind            UNARMED punches, MELEE swings, GUN fires projectiles
+  //   damage          per hit; for a gun, per pellet before the projectile's distance falloff
+  //   cooldown        seconds from one attack to the next
+  //   windup          melee: seconds into the swing at which it connects
+  //   duration        seconds the attack animation runs
+  //   reach, arc_deg, knockback   melee only: metres from the eye, half-angle either side of straight ahead, push in metres
+  // Guns only:
+  //   fire_mode       SEMI one shot per press, AUTO repeats while held, PUMP one shot per press and a pump before the next
+  //   ammo            which kind of rounds it spends, and ammo_per_shot how many a pull costs
+  //   projectile      the id of a config in projectiles.mdix
+  //   pellets, pattern    shots per pull; CONE scatters them inside the cone, FAN spreads them evenly across it
+  //   spread_deg      cone half-angle in degrees when the gun is cold; spread_max_deg when it is hot
+  //   heat_per_shot, heat_recover   how much a shot heats the gun (1.0 = fully hot) and how fast it cools, per second.
+  //                   Heat only builds if a shot heats it by more than it cools between shots: cooldown * heat_recover must be
+  //                   below heat_per_shot (the rifle: 0.12 s * 0.5 = 0.06, against 0.12)
+  //   kick            how hard the gun jumps in the hands, 1.0 is the pistol
+  //   noise_metres, noise_secs      how far a shot is heard by enemies, and for how long
+  //   pickup_ammo     rounds that come with the gun when it is picked up
+  //   ammo_box        rounds in one box of this gun's ammo found on the floor
+  weapons::
+    {
+      id        = "hands",
+      name      = "HANDS",
+      kind      = Kind.UNARMED,
+      damage    = 10.0f,
+      cooldown  = 0.45f,
+      windup    = 0.12f,
+      duration  = 0.34f,
+      reach     = 1.7f,
+      arc_deg   = 50.0f,
+      knockback = 0.4f
+    },
+    {
+      id        = "pipe",
+      name      = "PIPE",
+      kind      = Kind.MELEE,
+      damage    = 35.0f,
+      cooldown  = 0.80f,
+      windup    = 0.31f,
+      duration  = 0.62f,
+      reach     = 2.6f,
+      arc_deg   = 60.0f,
+      knockback = 1.0f
+    },
+    {
+      id            = "pistol",
+      name          = "PISTOL",
+      kind          = Kind.GUN,
+      damage        = 25.0f,
+      cooldown      = 0.30f,
+      duration      = 0.18f,
+      fire_mode     = FireMode.AUTO,
+      ammo          = Ammo.PISTOL,
+      ammo_per_shot = 1,
+      projectile    = "pistol_round",
+      pellets       = 1,
+      pattern       = Pattern.CONE,
+      spread_deg    = 0.0f,
+      spread_max_deg = 1.5f,
+      heat_per_shot = 0.40f,
+      heat_recover  = 1.0f,
+      kick          = 1.0f,
+      noise_metres  = 28.0f,
+      noise_secs    = 1.5f,
+      pickup_ammo   = 12,
+      ammo_box      = 8
+    },
+    {
+      id            = "shotgun",
+      name          = "SHOTGUN",
+      kind          = Kind.GUN,
+      damage        = 11.0f,
+      cooldown      = 0.95f,
+      duration      = 0.60f,
+      fire_mode     = FireMode.PUMP,
+      ammo          = Ammo.SHELLS,
+      ammo_per_shot = 1,
+      projectile    = "buckshot",
+      pellets       = 8,
+      pattern       = Pattern.CONE,
+      spread_deg    = 4.5f,
+      spread_max_deg = 4.5f,
+      heat_per_shot = 0.0f,
+      heat_recover  = 1.0f,
+      kick          = 2.2f,
+      noise_metres  = 40.0f,
+      noise_secs    = 2.2f,
+      pickup_ammo   = 6,
+      ammo_box      = 6
+    },
+    {
+      id            = "rifle",
+      name          = "RIFLE",
+      kind          = Kind.GUN,
+      damage        = 14.0f,
+      cooldown      = 0.12f,
+      duration      = 0.10f,
+      fire_mode     = FireMode.AUTO,
+      ammo          = Ammo.RIFLE,
+      ammo_per_shot = 1,
+      projectile    = "rifle_round",
+      pellets       = 1,
+      pattern       = Pattern.CONE,
+      spread_deg    = 0.6f,
+      spread_max_deg = 5.0f,
+      heat_per_shot = 0.12f,
+      heat_recover  = 0.5f,
+      kick          = 0.55f,
+      noise_metres  = 34.0f,
+      noise_secs    = 1.2f,
+      pickup_ammo   = 30,
+      ammo_box      = 24
+    }
+)

@@ -1,90 +1,95 @@
 // Brought to u by MidManStudio
 // The folders of the repository and a README. Notes are in docs/repo.md, section ".mdix/project_structure/project_structure.mdix".
 
-
+@CONFIG(
+  version    -> "1.0.0"
+  author     -> "MidManStudio"
+  features   -> "quickfuncs,data"
+  debug_mode -> "off"
+)
 
 @QUICKFUNCS(
 
-  ~fc<object>(_name, _ext, _content) {
-    return { name = _name, ext = _ext, content = _content }
-  }
+  ~fc<object>(_name, _ext, _content) {
+    return { name = _name, ext = _ext, content = _content }
+  }
 
-  ~gitkeep<object>() {
-    return { name = ".gitkeep", ext = "", content = "" }
-  }
+  ~gitkeep<object>() {
+    return { name = ".gitkeep", ext = "", content = "" }
+  }
 
 )
 
 @DATA(
-  project_name = "tower-of-babylon"
-  description  = "Tower of Babylon: C99 + raylib, built for the browser (WebAssembly) and Android"
-  author       = "MidManStudio"
+  project_name = "tower-of-babylon"
+  description  = "Tower of Babylon: C99 + raylib, built for the browser (WebAssembly) and Android"
+  author       = "MidManStudio"
 
-  // The shape of the repository. The real files arrive through .mdix/replacements/ (see docs/repo.md), so this template
-  // only makes the folders they land in and a README. Existing files are never touched (file strategy: skip).
-  root::
-    fc("README", "md", "# [[title]]\n\n[[description]]\n\n## Build and run\n\n- Web (WebAssembly): mray.py in Termux, option 8 applies an update tarball, then it serves on localhost:8080.\n- Android: Actions tab, choose \"Android APK\", Run workflow. See docs/android.md.\n- Tests: bash tools/run_tests.sh. See docs/testing.md.\n\n## Docs\n\ndocs/ has one file per area of the code, and docs/design/ has the plan for the game.\n\n## Updating from a phone\n\nPut an update tarball in .mdix/replacements/ and run the Apply replacements workflow. See docs/repo.md.\n")
+  // The shape of the repository. The real files arrive through .mdix/replacements/ (see docs/repo.md), so this template
+  // only makes the folders they land in and a README. Existing files are never touched (file strategy: skip).
+  root::
+    fc("README", "md", "# [[title]]\n\n[[description]]\n\n## Build and run\n\n- Web (WebAssembly): mray.py in Termux, option 8 applies an update tarball, then it serves on localhost:8080.\n- Android: Actions tab, choose \"Android APK\", Run workflow. See docs/android.md.\n- Tests: bash tools/run_tests.sh. See docs/testing.md.\n\n## Docs\n\ndocs/ has one file per area of the code, and docs/design/ has the plan for the game.\n\n## Updating from a phone\n\nPut an update tarball in .mdix/replacements/ and run the Apply replacements workflow. See docs/repo.md.\n")
 
-  android::
-    gitkeep()
+  android::
+    gitkeep()
 
-  assets.config::
-    gitkeep()
+  assets.config::
+    gitkeep()
 
-  assets.mdix::
-    gitkeep()
+  assets.mdix::
+    gitkeep()
 
-  assets.shaders::
-    gitkeep()
+  assets.shaders::
+    gitkeep()
 
-  docs::
-    gitkeep()
+  docs::
+    gitkeep()
 
-  docs.design::
-    gitkeep()
+  docs.design::
+    gitkeep()
 
-  scripts::
-    gitkeep()
+  scripts::
+    gitkeep()
 
-  tests::
-    gitkeep()
+  tests::
+    gitkeep()
 
-  tools::
-    gitkeep()
+  tools::
+    gitkeep()
 
-  src.config::
-    gitkeep()
+  src.config::
+    gitkeep()
 
-  src.dungeon::
-    gitkeep()
+  src.dungeon::
+    gitkeep()
 
-  src.enemies::
-    gitkeep()
+  src.enemies::
+    gitkeep()
 
-  src.flashlight::
-    gitkeep()
+  src.flashlight::
+    gitkeep()
 
-  src.inventory::
-    gitkeep()
+  src.inventory::
+    gitkeep()
 
-  src.lighting::
-    gitkeep()
+  src.lighting::
+    gitkeep()
 
-  src.obstacles::
-    gitkeep()
+  src.obstacles::
+    gitkeep()
 
-  src.player::
-    gitkeep()
+  src.player::
+    gitkeep()
 
-  src.projectiles::
-    gitkeep()
+  src.projectiles::
+    gitkeep()
 
-  src.shared::
-    gitkeep()
+  src.shared::
+    gitkeep()
 
-  src.ui::
-    gitkeep()
+  src.ui::
+    gitkeep()
 
-  src.weapons::
-    gitkeep()
+  src.weapons::
+    gitkeep()
 )

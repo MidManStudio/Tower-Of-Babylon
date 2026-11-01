@@ -1,23 +1,29 @@
 // Brought to u by MidManStudio
 // How an update tarball dropped next to this file is applied. Notes are in docs/repo.md, section ".mdix/replacements/replacements.mdix".
 
+@CONFIG(
+  version    -> "1.0.0"
+  author     -> "MidManStudio"
+  features   -> "quickfuncs,data"
+  debug_mode -> "off"
+)
 
 @QUICKFUNCS(
 
-  ~target<object>(_name, _path) {
-    return { name = _name, path = _path }
-  }
+  ~target<object>(_name, _path) {
+    return { name = _name, path = _path }
+  }
 
 )
 
 @DATA(
-  // An update tarball (the same one mray option 8 takes: paths relative to the project root, no top folder) sits next to
-  // this file. Every file inside it that lives in a folder lands at that same path under the repo root. A file at the very
-  // top of the tarball has no folder to say where it goes, so it is named here. main.c is the only one the game has;
-  // README.md is NOT listed on purpose: docs/design/README.md shares the name, and an override on a bare name would
-  // send both to the same place.
-  target_root = "."
+  // An update tarball (the same one mray option 8 takes: paths relative to the project root, no top folder) sits next to
+  // this file. Every file inside it that lives in a folder lands at that same path under the repo root. A file at the very
+  // top of the tarball has no folder to say where it goes, so it is named here. main.c is the only one the game has;
+  // README.md is NOT listed on purpose: docs/design/README.md shares the name, and an override on a bare name would
+  // send both to the same place.
+  target_root = "."
 
-  overrides::
-    target("main.c", "main.c")
+  overrides::
+    target("main.c", "main.c")
 )

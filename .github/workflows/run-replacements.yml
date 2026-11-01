@@ -1,3 +1,5 @@
+# Brought to u by MidManStudio
+# NOTICE: documentation for this file lives in docs/repo.md, section ".github/workflows/run-replacements.yml"
 name: Apply replacements
 
 on:
@@ -26,7 +28,7 @@ on:
           - 'backup'
           - 'rename'
       delete_processed_archives:
-        description: 'After a successful non-dry-run apply, delete the processed archive(s) from .mdix/replacements/ so they cannot be accidentally re-run later'
+        description: 'After a successful non-dry-run apply, delete the archive(s) from .mdix/replacements/ so they cannot be applied twice'
         required: false
         type: choice
         default: 'false'
@@ -44,6 +46,7 @@ jobs:
       contents: write
     with:
       template:                  ${{ inputs.template || '.mdix/replacements/replacements.mdix' }}
+      # Forced 'true' on every push; only a manual dispatch can flip this.
       dry_run:                   ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'true' }}
-      file_strategy:              ${{ inputs.file_strategy || 'overwrite' }}
-      delete_processed_archives:  ${{ inputs.delete_processed_archives || 'false' }}
+      file_strategy:             ${{ inputs.file_strategy || 'overwrite' }}
+      delete_processed_archives: ${{ inputs.delete_processed_archives || 'false' }}

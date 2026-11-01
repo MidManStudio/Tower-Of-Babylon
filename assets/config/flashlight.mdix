@@ -1,0 +1,39 @@
+// Brought to u by MidManStudio
+// The flashlight and its batteries: how long they last, how the beam is shaped, how it fails. Notes on writing this
+// file are in docs/config.md; what each number does in the game is in docs/flashlight.md.
+@CONFIG(
+  version  -> "1.0.0"
+  author   -> "MidManStudio"
+  features -> "data"
+)
+
+@DATA(
+  config_version<int> = 1
+
+  // Charge is in seconds of light.
+  //   capacity_secs      most the flashlight can hold
+  //   start_secs         what a flashlight found on the floor holds
+  //   battery_secs       what one battery adds; a battery is refused while the flashlight holds more than
+  //                      capacity_secs - battery_secs / 2, so one is never half wasted
+  //   low_fraction       below this share of capacity the light starts to fail: it flickers off and on, more and more
+  //                      the nearer it is to empty, and is dimmer between flickers
+  // The beam:
+  //   beam_inner_deg     half-angle inside which the beam is at full strength
+  //   beam_outer_deg     half-angle where it has faded to nothing
+  //   range              metres to where it has faded to nothing
+  //   strength           1.0 lights a black surface to the full tint at the middle of the beam, close up; 0.8 leaves it a little
+  //                      under that
+  //   lag                how quickly the beam follows where the camera looks, per second (higher is tighter)
+  //   tint               the colour of the light, 0xRRGGBB
+  flashlight:
+    capacity_secs  = 200.0f,
+    start_secs     = 80.0f,
+    battery_secs   = 100.0f,
+    low_fraction   = 0.20f,
+    beam_inner_deg = 14.0f,
+    beam_outer_deg = 30.0f,
+    range          = 20.0f,
+    strength       = 0.8f,
+    lag            = 14.0f,
+    tint           = 0xFFE9B0
+)
