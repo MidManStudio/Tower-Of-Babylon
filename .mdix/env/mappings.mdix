@@ -1,12 +1,7 @@
 // Brought to u by MidManStudio
 // The [[key]] values the structure template can use. Notes are in docs/repo.md, section ".mdix/env/mappings.mdix".
 
-@CONFIG(
-  version    -> "1.0.0"
-  author     -> "MidManStudio"
-  features   -> "data"
-  debug_mode -> "off"
-)
+
 
 @DATA(
   project_name = "tower-of-babylon"
