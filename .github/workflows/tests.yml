@@ -1,0 +1,38 @@
+# Brought to u by MidManStudio
+# NOTICE: documentation for this file lives in docs/repo.md, section ".github/workflows/tests.yml"
+name: Tests
+
+# Runs tools/run_tests.sh: every tests/*_headless.c, the Node bridge test, the bake check and the GLES shader test.
+# Runs on a push that touches code, tests, tools or the config files, and on demand. A push made by the mdix apply
+# workflow ends in [skip ci], so GitHub does not start this one for it: run it by hand after an apply.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'main.c'
+      - 'src/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'assets/config/**'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # gcc for the C tests; numpy and Mesa's software OpenGL ES (libEGL, libGLESv2, llvmpipe) for the shader test.
+      # run_tests.sh skips a test, with a message, when its tools are missing.
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential python3-numpy libegl1 libgles2 libgl1-mesa-dri
+
+      - name: Run the tests
+        run: bash tools/run_tests.sh

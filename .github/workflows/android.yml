@@ -1,0 +1,72 @@
+# Brought to u by MidManStudio
+# NOTICE: documentation for this file lives in docs/android.md, section ".github/workflows/android.yml"
+name: Android APK
+
+# Manual only. Builds a debug-signed APK of Tower of Babylon for 32-bit ARM (armeabi-v7a), the ABI a Galaxy A13 installs.
+# The tool setup mirrors the workflow that already builds the Terminal Viscosity APK. Open the Actions tab, choose
+# "Android APK", Run workflow, then download the artifact (a zip with the .apk inside) when it finishes.
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Only for tools/mdix_bake.mjs, which turns assets/config/*.mdix into src/config/config_baked.c.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # setup-android's default package set has no build-tools, so apksigner, aapt and zipalign are requested
+      # explicitly, plus a platform for android.jar.
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools build-tools;34.0.0 platforms;android-34"
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+
+      # The debug key is throwaway (no secrets), but a phone only updates an installed app in place when the new APK is
+      # signed with the same key. Keeping the key in the cache between runs gives that. If the cache has been cleared
+      # (GitHub drops entries unused for 7 days) the next APK has a new key and the old app must be uninstalled first.
+      - name: Restore the debug key
+        uses: actions/cache@v4
+        with:
+          path: build/android/debug.keystore
+          key: tower-debug-keystore-v1
+
+      - name: Versions
+        run: |
+          java -version
+          node --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Build APK
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          TOWER_VERSION_CODE: ${{ github.run_number }}
+          TOWER_VERSION_NAME: 0.1.${{ github.run_number }}
+        run: bash scripts/build_android.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tower-of-babylon-armv7-debug-apk
+          path: build/android/tower-of-babylon-armv7-debug.apk
