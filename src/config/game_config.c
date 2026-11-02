@@ -226,6 +226,29 @@ static void Note(const char *what, const char *detail)
     snprintf(g_status.note, sizeof g_status.note, "%s%s%s", what, detail[0] ? ": " : "", detail);
 }
 
+// ---- extra files (see game_config.h) ------------------------------------------------------------------------------
+typedef struct { const char *path; const MdixBaked *baked; ConfigBuildFn build; } ExtraFile;
+static ExtraFile g_extra[GAME_CONFIG_MAX_EXTRAS];
+static int  g_extraCount = 0;
+static bool g_baseLoaded = false;          // GameConfig_LoadBaked has run, so a later registration installs its baked copy at once
+
+static void LoadExtraBaked(const ExtraFile *x)
+{
+    char err[160];
+    MdixDoc *d = MdixDoc_FromBaked(x->baked);
+    if (!d || !x->build(d, err, (int)sizeof err)) Note("baked config is invalid, run tools/mdix_bake.mjs", d ? err : "no document");
+    MdixDoc_Free(d);
+}
+
+bool GameConfig_RegisterExtra(const char *path, const MdixBaked *baked, ConfigBuildFn build)
+{
+    if (!path || !baked || !build || g_extraCount >= GAME_CONFIG_MAX_EXTRAS) return false;
+    g_extra[g_extraCount] = (ExtraFile){ path, baked, build };
+    if (g_baseLoaded) LoadExtraBaked(&g_extra[g_extraCount]);
+    ++g_extraCount;
+    return true;
+}
+
 void GameConfig_LoadBaked(void)
 {
     MdixDoc *w = MdixDoc_FromBaked(&g_bakedWeapons), *p = MdixDoc_FromBaked(&g_bakedProjectiles), *fl = MdixDoc_FromBaked(&g_bakedFlashlight);
@@ -236,6 +259,8 @@ void GameConfig_LoadBaked(void)
     MdixDoc_Free(w);
     MdixDoc_Free(p);
     MdixDoc_Free(fl);
+    for (int i = 0; i < g_extraCount; ++i) LoadExtraBaked(&g_extra[i]);
+    g_baseLoaded = true;
 }
 
 void GameConfig_Init(void)
@@ -291,6 +316,21 @@ static void LoadFiles(void)
     free(wt);
     free(pt);
     free(ft);
+
+    // The extra files, each on its own: one that fails keeps its baked values and says so; the rest carry on.
+    for (int i = 0; i < g_extraCount; ++i) {
+        const ExtraFile *x = &g_extra[i];
+        int xl = 0;
+        char *xt = ReadText(x->path, &xl);
+        char xerr[160] = "";
+        MdixDoc *xd = xt ? MdixDoc_Parse(xt, xerr, (int)sizeof xerr) : NULL;
+        if (!xt) Note("config file not read, baked values kept", x->path);
+        else if (!xd) Note(x->path, xerr);
+        else if (!x->build(xd, xerr, (int)sizeof xerr)) Note(x->path, xerr);
+        else if (Mdix_Hash(xt, xl) != x->baked->sourceHash) g_status.bakedStale = true;
+        MdixDoc_Free(xd);
+        free(xt);
+    }
 }
 
 void GameConfig_Poll(void)

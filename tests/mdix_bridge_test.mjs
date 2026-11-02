@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const src = fs.readFileSync(path.join(root, "src/config/mdix_web.c"), "utf8");
-const web = src.slice(src.indexOf("#if defined(__EMSCRIPTEN__)"), src.indexOf("#else"));
+const web = src.slice(src.indexOf("#if TOWER_MDIX_WASM_BRIDGE"), src.indexOf("#else"));
 
 // ---- pull the EM_JS functions out of the C file ------------------------------------------------------------------
 const fns = {};

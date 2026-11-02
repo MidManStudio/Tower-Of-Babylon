@@ -8,7 +8,9 @@
 
 #include "rlgl.h"
 
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#include "../platform/platform.h"
+
+#if TOWER_GLES2
 #include <GLES2/gl2.h>
 #endif
 
@@ -39,7 +41,7 @@ void ViewClip_Reapply(double nearPlane, double farPlane)
 void ViewClip_ClearDepth(void)
 {
     rlDrawRenderBatchActive();
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#if TOWER_GLES2
     glClear(GL_DEPTH_BUFFER_BIT);
 #endif
 }
@@ -47,7 +49,7 @@ void ViewClip_ClearDepth(void)
 void ViewClip_QueryBuffers(int *depthBits, int *samples)
 {
     int d = -1, s = -1;
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#if TOWER_GLES2
     GLint v = 0;
     glGetIntegerv(GL_DEPTH_BITS, &v);
     d = (int)v;

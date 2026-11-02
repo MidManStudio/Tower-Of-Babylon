@@ -52,7 +52,7 @@ The fix is raylib's own default shader text with the precision raised: `precisio
 
 **Not changed.** The earlier rules stay: nothing is laid over another surface (the lights are part of the ceiling, the pickup details stand clear of what they sit on). They cost nothing and keep the picture steady on a coarse depth buffer, which a different phone might still have.
 
-**On Android.** `Highp_Init` builds both programs when `__EMSCRIPTEN__` or `__ANDROID__` is defined. The phone's own driver (a Mali on the Galaxy A13) gets raylib's mediump vertex default as well, so the same fix applies; the beam shader is the same one the browser uses. If a program fails to compile on the device the log says so (`SHADER: ... FAILED` / `not available, the glow fallback is used`, read with `adb logcat -s raylib`) and the game carries on without it. This branch is only syntax-checked in the sandbox (see `docs/android.md`).
+**On Android.** `Highp_Init` builds both programs when the platform has `TOWER_GLES2` (web and Android; see `platforms.md`). The phone's own driver (a Mali on the Galaxy A13) gets raylib's mediump vertex default as well, so the same fix applies; the beam shader is the same one the browser uses. If a program fails to compile on the device the log says so (`SHADER: ... FAILED` / `not available, the glow fallback is used`, read with `adb logcat -s raylib`) and the game carries on without it. This branch is only syntax-checked in the sandbox (see `docs/android.md`).
 
 ### `lighting_headless.c`
 

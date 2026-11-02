@@ -19,6 +19,7 @@ for f in tests/*_headless.c; do
   if ! eval "$line" 2>/tmp/build_err.txt; then echo "BUILD FAIL: $f"; head -5 /tmp/build_err.txt; fail=1; continue; fi
   if "$out" > /tmp/run_out.txt 2>&1; then echo "PASS  $f  ($(grep -c '^  ok\|ok:' /tmp/run_out.txt) ok lines)"; else echo "FAIL  $f"; tail -5 /tmp/run_out.txt; fail=1; fi
 done
+if bash tests/platform_check.sh >/tmp/platform_out.txt 2>&1; then echo "PASS  tests/platform_check.sh  (web, android and desktop all compile and agree with platform.h)"; else echo "FAIL  tests/platform_check.sh"; tail -8 /tmp/platform_out.txt; fail=1; fi
 if command -v node >/dev/null 2>&1; then
   if node tests/mdix_bridge_test.mjs 2>&1 | grep -v "^\[mdix\]" | tail -1 | grep -q "all passed"; then echo "PASS  tests/mdix_bridge_test.mjs"; else echo "FAIL  tests/mdix_bridge_test.mjs"; fail=1; fi
   if node tools/mdix_bake.mjs --check >/dev/null 2>&1; then echo "PASS  tools/mdix_bake.mjs --check (the baked config is up to date)"; else echo "FAIL  tools/mdix_bake.mjs --check: run node tools/mdix_bake.mjs"; fail=1; fi

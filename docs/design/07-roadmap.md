@@ -58,13 +58,15 @@ Sound (see below), phone performance (check the diagnostics overlay after each c
 
 ## Sound
 
-There is none at all, and the game's rules are about noise. Notes from earlier work: the web build keeps `ASYNCIFY=1`; browsers will not play audio until the first tap, so start the audio system on the first touch; prefer **generated** sounds (raylib's `LoadSoundFromWave` on a waveform you synthesise: clicks, thumps, a shot, a breath) over files, which keeps the download small and lets the same code make the sounds in a test. Start with the three that carry meaning: footsteps by surface and speed (so the player *hears* their own noise level), the gunshots (each gun's own), and a monster alert sound. Do this alongside M1; it makes the noise system something the player can feel.
+**Status:** the first set of sounds exists (`docs/audio.md`): footsteps, the guns, melee, hit ticks, hurt, heartbeat, a monster's growl and skitter, the flashlight, pickups, doors, ambience, all synthesised, none heard yet. What follows is the plan it was built from. Still to do: sound through walls, the commentator, music, mixing by ear.
+
+The plan: the game's rules are about noise. Notes from earlier work: the web build keeps `ASYNCIFY=1`; browsers will not play audio until the first tap, so start the audio system on the first touch; prefer **generated** sounds (raylib's `LoadSoundFromWave` on a waveform you synthesise: clicks, thumps, a shot, a breath) over files, which keeps the download small and lets the same code make the sounds in a test. Start with the three that carry meaning: footsteps by surface and speed (so the player *hears* their own noise level), the gunshots (each gun's own), and a monster alert sound. Do this alongside M1; it makes the noise system something the player can feel.
 
 ## Next three things to do
 
 1. **The unlock mission and the countdown with the collapse** (M1, items 1 and 2). It is the loop's centre and the least known quantity: if it is not fun alone, nothing built on it will be.
 2. **Sight for monsters** (item 3), which gives the flashlight its trade-off and gives crouch something to do.
-3. **Footstep and gunshot sounds**, because the noise system is invisible without them.
+3. ~~Footstep and gunshot sounds~~ (done, untuned: see `audio.md`).
 
 ## Risk register
 

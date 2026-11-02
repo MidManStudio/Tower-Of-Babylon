@@ -26,6 +26,10 @@ If an apply fails when it tries to commit, open the repository's Settings, Actio
 
 Make the update tarball the way mray option 8 expects it (paths relative to the project root, no top folder) and put it in `.mdix/replacements/`, next to `replacements.mdix`. Run **Apply replacements** (dry run first). Every file inside the tarball that sits in a folder goes to that same path under the repo root; the manifest names the one file at the top of the tarball, `main.c`.
 
+## Publishing from Termux (`tools/mray.py`)
+
+A copy of the mray script is kept in `tools/mray.py`; it lives at `~/mray.py` on the phone. Its menu has two entries beyond the build tools (and Exit is last, 9): **8) Apply Update Archive** lists the `.tar.gz`, `.zip` and `.tar` files in Downloads (newest first), shows how many files are new, changed and identical, skips anything with a path that leaves the project and anything inside `.git`, and writes the rest after you confirm; **7) GitHub** shows status, connects a project folder to a repository (fetches and lines the folder up with what is already on GitHub without touching your files), commits and pushes (it shows the changed files first, refuses a file over 50 MB, writes a `.gitignore` if there is none), pulls fast-forward only, and lists recent commits. Login is the one done once with `gh auth login --scopes workflow` and `gh auth setup-git`.
+
 ## Modules
 
 ### `.mdix/project_structure/project_structure.mdix`
@@ -64,4 +68,7 @@ Make the update tarball the way mray option 8 expects it (paths relative to the 
 
 ## Fixes and Problems
 
-- None recorded yet.
+### `tools/mray.py`
+- The first version of the update was written from an older copy of the script than the one in use (the paste had no option 8), and so replaced a working build step with a broken one: the `emcc` flag `--shell-file` was added even when the project has no `shell.html`, with nothing after it, so it took the next flag as its file (`emcc: error: '--shell-file': file not found: '--preload-file'`). Now the flag is added only when the file exists. The script that was replaced is kept by the installer as `~/mray.py.bak`.
+- The archive list showed every file three times: Termux shows the phone's Download folder under three paths, and they were compared as text. Now one path per real folder (`os.path.realpath`), and one entry per real file.
+- Exit was option 7 with the new entries after it; it is now last (9).

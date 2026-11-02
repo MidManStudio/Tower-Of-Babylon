@@ -35,4 +35,13 @@ const ConfigStatus *GameConfig_Status(void);
 // what the tests use to try documents of their own.
 bool GameConfig_LoadFrom(const MdixDoc *weapons, const MdixDoc *projectiles, const MdixDoc *flashlight, char *err, int errCap);
 
+// Further config files. A system that has its own .mdix file (sounds today; items, characters and statuses later) registers
+// it here, before GameConfig_Init: its baked table, the path of the file in the bundled assets, and a function that builds
+// the system's tables from a document and installs them (false and an err text when a value is wrong, installing nothing).
+// It is then loaded exactly like the three above: the baked copy at once, the real file when the wasm is ready. A failure
+// in one extra never stops the others or the three above; it shows up as the status note. At most GAME_CONFIG_MAX_EXTRAS.
+#define GAME_CONFIG_MAX_EXTRAS 8
+typedef bool (*ConfigBuildFn)(const MdixDoc *doc, char *err, int errCap);
+bool GameConfig_RegisterExtra(const char *path, const MdixBaked *baked, ConfigBuildFn build);   // false when the list is full
+
 #endif

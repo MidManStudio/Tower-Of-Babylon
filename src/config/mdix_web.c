@@ -3,12 +3,13 @@
 // live in docs/config.md, section "mdix_web.c"
 // ============================================================================
 #include "mdix_web.h"
+#include "../platform/platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__EMSCRIPTEN__)
+#if TOWER_MDIX_WASM_BRIDGE
 
 #include <emscripten.h>
 

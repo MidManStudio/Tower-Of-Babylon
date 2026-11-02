@@ -60,11 +60,16 @@ const FLASHLIGHT_FIELDS = {
   beam_outer_deg: ["float"], range: ["float"], strength: ["float"], lag: ["float"], tint: ["int"],
 };
 
+const SOUND_IDS = ["footstep", "jump", "land", "slide", "pipe_swing", "pipe_hit", "pistol", "shotgun", "shotgun_pump", "rifle", "dry_fire",
+  "pickup", "use_item", "flash_click", "battery", "hurt", "death", "hit_confirm", "kill_confirm", "skitter", "alert", "door", "heartbeat",
+  "ambient", "ui_click"];                                 // the order of SoundId in src/audio/sound_bank.h
+
 // "array": a group array of objects (weapons[2].damage); "object": one table (flashlight.range).
 const FILES = [
   { file: "weapons.mdix", array: "weapons", symbol: "g_bakedWeapons", shape: "array" },
   { file: "projectiles.mdix", array: "projectiles", symbol: "g_bakedProjectiles", shape: "array" },
   { file: "flashlight.mdix", array: "flashlight", symbol: "g_bakedFlashlight", shape: "object" },
+  { file: "sounds.mdix", array: "sounds", symbol: "g_bakedSounds", shape: "array" },
 ];
 
 // ---- helpers -----------------------------------------------------------------------------------------------
@@ -202,6 +207,30 @@ if (dbs.flashlight) {
   if (!(g("range") > 0 && g("range") <= 100)) bad("flashlight.range: must be above 0 and at most 100");
   if (!(g("strength") >= 0 && g("strength") <= 4)) bad("flashlight.strength: must be between 0 and 4");
   if (!(g("lag") > 0)) bad("flashlight.lag: must be above 0");
+}
+
+if (dbs.sounds) {
+  // The row layout (a sound row, then its layer rows) and the order of the ids; the ranges of every value are checked by the C loader
+  // (src/audio/sound_bank.c), which tests/audio_headless.c runs on this very table.
+  const d = dbs.sounds;
+  const n = d.getArrayLength("sounds");
+  let cur = -1, layers = 0;
+  const close = () => { if (cur >= 0 && (layers < 1 || layers > 4)) bad(`sounds: "${SOUND_IDS[cur]}" has ${layers} layers, it needs 1 to 4`); };
+  for (let i = 0; i < n; ++i) {
+    const p = `sounds[${i}]`;
+    if (!d.exists(`${p}.kind`)) { bad(`${p}: missing kind`); continue; }
+    const kind = d.getInt(`${p}.kind`);
+    if (kind === 0) {
+      close(); ++cur; layers = 0;
+      const id = d.exists(`${p}.id`) ? d.getString(`${p}.id`) : "";
+      if (cur >= SOUND_IDS.length) { bad(`${p}: more sounds than the game has ids for (${SOUND_IDS.length})`); break; }
+      if (id !== SOUND_IDS[cur]) bad(`${p}: the id is "${id}" but sound ${cur} must be "${SOUND_IDS[cur]}" (the order of SoundId)`);
+    } else if (kind === 1) {
+      if (cur < 0) bad(`${p}: a layer before any sound`); else ++layers;
+    } else bad(`${p}: kind must be 0 (a sound) or 1 (a layer)`);
+  }
+  close();
+  if (cur + 1 !== SOUND_IDS.length) bad(`sounds: ${cur + 1} sounds, the game has ${SOUND_IDS.length} (${SOUND_IDS.join(", ")})`);
 }
 
 if (errors.length) {

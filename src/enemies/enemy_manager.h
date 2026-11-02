@@ -47,6 +47,10 @@ unsigned EnemyKillsLanded(void);
 
 int CountActiveEnemies(void);
 
+// The nearest enemy that is awake (chasing or attacking) within maxDist of `from`: where it is and how far. For sound: the
+// footsteps and the first growl of what is coming. False when none is.
+bool Enemies_NearestAwake(Vector3 from, float maxDist, Vector3 *at, float *dist);
+
 // Attacks on the player. An enemy in reach needs ENEMY_WINDUP_SECS of contact before its
 // first blow, then strikes every ENEMY_COOLDOWN_SECS while the contact lasts. Leaving reach
 // resets the wind-up.

@@ -3,6 +3,7 @@
 // live in docs/lighting.md, section "highp_shader.h and highp_shader.c"
 // ============================================================================
 #include "highp_shader.h"
+#include "../platform/platform.h"
 
 #include "raylib.h"
 #include "rlgl.h"
@@ -105,7 +106,7 @@ static int    g_locPos = -1, g_locDir = -1, g_locParams = -1, g_locTint = -1;
 
 void Highp_Init(void)
 {
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)      // OpenGL ES 2.0 either way: the browser, and the phone's own driver in the Android build
+#if TOWER_GLES2      // OpenGL ES 2.0: the browser, and the phone's own driver in the Android build
     g_shader = LoadShaderFromMemory(HIGHP_VS_ES2, HIGHP_FS_ES2);
     // A shader that fails to compile comes back as raylib's default, which is no use to us.
     g_available = g_shader.id != 0 && g_shader.id != rlGetShaderIdDefault();

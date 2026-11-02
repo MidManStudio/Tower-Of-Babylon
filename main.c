@@ -11,7 +11,9 @@
 #include <stdbool.h>
 #include <time.h>
 
-#if defined(__EMSCRIPTEN__)
+#include "platform/platform.h"
+
+#if TOWER_MAIN_LOOP_CALLBACK
 #include <emscripten/emscripten.h>
 #endif
 
@@ -35,6 +37,8 @@
 #include "inventory/inventory_ui.h"
 #include "ui/view_clip.h"
 #include "ui/highp_shader.h"
+#include "audio/audio.h"
+#include "audio/audio_events.h"
 
 // Three floors live in static storage for WASM performance.
 static FloorWindow g_window;
@@ -63,6 +67,8 @@ static void Toast(const char *text)
 static int g_depthBits = -1, g_msaaSamples = -1;
 static bool showDebug = true;                      // the frame graph and the depth readout; tap the FPS counter to toggle
 static const Rectangle fpsToggleRec = { 6, 68, 120, 26 };
+static const Rectangle soundToggleRec = { 6, 196, 300, 20 };    // tap the sound line (while the diagnostics show) to hear the next sound in the bank
+static int auditionId = 0;
 static const Rectangle shaderToggleRec = { 6, 94, 300, 20 };   // tap the depth readout (while the diagnostics show) to compare shader precision
 static const Rectangle lightButtonRec = { 450, 150, 100, 66 };  // the flashlight: tap to switch it on or off (only once one is carried)
 static const Rectangle slideButtonRec = { 570, 150, 110, 66 };  // appears while running: tap to slide
@@ -122,10 +128,11 @@ static void DrainInventoryEvents(void)
         switch (ev.kind) {
             case INV_EV_ADDED:
                 Toast(ev.count > 1 ? TextFormat("+%d %s", ev.count, Item_Name(ev.item)) : TextFormat("PICKED UP: %s", Item_Name(ev.item)));
+                AudioEvents_Pickup();
                 break;
             case INV_EV_FULL:     Toast("INVENTORY FULL"); break;
             case INV_EV_EQUIPPED: Toast(TextFormat("IN HAND: %s", Item_Name(ev.item))); break;
-            case INV_EV_USED:     Toast(TextFormat("USED %s", Item_Name(ev.item))); break;
+            case INV_EV_USED:     Toast(TextFormat("USED %s", Item_Name(ev.item))); AudioEvents_UseItem(); break;
             default: break;
         }
     }
@@ -227,6 +234,7 @@ static void RespawnPlayer(void)
     fade = 1.0f;
     deathT = 0.0f;
     if (torch.on) Flashlight_Toggle(&torch);       // it comes back switched off, with what charge it had
+    AudioEvents_Reset();
 }
 
 // ---- inventory actions --------------------------------------------------------------------------------
@@ -263,6 +271,7 @@ static void LoadBattery(void)
     if (added <= 0.0f) { Toast("FLASHLIGHT IS FULL"); return; }
     Inventory_Remove(&inv, ITEM_BATTERY, 1);
     Toast(TextFormat("BATTERY LOADED   +%d SECONDS", (int)(added + 0.5f)));
+    AudioEvents_Battery();
     torchLowWarned = false;
 }
 
@@ -276,6 +285,7 @@ static void ToggleTorch(void)
         return;
     }
     Flashlight_Toggle(&torch);
+    AudioEvents_Flashlight(torch.on);
 }
 
 static void UseSlot(int slot)
@@ -371,6 +381,14 @@ static void Frame(void)
     const bool tapped = NewTap(&tap);
     if (tapped && !wasOpen && CheckCollisionPointRec(tap, fpsToggleRec)) showDebug = !showDebug;
     if (tapped && !wasOpen && showDebug && CheckCollisionPointRec(tap, shaderToggleRec)) Highp_SetEnabled(!Highp_Enabled());
+    if (tapped && !wasOpen && showDebug && CheckCollisionPointRec(tap, soundToggleRec)) {
+        for (int tries = 0; tries < SND_COUNT; ++tries) {                // loops are skipped: they play by themselves (heartbeat at low health, the ambience)
+            const SoundDef *sd = SoundBank_Get(auditionId);
+            const int id = auditionId;
+            auditionId = (auditionId + 1) % SND_COUNT;
+            if (sd && !sd->loop) { Audio_Play(id, 1.0f); break; }
+        }
+    }
     if (tapped && !wasOpen && CheckCollisionPointRec(tap, runButtonRec)) runToggle = !runToggle;
     if (tapped && !wasOpen && SlideButtonShown() && CheckCollisionPointRec(tap, slideButtonRec)) TrySlide();
     if (!wasOpen && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_LEFT_CONTROL))) TrySlide();
@@ -411,7 +429,8 @@ static void Frame(void)
             const Vector2 tPos = GetTouchPosition(i);
 
             if (id == moveTouchId || (moveTouchId < 0 && tPos.x < screenWidth / 2 && id != lookTouchId &&
-                                      !CheckCollisionPointRec(tPos, fpsToggleRec) && !(showDebug && CheckCollisionPointRec(tPos, shaderToggleRec)))) {
+                                      !CheckCollisionPointRec(tPos, fpsToggleRec) && !(showDebug && CheckCollisionPointRec(tPos, shaderToggleRec)) &&
+                                      !(showDebug && CheckCollisionPointRec(tPos, soundToggleRec)))) {
                 // Joystick finger.
                 moveTouchId = id;
                 moveSeen = true;
@@ -508,6 +527,7 @@ static void Frame(void)
     if (triggerUse && nearDoor >= 0 && !Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap)) {
         seq = SEQ_OPENING;
         seqDoor = (DoorId)nearDoor;
+        AudioEvents_Door();
     }
     if (triggerUse && nearDoor < 0 && nearPickup >= 0 && seq == SEQ_NONE && player.health.isAlive) {
         const Pickup *pk = Pickups_Get(nearPickup);
@@ -560,9 +580,22 @@ static void Frame(void)
                                   player.camera.target.z - player.camera.position.z };
         if (torch.on && !player.health.isAlive) Flashlight_Toggle(&torch);
         Flashlight_Update(&torch, dt, lookNow);
-        if (torch.died) Toast(Inventory_Has(&inv, ITEM_BATTERY) ? "FLASHLIGHT DIED. TAP LIGHT FOR A NEW BATTERY" : "FLASHLIGHT DIED");
+        if (torch.died) { Toast(Inventory_Has(&inv, ITEM_BATTERY) ? "FLASHLIGHT DIED. TAP LIGHT FOR A NEW BATTERY" : "FLASHLIGHT DIED"); AudioEvents_Flashlight(false); }
         if (torch.on && Flashlight_IsLow(&torch) && !torchLowWarned) { torchLowWarned = true; Toast("THE FLASHLIGHT IS FAILING"); }
         if (!Flashlight_IsLow(&torch)) torchLowWarned = false;
+    }
+
+    // Sound: where the listener is, then what the body is doing (footsteps, jump, landing, slide, heartbeat).
+    {
+        float lfx, lfz;
+        FlatForward(&lfx, &lfz);
+        const bool gesture = IsMouseButtonDown(MOUSE_BUTTON_LEFT) || GetTouchPointCount() > 0 || IsKeyDown(KEY_W) || IsKeyDown(KEY_A)
+                          || IsKeyDown(KEY_S) || IsKeyDown(KEY_D) || IsKeyDown(KEY_SPACE);        // a browser opens the sound card only after one of these
+        Audio_Update(dt, player.camera.position, lfx, lfz, gesture);
+        AudioEvents_Movement(dt, sqrtf(player.moveVel.x * player.moveVel.x + player.moveVel.z * player.moveVel.z), player.isGrounded, player.velocityY,
+                             player.sprinting, player.sliding, player.exhausted, player.health.isAlive);
+        AudioEvents_Health(player.health.hp / player.health.maxHp, player.health.isAlive);
+        AudioEvents_Ambience(player.health.isAlive);
     }
 
     // --- DOORS: open, fade out, change floor ---
@@ -592,13 +625,15 @@ static void Frame(void)
     const float spreadBefore = Arsenal_SpreadDeg(&arsenal);                      // a shot uses the spread from before it heated the gun
     Arsenal_Update(&arsenal, dt, triggerShoot, &weaponEv);
     if (ammoItem != ITEM_NONE && arsenal.ammo < ammoBefore) Inventory_Remove(&inv, ammoItem, ammoBefore - arsenal.ammo);
-    if (weaponEv.shot) Gunfire_Shoot(weaponEv.def, &aim, currentFloorMap, spreadBefore, &shotRng);
+    if (weaponEv.shot) { Gunfire_Shoot(weaponEv.def, &aim, currentFloorMap, spreadBefore, &shotRng); AudioEvents_Shot(weaponEv.def->id); }
+    if (weaponEv.dryFire) AudioEvents_DryFire();
     if (weaponEv.impact) {
         // Aim along the floor plane: a swing hits what is in front of the player, level with the eye.
         const float fl = sqrtf(lookDir.x * lookDir.x + lookDir.z * lookDir.z);
         const float fx = fl > 0.001f ? lookDir.x / fl : 0.0f, fz = fl > 0.001f ? lookDir.z / fl : 1.0f;
-        EnemiesMeleeHit(currentFloorMap, player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg,
-                        weaponEv.def->damage, weaponEv.def->knockback);
+        const int meleeHits = EnemiesMeleeHit(currentFloorMap, player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg,
+                                              weaponEv.def->damage, weaponEv.def->knockback);
+        AudioEvents_Melee(meleeHits > 0);
     }
 
     // Move projectiles, then let any that touch an active enemy damage it and disappear
@@ -606,8 +641,10 @@ static void Frame(void)
     ResolveProjectileHits(currentFloorMap, CheckAndHandleEnemyDamage);
 
     // A change in the running totals means a shot landed, or killed, since the last frame.
-    if (EnemyHitsLanded() != lastHitCount) { lastHitCount = EnemyHitsLanded(); hitMarker = 1.0f; }
-    if (EnemyKillsLanded() != lastKillCount) { lastKillCount = EnemyKillsLanded(); killMarker = 1.0f; }
+    const bool hitNow = EnemyHitsLanded() != lastHitCount, killNow = EnemyKillsLanded() != lastKillCount;
+    if (hitNow) { lastHitCount = EnemyHitsLanded(); hitMarker = 1.0f; }
+    if (killNow) { lastKillCount = EnemyKillsLanded(); killMarker = 1.0f; }
+    if (killNow) AudioEvents_HitMarker(true); else if (hitNow) AudioEvents_HitMarker(false);
     hitMarker -= dt / HIT_MARKER_SECS;   if (hitMarker < 0.0f) hitMarker = 0.0f;
     killMarker -= dt / KILL_MARKER_SECS; if (killMarker < 0.0f) killMarker = 0.0f;
     const double tSim = GetTime();
@@ -621,13 +658,21 @@ static void Frame(void)
         Enemies_SetPlayerNoise(gunNoiseT > 0.0f ? (steps > gunNoiseM ? steps : gunNoiseM) : steps);
     }
     UpdateEnemiesSystem(dt, player.position, currentFloorMap);
+    {
+        Vector3 awakeAt = { 0 };
+        float awakeDist = 0.0f;
+        const bool awake = player.health.isAlive && Enemies_NearestAwake(player.position, 40.0f, &awakeAt, &awakeDist);
+        AudioEvents_Enemies(dt, awake, awakeAt, awakeDist);
+    }
 
     // Blows that land on the player: damage, knockback, red flash and camera shake.
     if (player.health.isAlive) {
         float blow;
         Vector3 blowFrom;
-        if (EnemiesAttackPlayer(dt, player.position, player.height, &blow, &blowFrom))
+        if (EnemiesAttackPlayer(dt, player.position, player.height, &blow, &blowFrom)) {
             DamagePlayer(&player, blow, blowFrom);
+            AudioEvents_Hurt();
+        }
     } else {
         // Dead: cancel any door in progress, fade out, then come back.
         seq = SEQ_NONE;
@@ -791,6 +836,12 @@ static void Frame(void)
                 DrawText(TextFormat("config: %s  (%s)%s", cs->source == CONFIG_FROM_FILES ? "from the .mdix files" : "baked copy", wasmState, cs->bakedStale ? "  baked copy is older than the files" : ""),
                          10, 150, 14, cs->note[0] ? ORANGE : (Color){ 120, 200, 255, 255 });
                 if (cs->note[0]) DrawText(cs->note, 10, 166, 12, ORANGE);
+                {
+                    const AudioStatus *as = Audio_Status();
+                    DrawText(TextFormat("sound: %s  %d/%d built  %d playing  limiter %.2f  next: %s (tap)", as->deviceFailed ? "FAILED" : (as->deviceReady ? "on" : "waiting for a tap"),
+                                        as->built, as->total, as->voicesActive, (double)as->limiterGain, SoundBank_Name(auditionId)), 10, 198, 14,
+                             as->deviceFailed ? ORANGE : (Color){ 120, 255, 180, 255 });
+                }
                 if (Inventory_Has(&inv, ITEM_FLASHLIGHT))
                     DrawText(TextFormat("flashlight: %s  %.0f s left  level %.2f  beam by %s", torch.on ? "on" : "off", (double)torch.charge, (double)torch.level,
                                         Highp_FlashlightAvailable() ? "shader" : "glow (no beam shader)"), 10, 182, 14, (Color){ 255, 233, 160, 255 });
@@ -827,6 +878,7 @@ int main(void)
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(screenWidth, screenHeight, "Tower of Babylon - Horror Game Show");
     Flashlight_Init(&torch);
+    Audio_Init();                     // hands sounds.mdix to the config layer, so it must come before GameConfig_Init
     GameConfig_Init();                // weapon and projectile numbers: the baked copy now, the .mdix files once the wasm is up
     ScreenFx_Init();
     Highp_Init();
@@ -858,7 +910,7 @@ int main(void)
         TeleportPlayer(&player, spawn, spawnYaw);
     }
 
-#if defined(__EMSCRIPTEN__)
+#if TOWER_MAIN_LOOP_CALLBACK
     // The browser drives the loop from requestAnimationFrame (fps 0), so frames are paced
     // by the display. No SetTargetFPS, no sleeping, and no Asyncify needed for the loop.
     emscripten_set_main_loop(Frame, 0, 1);
@@ -867,6 +919,7 @@ int main(void)
     while (!WindowShouldClose()) Frame();
 #endif
 
+    Audio_Shutdown();
     ScreenFx_Unload();
     UnloadProjectilesSystem();
     UnloadEnemiesSystem();

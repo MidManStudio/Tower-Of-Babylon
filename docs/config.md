@@ -18,9 +18,10 @@ If anything about the second goes wrong, the baked values stay, and the diagnost
 | `assets/config/weapons.mdix` | One row per weapon, in the order of `WeaponId`: hands, pipe, pistol, shotgun, rifle. |
 | `assets/config/projectiles.mdix` | One row per projectile config; a gun names one by `id`. |
 | `assets/config/flashlight.mdix` | One table, `flashlight`: capacity, battery size, when it fails, the beam. See `flashlight.md`. A single object, read as `flashlight.range`, not a group array. |
+| `assets/config/sounds.mdix` | Every sound as a synthesiser recipe: a `snd(...)` row per sound and a `lyr(...)` row per layer. Registered as an **extra** file (below). See `audio.md`. |
 | `assets/mdix/mdix_wasm_bg.wasm`, `mdix_wasm_bg.js` | The DixScript engine and its glue, copied from the npm package (`@midmanstudio/mdix` 1.0.2, `wasm-pkg/`). 3.5 MB. |
 | `src/config/config_baked.c` | Generated. Do not edit. |
-| `tools/mdix_bake.mjs` | Checks the three files and writes `config_baked.c`. Node 18+, no npm install. |
+| `tools/mdix_bake.mjs` | Checks the four files and writes `config_baked.c`. Node 18+, no npm install. |
 
 mray bundles the whole `assets/` folder, so no change to `mray.py` was needed.
 
@@ -65,6 +66,8 @@ The bridge. On a non-Emscripten build every call says no ("the DixScript wasm on
 Modelled on `com.midmanstudio.mdix.webgl` in the DixScript-Rust repository, which does the same job for a Unity WebGL build.
 
 ### `game_config.h` and `game_config.c`
+
+**Extra files.** The first three files are built together by `GameConfig_LoadFrom`. A system with its own file registers it with `GameConfig_RegisterExtra(path, &g_bakedX, BuildFn)` before `GameConfig_Init` (sounds does it in `Audio_Init`): the baked copy is built at once, the real file when the wasm is ready, and `BuildFn(doc, err, cap)` installs the system's tables or returns false with a message and installs nothing. A failure in one extra shows as the status note and does not stop the others or the three above. Up to `GAME_CONFIG_MAX_EXTRAS` (8). Items, characters and statuses will register the same way, with a line each in `FILES` of `tools/mdix_bake.mjs`.
 
 `GameConfig_LoadFrom(weaponsDoc, projectilesDoc, flashlightDoc, err, cap)` builds the tables (the flashlight table's values are checked for type and range, and its start charge and battery may not exceed its capacity, nor its inner beam reach its outer), validating every value (type and range, projectile ids exist and are unique, every weapon id is a known weapon and appears once, a gun has an ammo type and a real projectile, hot spread is not below cold spread) and installs them only if all three built. `GameConfig_LoadBaked`, `GameConfig_Init` and `GameConfig_Poll` are described above. `GameConfig_Status()` returns the source, the wasm state, whether the baked copy is stale, and the first problem found.
 

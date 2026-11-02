@@ -286,6 +286,23 @@ bool CheckAndHandleEnemyDamage(Vector3 pos, float radius, float damage)
     return spiderHit;
 }
 
+bool Enemies_NearestAwake(Vector3 from, float maxDist, Vector3 *at, float *dist)
+{
+    float best = maxDist;
+    int pick = -1;
+    for (int i = 0; i < MAX_FLOOR_ENEMIES; ++i) {
+        const Enemy *e = &g_enemies[i];
+        if (!e->active || (e->state != ENEMY_STATE_CHASE && e->state != ENEMY_STATE_ATTACK)) continue;
+        const float dx = e->position.x - from.x, dz = e->position.z - from.z;
+        const float d = sqrtf(dx * dx + dz * dz);
+        if (d < best) { best = d; pick = i; }
+    }
+    if (pick < 0) return false;
+    if (at) *at = (Vector3){ g_enemies[pick].position.x, g_enemies[pick].position.y + g_enemies[pick].height * 0.5f, g_enemies[pick].position.z };
+    if (dist) *dist = best;
+    return true;
+}
+
 bool EnemiesAttackPlayer(float dt, Vector3 playerPos, float playerHeight, float *outDamage, Vector3 *outFrom)
 {
     bool landed = false;
