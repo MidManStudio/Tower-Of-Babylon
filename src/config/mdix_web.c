@@ -21,7 +21,7 @@
 EM_JS(void, mdix_js_boot, (const unsigned char *glue, int glueLen, const unsigned char *wasm, int wasmLen), {
     const g = HEAPU8.slice(glue, glue + glueLen);
     const w = HEAPU8.slice(wasm, wasm + wasmLen);
-    const m = Module.mdix = { state: 0, api: null, docs: new Map(), next: 1, err: '' };
+    const m = Module.mdix = { state: 0, api: null, docs: new Map(), next: 1, err: "" };
     m.str = function (p) { let e = p; while (HEAPU8[e] !== 0) e++; return new TextDecoder().decode(HEAPU8.subarray(p, e)); };
     m.put = function (s, p, cap) {                       // writes s at p as UTF-8 with a NUL, cut to fit; returns the bytes written or -1 when it did not fit
         const b = new TextEncoder().encode(s);

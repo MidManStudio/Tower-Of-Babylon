@@ -23,6 +23,9 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 | `TOWER_AUDIO_GESTURE_UNLOCK` | The sound card may only be opened after a touch or key. | 1 | 0 | 0 |
 | `TOWER_MDIX_WASM_BRIDGE` | The DixScript wasm is reachable (an `EM_JS` bridge), so `.mdix` files can be read live. | 1 | 0 | 0 |
 | `TOWER_MAIN_LOOP_CALLBACK` | The browser calls the frame function; `main()` must not loop itself. | 1 | 0 | 0 |
+| `TOWER_INPUT_TOUCH` | The touch controls (floating stick, fire pad, buttons) are compiled and drawn. | 1 | 1 | 0 |
+| `TOWER_INPUT_KEYBOARD` | The keyboard is read (WASD and the rest). | 1 | 0 | 1 |
+| `TOWER_INPUT_POINTER_LOCK` | The mouse is locked to the window and turns the camera with no button held. | 0 | 0 | 1 |
 
 ## Where each is used, and what the other side does
 
@@ -33,6 +36,9 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 | `TOWER_GLES2` | `src/ui/highp_shader.c` `Highp_Init` | builds the highp program and the flashlight beam program (GLSL ES 1.00) | builds nothing; the game uses raylib's shader and the flashlight's glow fallback. **Desktop gap:** the beam needs `#version 330` versions of the two shaders |
 | `TOWER_AUDIO_GESTURE_UNLOCK` | `src/audio/audio.c` `Audio_Update` | waits for the first touch, mouse button or movement key, then opens the sound card | opens it on the first frame |
 | `TOWER_MDIX_WASM_BRIDGE` | `src/config/mdix_web.c` | the EM_JS bridge that boots the DixScript wasm | every call says "not available"; config is the baked copy. **Android option:** the native library Terminal Viscosity already ships could be bridged here, not done |
+| `TOWER_INPUT_TOUCH` | `src/input/input.c` (fingers, the mouse as a finger), `src/hud/hud.c` (draws the controls) | the touch logic runs and the controls are drawn while the touch scheme is in use | the touch code is not compiled; the output is the keyboard and mouse only |
+| `TOWER_INPUT_KEYBOARD` | `src/input/input.c` | WASD, Shift, Space, F, E, Q, C, L, I, P are read | not compiled |
+| `TOWER_INPUT_POINTER_LOCK` | `src/input/input.c` | `DisableCursor()`; the mouse delta is the camera, the left button fires. **Desktop only, never run** | the camera comes from a finger or a held mouse button |
 | `TOWER_MAIN_LOOP_CALLBACK` | `main.c` (include and the end of `main`) | `emscripten_set_main_loop(Frame, 0, 1)` | `SetTargetFPS(60)` and `while (!WindowShouldClose()) Frame();` |
 
 ## What each platform is built with
@@ -45,6 +51,7 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 | raylib headers | `raylib/src` (6.1-dev) | the headers of the raylib it just built (6.0) | the headers of the library it links |
 | Config | wasm (live) with the baked copy as the start and the fallback | baked copy | baked copy |
 | Audio | opens after a touch | opens at once | opens at once |
+| Controls | touch (drawn until a key is pressed) and keyboard | touch | keyboard and a locked mouse |
 | Last seen working | yes (the user's phone) | **not yet run** | not built |
 
 ## Adding a platform (or a difference)
@@ -56,12 +63,12 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 ## Modules
 
 ### `src/platform/platform.h`
-**What it does:** sets the three platform macros and the four capabilities from what the compiler defines. Nothing here includes anything or defines anything but macros, so it is safe to include anywhere, first or last.
+**What it does:** sets the three platform macros and the seven capabilities from what the compiler defines. Nothing here includes anything or defines anything but macros, so it is safe to include anywhere, first or last.
 
 **Decisions:** capabilities are macros with the values 1 and 0 (not `#ifdef` symbols) so `-Wundef` can catch a misspelling. The names carry the `TOWER_` prefix because raylib already defines `PLATFORM_ANDROID`, `PLATFORM_WEB` and `PLATFORM_DESKTOP` for its own build, and the project's web build does not pass them: relying on them would have been a different answer on different builds.
 
 ### `tests/platform_check.sh`
-**What it does:** for each of web, Android and desktop, checks that `platform.h` produces exactly the values in the table (a compile-time assertion for each), then compiles `main.c` and all 40 sources, syntax only, with `-Wall -Wundef -Werror=implicit-function-declaration` and that platform's defines. It fails on: a file that does not compile for one platform (a name only another platform has), a call to a function no header declares (a web-only call in common code), an undefined `TOWER_` macro, and any raw `__EMSCRIPTEN__` or `__ANDROID__` outside `platform.h`. It was checked by breaking each of those on purpose.
+**What it does:** for each of web, Android and desktop, checks that `platform.h` produces exactly the values in the table (a compile-time assertion for each), then compiles `main.c` and every source file under `src/` (47 files), syntax only, with `-Wall -Wundef -Werror=implicit-function-declaration` and that platform's defines. It fails on: a file that does not compile for one platform (a name only another platform has), a call to a function no header declares (a web-only call in common code), an undefined `TOWER_` macro, and any raw `__EMSCRIPTEN__` or `__ANDROID__` outside `platform.h`. It was checked by breaking each of those on purpose.
 
 **What it cannot see:** it does not link, run, or use the real toolchains. `tests/stubs/` stands in for `emscripten.h` and `GLES2/gl2.h`, so a mistake inside an `EM_JS` body or in how a real GL call is used is invisible to it. A platform that compiles here can still fail to link or to run.
 

@@ -39,6 +39,8 @@
 #include "ui/highp_shader.h"
 #include "audio/audio.h"
 #include "audio/audio_events.h"
+#include "input/input.h"
+#include "hud/hud.h"
 
 // Three floors live in static storage for WASM performance.
 static FloorWindow g_window;
@@ -51,31 +53,14 @@ static FloorWindow g_window;
 static Inventory inv;
 static bool invOpen = false;
 static Arsenal arsenal;
-static Rectangle swapButtonRec = { 450, 320, 100, 80 };   // only active while the player owns more than one weapon
-static bool swapDownPrev = false, useDownPrev = false;
 
-// A short message at the bottom of the screen, such as what was just picked up.
-static char toastText[48];
-static float toastT = 0.0f;
-static void Toast(const char *text)
-{
-    snprintf(toastText, sizeof toastText, "%s", text);
-    toastT = 1.8f;
-}
+// A short message at the bottom of the screen, such as what was just picked up (the HUD draws it).
+static void Toast(const char *text) { Hud_Toast(text); }
 
 // What the browser gave the page, shown in the diagnostic overlay; -1 means unknown.
 static int g_depthBits = -1, g_msaaSamples = -1;
-static bool showDebug = true;                      // the frame graph and the depth readout; tap the FPS counter to toggle
-static const Rectangle fpsToggleRec = { 6, 68, 120, 26 };
-static const Rectangle soundToggleRec = { 6, 196, 300, 20 };    // tap the sound line (while the diagnostics show) to hear the next sound in the bank
-static int auditionId = 0;
-static const Rectangle shaderToggleRec = { 6, 94, 300, 20 };   // tap the depth readout (while the diagnostics show) to compare shader precision
-static const Rectangle lightButtonRec = { 450, 150, 100, 66 };  // the flashlight: tap to switch it on or off (only once one is carried)
-static const Rectangle slideButtonRec = { 570, 150, 110, 66 };  // appears while running: tap to slide
 static Flashlight torch;                                        // its charge, flicker and beam direction
 static bool torchLowWarned = false;
-static const Rectangle runButtonRec = { 450, 225, 100, 70 };   // tap to start running; it stops by itself when you stop or tire
-static bool  runToggle = false;
 // The "3d" stage split into parts, in milliseconds: the worst of recent frames for each, so a spike is not missed.
 enum { SUB_LIGHT, SUB_WORLD, SUB_ENTS, SUB_HANDS, SUB_COUNT };
 static float subMs[SUB_COUNT];
@@ -84,7 +69,6 @@ static void SubNote(int which, double t0, double t1)
     const float ms = (float)((t1 - t0) * 1000.0);
     subMs[which] = ms > subMs[which] ? ms : subMs[which] * 0.985f + ms * 0.015f;
 }
-static float runIdleT = 0.0f;
 static float healFlash = 0.0f;
 static float gunNoiseT = 0.0f;                     // the last shot can be heard for this long...
 static float gunNoiseM = 0.0f;                     // ...out to this many metres (both come from the gun's row in weapons.mdix)
@@ -184,25 +168,6 @@ static float fadeOut = 0.0f;       // fade out while leaving through a door
 static float doorOpen[DOOR_COUNT] = { 0.0f, 0.0f };
 static DoorSeq seq = SEQ_NONE;
 static DoorId seqDoor = DOOR_UP;
-
-static Vector2 leftJoyCenter = { 100, 350 };
-static float leftJoyRadius = 50.0f;
-static Vector2 leftJoyPos = { 100, 350 };
-static bool leftJoyActive = false;
-
-static Rectangle jumpButtonRec = { 560, 320, 90, 80 };
-static Rectangle shootButtonRec = { 660, 320, 110, 80 };
-static Rectangle useButtonRec = { 560, 225, 210, 70 };   // only active while a door is in reach
-static bool jumpPressedState = false;
-static bool shootPressedState = false;
-
-// Touches are followed by their id, so a finger keeps its job for as long as it is down:
-// the one that started on the left is the joystick, the one that started on the right
-// (not on a button) is the camera. A look finger can slide over the JUMP and SHOOT buttons
-// without pressing them, and a second finger can no longer take over the look.
-static int moveTouchId = -1;
-static int lookTouchId = -1;
-static Vector2 lastRightTouch = { 0 };
 
 // The largest look movement accepted in one frame, in canvas pixels.
 #define MAX_LOOK_PX 90.0f
@@ -323,28 +288,6 @@ static void DoInventoryTap(Vector2 tap)
     }
 }
 
-// A finger that went down this frame (or a mouse click when there are no touches): where, if any.
-// Called once per frame, because it remembers which fingers were down last frame.
-static bool NewTap(Vector2 *out)
-{
-    static int prevIds[16];
-    static int prevN = 0;
-    bool got = false;
-    const int n = GetTouchPointCount();
-    int ids[16];
-    const int m = n < 16 ? n : 16;
-    for (int i = 0; i < m; ++i) {
-        ids[i] = GetTouchPointId(i);
-        bool seen = false;
-        for (int j = 0; j < prevN; ++j) if (prevIds[j] == ids[i]) { seen = true; break; }
-        if (!seen && !got) { *out = GetTouchPosition(i); got = true; }
-    }
-    for (int i = 0; i < m; ++i) prevIds[i] = ids[i];
-    prevN = m;
-    if (n == 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { *out = GetMousePosition(); got = true; }
-    return got;
-}
-
 // Longest step the simulation takes in one frame. A hitch or a tab switch must not
 // turn into a jump across the map.
 #define MAX_FRAME_DT 0.05f
@@ -358,15 +301,10 @@ static void Frame(void)
     GameConfig_Poll();                // swaps in the .mdix files as soon as the DixScript wasm has started (web builds)
     Vector2 moveDelta = { 0 };
     Vector2 lookDelta = { 0 };
-    bool moveSeen = false;
-    bool lookSeen = false;
-    leftJoyActive = false;
     bool triggerShoot = false;
     bool triggerJump = false;
     bool triggerUse = false;
     bool triggerSwap = false;
-    jumpPressedState = false;
-    shootPressedState = false;
 
     // Which door, if any, is within reach right now.
     int nearDoor = -1;
@@ -375,28 +313,15 @@ static void Frame(void)
             if (Staircase_DoorInRange((DoorId)i, player.position)) { nearDoor = i; break; }
     }
 
-    // Taps this frame: the INV button, the inventory screen, the FPS counter that toggles the diagnostics.
+    // Taps this frame: the STATS button and popup, the INV button, the inventory screen.
     const bool wasOpen = invOpen;
     Vector2 tap = { 0 };
-    const bool tapped = NewTap(&tap);
-    if (tapped && !wasOpen && CheckCollisionPointRec(tap, fpsToggleRec)) showDebug = !showDebug;
-    if (tapped && !wasOpen && showDebug && CheckCollisionPointRec(tap, shaderToggleRec)) Highp_SetEnabled(!Highp_Enabled());
-    if (tapped && !wasOpen && showDebug && CheckCollisionPointRec(tap, soundToggleRec)) {
-        for (int tries = 0; tries < SND_COUNT; ++tries) {                // loops are skipped: they play by themselves (heartbeat at low health, the ambience)
-            const SoundDef *sd = SoundBank_Get(auditionId);
-            const int id = auditionId;
-            auditionId = (auditionId + 1) % SND_COUNT;
-            if (sd && !sd->loop) { Audio_Play(id, 1.0f); break; }
-        }
-    }
-    if (tapped && !wasOpen && CheckCollisionPointRec(tap, runButtonRec)) runToggle = !runToggle;
-    if (tapped && !wasOpen && SlideButtonShown() && CheckCollisionPointRec(tap, slideButtonRec)) TrySlide();
-    if (!wasOpen && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_LEFT_CONTROL))) TrySlide();
-    if (tapped && !wasOpen && Inventory_Has(&inv, ITEM_FLASHLIGHT) && CheckCollisionPointRec(tap, lightButtonRec)) ToggleTorch();
-    if (!wasOpen && IsKeyPressed(KEY_L)) ToggleTorch();
-    if (tapped && !wasOpen && CheckCollisionPointRec(tap, InvUI_OpenButton())) { invOpen = true; lookTouchId = -1; }
-    if (IsKeyPressed(KEY_I) || IsKeyPressed(KEY_TAB)) { invOpen = !invOpen; lookTouchId = -1; }
-    if (tapped && wasOpen) DoInventoryTap(tap);
+    const bool tapped = Input_NewTap(&tap);
+    if (tapped && Hud_HandleTap(tap, wasOpen)) { /* the HUD used it */ }
+    else if (tapped && !wasOpen && CheckCollisionPointRec(tap, InvUI_OpenButton())) invOpen = true;
+    else if (tapped && wasOpen) DoInventoryTap(tap);
+    if (invOpen) Hud_SetStatsOpen(false);
+    Hud_Update(dt);
     if (blockToastT > 0.0f) blockToastT -= dt;
     Pickups_Update(dt);
 
@@ -420,108 +345,39 @@ static void Frame(void)
         if (nearDoor < 0) nearPickup = Pickups_NearestWeapon(player.position, PICKUP_REACH);
     }
     const bool useAvailable = (nearDoor >= 0 || nearPickup >= 0) && !invOpen;
-    bool swapDown = false, useDown = false;
 
-    int touchCount = GetTouchPointCount();
-    if (touchCount > 0) {
-        for (int i = 0; i < touchCount; i++) {
-            const int id = GetTouchPointId(i);
-            const Vector2 tPos = GetTouchPosition(i);
-
-            if (id == moveTouchId || (moveTouchId < 0 && tPos.x < screenWidth / 2 && id != lookTouchId &&
-                                      !CheckCollisionPointRec(tPos, fpsToggleRec) && !(showDebug && CheckCollisionPointRec(tPos, shaderToggleRec)) &&
-                                      !(showDebug && CheckCollisionPointRec(tPos, soundToggleRec)))) {
-                // Joystick finger.
-                moveTouchId = id;
-                moveSeen = true;
-                leftJoyActive = true;
-                float dist = Vector2Distance(tPos, leftJoyCenter);
-                if (dist <= leftJoyRadius) {
-                    leftJoyPos = tPos;
-                } else {
-                    Vector2 dir = Vector2Normalize(Vector2Subtract(tPos, leftJoyCenter));
-                    leftJoyPos = Vector2Add(leftJoyCenter, Vector2Scale(dir, leftJoyRadius));
-                }
-                moveDelta.x = (leftJoyPos.x - leftJoyCenter.x) / leftJoyRadius;
-                moveDelta.y = (leftJoyPos.y - leftJoyCenter.y) / leftJoyRadius;
-            } else if (id == lookTouchId) {
-                // Camera finger: wherever it goes, it keeps turning the camera.
-                lookSeen = true;
-                lookDelta = Vector2Subtract(tPos, lastRightTouch);
-                lastRightTouch = tPos;
-            } else if (tPos.x >= screenWidth / 2) {
-                // A new finger on the right: a button, or else it becomes the camera finger.
-                // While the inventory is open, and on the INV button, it is a tap and nothing else.
-                if (invOpen || CheckCollisionPointRec(tPos, InvUI_OpenButton()) || CheckCollisionPointRec(tPos, runButtonRec) || (Inventory_Has(&inv, ITEM_FLASHLIGHT) && CheckCollisionPointRec(tPos, lightButtonRec)) || (SlideButtonShown() && CheckCollisionPointRec(tPos, slideButtonRec))) {
-                    // handled as a tap above
-                } else if (useAvailable && CheckCollisionPointRec(tPos, useButtonRec)) {
-                    useDown = true;
-                } else if (Arsenal_OwnedCount(&arsenal) > 1 && CheckCollisionPointRec(tPos, swapButtonRec)) {
-                    swapDown = true;
-                } else if (CheckCollisionPointRec(tPos, jumpButtonRec)) {
-                    jumpPressedState = true;
-                    triggerJump = true;
-                } else if (CheckCollisionPointRec(tPos, shootButtonRec)) {
-                    shootPressedState = true;
-                    triggerShoot = true;
-                } else if (lookTouchId < 0) {
-                    lookTouchId = id;
-                    lastRightTouch = tPos;
-                    lookSeen = true;
-                }
-            }
-        }
-    } else {
-        Vector2 mousePos = GetMousePosition();
-        if (invOpen || CheckCollisionPointRec(mousePos, InvUI_OpenButton())) {
-            // the inventory screen and its button take the mouse; they are handled as a tap above
-        } else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (useAvailable && CheckCollisionPointRec(mousePos, useButtonRec)) useDown = true;
-            else if (Arsenal_OwnedCount(&arsenal) > 1 && CheckCollisionPointRec(mousePos, swapButtonRec)) swapDown = true;
-            else if (CheckCollisionPointRec(mousePos, jumpButtonRec)) triggerJump = true;
-        }
-        if (!invOpen && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mousePos, shootButtonRec)) { shootPressedState = true; triggerShoot = true; }
-        if (!invOpen && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && mousePos.x >= screenWidth / 2) {
-            if (!CheckCollisionPointRec(mousePos, InvUI_OpenButton()) && !CheckCollisionPointRec(mousePos, runButtonRec) && !(Inventory_Has(&inv, ITEM_FLASHLIGHT) && CheckCollisionPointRec(mousePos, lightButtonRec)) && !(SlideButtonShown() && CheckCollisionPointRec(mousePos, slideButtonRec)) && !CheckCollisionPointRec(mousePos, jumpButtonRec) && !CheckCollisionPointRec(mousePos, shootButtonRec) &&
-                !(useAvailable && CheckCollisionPointRec(mousePos, useButtonRec)) &&
-                !(Arsenal_OwnedCount(&arsenal) > 1 && CheckCollisionPointRec(mousePos, swapButtonRec))) {
-                Vector2 mouseDelta = GetMouseDelta();
-                lookDelta.x = mouseDelta.x;
-                lookDelta.y = mouseDelta.y;
-            }
-        }
+    // What the player wants this frame, from whatever the platform has: fingers, mouse, keyboard (src/input). The context says
+    // which controls are live: nothing while a door opens or the player is dead, only walking with the inventory open,
+    // and a button only when it has something to act on.
+    InputContext ictx = { 0 };
+    ictx.locked = seq != SEQ_NONE || !player.health.isAlive;
+    ictx.walkOnly = invOpen;
+    ictx.useAvailable = useAvailable;
+    ictx.swapAvailable = Arsenal_OwnedCount(&arsenal) > 1;
+    ictx.lightAvailable = Inventory_Has(&inv, ITEM_FLASHLIGHT);
+    ictx.slideAvailable = SlideButtonShown();
+    ictx.blockedCount = Hud_BlockedRects(ictx.blocked, TC_MAX_BLOCKED - 1);
+    {
+        const Rectangle ib = InvUI_OpenButton();
+        ictx.blocked[ictx.blockedCount++] = (UiRect){ ib.x, ib.y, ib.width, ib.height };
     }
-
-    // A finger that lifted gives up its job.
-    if (!moveSeen) moveTouchId = -1;
-    if (!lookSeen) lookTouchId = -1;
+    InputFrame in;
+    Input_Update(&ictx, &in);
+    moveDelta = in.move;
+    lookDelta = in.look;
+    triggerShoot = in.fire;
+    triggerJump = in.jump;
+    triggerUse = in.use;
+    triggerSwap = in.swap;
+    if (in.light && Inventory_Has(&inv, ITEM_FLASHLIGHT)) ToggleTorch();
+    if (in.slide) TrySlide();
+    if (in.inventoryToggle) invOpen = !invOpen;
+    if (in.statsToggle && !invOpen) Hud_ToggleStats();
 
     // Size of this frame's look movement as the input gave it, for the frame graph, then capped.
     const float lookRaw = sqrtf(lookDelta.x * lookDelta.x + lookDelta.y * lookDelta.y);
     if (lookRaw > MAX_LOOK_PX) lookDelta = Vector2Scale(lookDelta, MAX_LOOK_PX / lookRaw);
     FrameGraph_Push(rawDt * 1000.0f, lookRaw);
-
-    if (!leftJoyActive) leftJoyPos = leftJoyCenter;
-
-    if (IsKeyDown(KEY_W)) moveDelta.y = -1.0f;
-    if (IsKeyDown(KEY_S)) moveDelta.y = 1.0f;
-    if (IsKeyDown(KEY_A)) moveDelta.x = -1.0f;
-    if (IsKeyDown(KEY_D)) moveDelta.x = 1.0f;
-    if (IsKeyPressed(KEY_SPACE)) triggerJump = true;
-    if (IsKeyDown(KEY_F)) triggerShoot = true;
-    if (IsKeyPressed(KEY_E)) useDown = true;
-    if (IsKeyPressed(KEY_Q)) swapDown = true;
-    if (invOpen) {                               // the screen is open: walking still works, the rest waits
-        lookDelta = (Vector2){ 0 };
-        triggerJump = triggerShoot = false;
-        useDown = false;
-    }
-
-    // USE and SWAP act once per press, not on every frame they are held.
-    triggerUse = useDown && !useDownPrev;
-    triggerSwap = swapDown && !swapDownPrev;
-    useDownPrev = useDown;
-    swapDownPrev = swapDown;
 
     // Start using a door. The player stands still while it opens.
     if (triggerUse && nearDoor >= 0 && !Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap)) {
@@ -561,13 +417,10 @@ static void Frame(void)
         triggerJump = false;
         triggerShoot = false;
     }
-    if (toastT > 0.0f) toastT -= dt;
 
-    // Running: a tap on RUN (or holding Shift). It stops by itself when the stick is let go for a moment, or when the
-    // player is exhausted, so it never has to be turned off by hand.
-    if (Vector2Length(moveDelta) < 0.1f) runIdleT += dt; else runIdleT = 0.0f;
-    if (runIdleT > 0.4f || player.exhausted || seq != SEQ_NONE || !player.health.isAlive) runToggle = false;
-    player.wantSprint = runToggle || IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    // Sprint: the move stick pushed all the way out ahead (the icon above it turns yellow), or Shift. The controller holds
+    // it back when the player is too tired.
+    player.wantSprint = in.sprint;
 
     const double tInput = GetTime();
     UpdatePlayerController(&player, moveDelta, lookDelta, dt, currentFloorMap);
@@ -589,9 +442,7 @@ static void Frame(void)
     {
         float lfx, lfz;
         FlatForward(&lfx, &lfz);
-        const bool gesture = IsMouseButtonDown(MOUSE_BUTTON_LEFT) || GetTouchPointCount() > 0 || IsKeyDown(KEY_W) || IsKeyDown(KEY_A)
-                          || IsKeyDown(KEY_S) || IsKeyDown(KEY_D) || IsKeyDown(KEY_SPACE);        // a browser opens the sound card only after one of these
-        Audio_Update(dt, player.camera.position, lfx, lfz, gesture);
+        Audio_Update(dt, player.camera.position, lfx, lfz, in.gesture);             // a browser opens the sound card only after a touch or a key
         AudioEvents_Movement(dt, sqrtf(player.moveVel.x * player.moveVel.x + player.moveVel.z * player.moveVel.z), player.isGrounded, player.velocityY,
                              player.sprinting, player.sliding, player.exhausted, player.health.isAlive);
         AudioEvents_Health(player.health.hp / player.health.maxHp, player.health.isAlive);
@@ -746,112 +597,39 @@ static void Frame(void)
             }
         }
 
-        if (useAvailable) {
-            const bool locked = nearDoor >= 0 && Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap);
-            DrawRectangleRec(useButtonRec, Fade(locked ? MAROON : DARKGREEN, 0.75f));
-            DrawRectangleLines((int)useButtonRec.x, (int)useButtonRec.y, (int)useButtonRec.width, (int)useButtonRec.height, WHITE);
-            const char *label = locked ? "LOCKED" : (nearDoor == DOOR_UP ? "USE DOOR - UP" : "USE DOOR - DOWN");
-            if (nearDoor < 0) {
-                static char pick[40];
-                snprintf(pick, sizeof pick, "PICK UP %s", Pickup_Label(Pickups_Get(nearPickup)->kind));
-                label = pick;
-            }
-            DrawText(label, (int)useButtonRec.x + 14, (int)useButtonRec.y + 26, 18, WHITE);
-        }
-
-        DrawCircleV(leftJoyCenter, leftJoyRadius, Fade(LIGHTGRAY, 0.5f));
-        DrawCircleV(leftJoyCenter, leftJoyRadius - 15, Fade(GRAY, 0.3f));
-        DrawCircleV(leftJoyPos, 22, Fade(DARKGRAY, 0.8f));
-
-        if (!invOpen) {
-            // RUN: green while running, amber when too tired to start, grey otherwise.
-            const bool tired = player.exhausted;
-            const Color runCol = player.sprinting ? GREEN : (runToggle ? (tired ? ORANGE : DARKGREEN) : (tired ? ORANGE : DARKGRAY));
-            DrawRectangleRec(runButtonRec, Fade(runCol, 0.7f));
-            DrawRectangleLines((int)runButtonRec.x, (int)runButtonRec.y, (int)runButtonRec.width, (int)runButtonRec.height, WHITE);
-            DrawText(tired ? "TIRED" : (player.sprinting ? "RUNNING" : "RUN"), (int)runButtonRec.x + (tired ? 22 : (player.sprinting ? 12 : 31)), (int)runButtonRec.y + 28, 16, WHITE);
-        }
-        if (SlideButtonShown()) {
-            const Color sc = player.sliding ? SKYBLUE : (player.stamina < STAMINA_SLIDE_COST ? ORANGE : (Color){ 40, 120, 170, 255 });
-            DrawRectangleRec(slideButtonRec, Fade(sc, 0.7f));
-            DrawRectangleLines((int)slideButtonRec.x, (int)slideButtonRec.y, (int)slideButtonRec.width, (int)slideButtonRec.height, WHITE);
-            DrawText(player.sliding ? "SLIDING" : "SLIDE", (int)slideButtonRec.x + (player.sliding ? 16 : 28), (int)slideButtonRec.y + 24, 16, WHITE);
-        }
-        if (Inventory_Has(&inv, ITEM_FLASHLIGHT)) {
-            const bool failing = torch.on && Flashlight_IsLow(&torch);
-            const bool blink = failing && ((int)(GetTime() * 4.0) & 1);
-            const Color lc = torch.on ? (blink ? RED : (failing ? ORANGE : (Color){ 190, 160, 30, 255 })) : (torch.charge <= 0.0f ? MAROON : DARKGRAY);
-            DrawRectangleRec(lightButtonRec, Fade(lc, 0.7f));
-            DrawRectangleLines((int)lightButtonRec.x, (int)lightButtonRec.y, (int)lightButtonRec.width, (int)lightButtonRec.height, WHITE);
-            const char *lightLabel = torch.on ? "LIGHT ON" : (torch.charge <= 0.0f ? "FLAT" : "LIGHT");
-            DrawText(lightLabel, (int)lightButtonRec.x + (torch.on ? 12 : (torch.charge <= 0.0f ? 30 : 28)), (int)lightButtonRec.y + 18, 16, WHITE);
-            // The charge, as a bar along the bottom of the button; it turns orange when the light starts to fail.
-            const float frac = Flashlight_Fraction(&torch);
-            DrawRectangle((int)lightButtonRec.x + 6, (int)lightButtonRec.y + 46, (int)((lightButtonRec.width - 12.0f) * frac), 8, Flashlight_IsLow(&torch) ? ORANGE : (Color){ 255, 233, 160, 255 });
-            DrawRectangleLines((int)lightButtonRec.x + 6, (int)lightButtonRec.y + 46, (int)lightButtonRec.width - 12, 8, Fade(WHITE, 0.6f));
-        }
-        Color jumpCol = jumpPressedState ? BLUE : DARKGRAY;
-        DrawRectangleRec(jumpButtonRec, Fade(jumpCol, 0.7f));
-        DrawRectangleLines((int)jumpButtonRec.x, (int)jumpButtonRec.y, (int)jumpButtonRec.width, (int)jumpButtonRec.height, WHITE);
-        DrawText("JUMP", (int)jumpButtonRec.x + 22, (int)jumpButtonRec.y + 30, 16, WHITE);
-
-        Color shootCol = shootPressedState ? RED : DARKGRAY;
-        DrawRectangleRec(shootButtonRec, Fade(shootCol, 0.7f));
-        DrawRectangleLines((int)shootButtonRec.x, (int)shootButtonRec.y, (int)shootButtonRec.width, (int)shootButtonRec.height, WHITE);
-        const WeaponDef *held = Weapon_Def(arsenal.current);
-        const char *attackLabel = held->kind == WEAPON_KIND_GUN ? "FIRE" : (held->kind == WEAPON_KIND_MELEE ? "SWING" : "PUNCH");
-        DrawText(attackLabel, (int)shootButtonRec.x + 24, (int)shootButtonRec.y + 30, 16, WHITE);
-
-        if (Arsenal_OwnedCount(&arsenal) > 1) {
-            DrawRectangleRec(swapButtonRec, Fade(DARKGRAY, 0.7f));
-            DrawRectangleLines((int)swapButtonRec.x, (int)swapButtonRec.y, (int)swapButtonRec.width, (int)swapButtonRec.height, WHITE);
-            DrawText("SWAP", (int)swapButtonRec.x + 24, (int)swapButtonRec.y + 30, 16, WHITE);
-        }
-
-        // What is in hand, and ammo for the gun.
-        DrawText(held->kind == WEAPON_KIND_GUN ? TextFormat("%s  %d", held->name, arsenal.ammo) : held->name,
-                 screenWidth / 2 + 108, screenHeight - 24, 16, arsenal.dry > 0.0f ? RED : WHITE);
-        if (toastT > 0.0f) {
-            const int tw = MeasureText(toastText, 18);
-            DrawText(toastText, (screenWidth - tw) / 2, screenHeight - 56, 18, Fade(YELLOW, toastT > 1.0f ? 1.0f : toastT));
-        }
-
-        DrawText(TextFormat("TOWER OF BABYLON - FLOOR %d", g_window.currentFloor), 10, 10, 18, YELLOW);
-        DrawText(TextFormat("attempt %d  route %d  walls %d  pillars %d  open %d%%%s",
-                            currentFloorMap->attempts, currentFloorMap->pathLength, currentFloorMap->partitions,
-                            currentFloorMap->pillars, (int)(currentFloorMap->walkableFraction * 100.0f),
-                            currentFloorMap->usedFallback ? "  FALLBACK" : ""), 10, 32, 14, LIGHTGRAY);
-        DrawText(TextFormat("enemies %d", CountActiveEnemies()), 10, 52, 14, LIGHTGRAY);
-        DrawFPS(10, 72);
-        if (showDebug) {
-            DrawText(TextFormat("depth %d bit  msaa %d  shader %s (tap)", g_depthBits, g_msaaSamples,
-                                Highp_Enabled() ? "highp" : (Highp_Available() ? "raylib default" : "default")), 10, 96, 14, (Color){ 120, 200, 255, 255 });
-            DrawText(TextFormat("3d ms (submit): light %.1f  world %.1f  ents %.1f  hands %.1f", subMs[SUB_LIGHT], subMs[SUB_WORLD], subMs[SUB_ENTS], subMs[SUB_HANDS]),
-                     10, 132, 14, (Color){ 120, 200, 255, 255 });
-            DrawText(TextFormat("lights on %d  dim %d  flicker %d  dead %d", Lighting_CountMode(LIGHT_ON), Lighting_CountMode(LIGHT_DIM),
-                                Lighting_CountMode(LIGHT_FLICKER), Lighting_CountMode(LIGHT_DEAD)), 10, 114, 14, (Color){ 120, 200, 255, 255 });
-            {
-                const ConfigStatus *cs = GameConfig_Status();
-                const char *wasmState = cs->wasm == MDIX_WASM_READY ? "wasm ready" : (cs->wasm == MDIX_WASM_LOADING ? "wasm loading" : (cs->wasm == MDIX_WASM_FAILED ? "wasm off" : "wasm idle"));
-                DrawText(TextFormat("config: %s  (%s)%s", cs->source == CONFIG_FROM_FILES ? "from the .mdix files" : "baked copy", wasmState, cs->bakedStale ? "  baked copy is older than the files" : ""),
-                         10, 150, 14, cs->note[0] ? ORANGE : (Color){ 120, 200, 255, 255 });
-                if (cs->note[0]) DrawText(cs->note, 10, 166, 12, ORANGE);
-                {
-                    const AudioStatus *as = Audio_Status();
-                    DrawText(TextFormat("sound: %s  %d/%d built  %d playing  limiter %.2f  next: %s (tap)", as->deviceFailed ? "FAILED" : (as->deviceReady ? "on" : "waiting for a tap"),
-                                        as->built, as->total, as->voicesActive, (double)as->limiterGain, SoundBank_Name(auditionId)), 10, 198, 14,
-                             as->deviceFailed ? ORANGE : (Color){ 120, 255, 180, 255 });
+        // Everything drawn over the view that is not a screen effect: the touch controls, the STATS button and popup, the prompt, the toast.
+        {
+            HudView hv = { 0 };
+            hv.alive = player.health.isAlive; hv.sprinting = player.sprinting; hv.sliding = player.sliding; hv.exhausted = player.exhausted;
+            hv.hp = player.health.hp; hv.maxHp = player.health.maxHp;
+            hv.stamina01 = player.stamina / PLAYER_STAMINA_MAX;
+            hv.exhaustRecover01 = STAMINA_EXHAUST_RECOVER / PLAYER_STAMINA_MAX;
+            hv.tooTiredToSlide = player.stamina < STAMINA_SLIDE_COST;
+            const WeaponDef *held = Weapon_Def(arsenal.current);
+            hv.weaponName = held->name; hv.weaponIsGun = held->kind == WEAPON_KIND_GUN; hv.weaponIsMelee = held->kind == WEAPON_KIND_MELEE;
+            hv.ammo = arsenal.ammo; hv.weaponDry = arsenal.dry > 0.0f; hv.weaponsOwned = Arsenal_OwnedCount(&arsenal);
+            hv.hasTorch = Inventory_Has(&inv, ITEM_FLASHLIGHT); hv.torchOn = torch.on; hv.torchLow = Flashlight_IsLow(&torch);
+            hv.torchFlat = torch.charge <= 0.0f; hv.torchFraction = Flashlight_Fraction(&torch);
+            hv.torchSecs = torch.charge; hv.torchLevel = torch.level;
+            hv.floorNumber = g_window.currentFloor; hv.enemies = CountActiveEnemies();
+            char floorInfo[112];
+            snprintf(floorInfo, sizeof floorInfo, "attempt %d  route %d  walls %d  pillars %d  open %d%%%s", currentFloorMap->attempts, currentFloorMap->pathLength,
+                     currentFloorMap->partitions, currentFloorMap->pillars, (int)(currentFloorMap->walkableFraction * 100.0f), currentFloorMap->usedFallback ? "  FALLBACK" : "");
+            hv.floorInfo = floorInfo;
+            hv.useShown = useAvailable;
+            if (useAvailable) {
+                hv.useLocked = nearDoor >= 0 && Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap);
+                hv.useLabel = hv.useLocked ? "LOCKED" : (nearDoor == DOOR_UP ? "USE DOOR - UP" : "USE DOOR - DOWN");
+                if (nearDoor < 0) {
+                    static char pick[40];
+                    snprintf(pick, sizeof pick, "PICK UP %s", Pickup_Label(Pickups_Get(nearPickup)->kind));
+                    hv.useLabel = pick;
                 }
-                if (Inventory_Has(&inv, ITEM_FLASHLIGHT))
-                    DrawText(TextFormat("flashlight: %s  %.0f s left  level %.2f  beam by %s", torch.on ? "on" : "off", (double)torch.charge, (double)torch.level,
-                                        Highp_FlashlightAvailable() ? "shader" : "glow (no beam shader)"), 10, 182, 14, (Color){ 255, 233, 160, 255 });
             }
+            hv.slideShown = SlideButtonShown(); hv.invOpen = invOpen;
+            hv.debug = (HudDebug){ g_depthBits, g_msaaSamples, { subMs[SUB_LIGHT], subMs[SUB_WORLD], subMs[SUB_ENTS], subMs[SUB_HANDS] } };
+            Hud_Draw(&hv);
         }
-
-        ScreenFx_DrawHealthBar(screenWidth / 2 - 100, screenHeight - 22, 200, 14, player.health.hp, player.health.maxHp);
-        ScreenFx_DrawStaminaBar(screenWidth / 2 - 100, screenHeight - 6, 200, 5, player.stamina / PLAYER_STAMINA_MAX, player.exhausted,
-                                STAMINA_EXHAUST_RECOVER / PLAYER_STAMINA_MAX, (float)GetTime());
-        if (showDebug) FrameGraph_Draw(screenWidth - 210, 6, 204);
 
         if (invOpen) InvUI_Draw(&inv, arsenal.current);
         else         InvUI_DrawOpenButton(&inv, false);
@@ -878,6 +656,8 @@ int main(void)
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(screenWidth, screenHeight, "Tower of Babylon - Horror Game Show");
     Flashlight_Init(&torch);
+    Input_Init();
+    Hud_Init();
     Audio_Init();                     // hands sounds.mdix to the config layer, so it must come before GameConfig_Init
     GameConfig_Init();                // weapon and projectile numbers: the baked copy now, the .mdix files once the wasm is up
     ScreenFx_Init();

@@ -1,0 +1,54 @@
+# input
+
+## Overview
+
+Everything the player does with their hands comes through `src/input/`. Fingers, mouse and keyboard go in; one `InputFrame` of intentions comes out (move, look, sprint, jump, fire, use, swap, light, slide), so `main.c` never asks raylib which key is down and never knows which platform it is on. The controls follow the Call of Duty Mobile arrangement:
+
+- **Left half: a floating move stick.** It appears where the thumb lands, anywhere in the left half (kept far enough in that the whole ring is on screen), and stays put while the finger moves. Forward is up the screen.
+- **Sprint is not a button.** An icon sits above the stick. Push the knob all the way out ahead and the icon turns yellow: you are sprinting. A ring around the icon fills as the knob nears the rim, so you can see how far to go. Sideways or backwards at the rim is not a sprint; once started it holds until the knob comes back under 80% or swings away from ahead (so it does not flicker at the edge). Orange means the push is there but the player is too tired.
+- **Right side: a fire pad that also aims.** The finger on the pad fires, and moving that finger turns the camera, so one thumb shoots and aims. A finger on a free spot of the right half is the look finger. JUMP is a button; USE, SWAP, LIGHT and SLIDE appear only when they have something to act on.
+- **STATS** (top left) opens the stats popup (`docs/hud.md`); INV opens the inventory.
+
+A finger keeps the job it had when it went down until it lifts: a look finger that slides over JUMP does not jump, a camera finger that slides onto the fire pad does not fire, a stick finger that wanders into the right half is still the stick.
+
+Keyboard (web and desktop): W A S D, Shift sprint, Space jump, F fire, E use, Q swap, C or Left Ctrl slide, L light, I or Tab inventory, P stats. A mouse button held down counts as one more finger, so a PC browser plays like a phone. On the desktop build the mouse is locked to the window and turns the camera with no button held, and the left button fires.
+
+## Which controls exist where (`docs/platforms.md`)
+
+| Capability | Web | Android | Desktop |
+|---|---|---|---|
+| `TOWER_INPUT_TOUCH` (touch logic compiled, controls drawn) | yes | yes | no |
+| `TOWER_INPUT_KEYBOARD` (keys read) | yes | no | yes |
+| `TOWER_INPUT_POINTER_LOCK` (mouse look with no button) | no | no | yes |
+
+The browser may be on a phone or a PC, so it decides by use: the touch controls are drawn until a key is pressed, are hidden while the keyboard is in use, and come back with the next real finger. A mouse never switches the scheme.
+
+## Modules
+
+### `ui_rect.h`
+A rectangle and a circle in canvas pixels (the canvas is 800 x 450) with `Contains` and `Overlaps`. No raylib, so the touch logic, the HUD layout and their tests need only a C compiler.
+
+### `touch_controls.h` and `touch_controls.c`
+**What it does:** the touch controls as a state machine with no raylib in it. `Tc_Update(state, fingers, count, context, out)` runs once a frame. A finger that lands is given a job by where it lands and what the game says is available (a tap-only region, the stick, one of the buttons, the fire pad, the look finger, or nothing) and keeps it. The output: move vector (dead zone 0.08, then rescaled so the edge of the dead zone is 0), look movement in pixels, sprint, fire/jump/use/swap held, light and slide as one-frame presses, and the numbers the HUD draws (stick anchor and knob, how close the knob is to a sprint, whether a camera finger is down). The layout is one `TcLayout` shared with the HUD.
+
+**The context** is how the game gates the controls, every frame: `locked` (a door is opening or the player is dead: everything zero, but the stick is still drawn and carries on when it unlocks), `walkOnly` (the inventory is open: only the stick works, the right half is for taps, and a camera finger that is down lets go at once and stays let go until it lifts), `useAvailable`, `swapAvailable`, `lightAvailable`, `slideAvailable` (a button that is not available is not there: a finger on its spot is the camera), and `blocked` (regions that only take taps: STATS, INV, the open popup, the diagnostic rows; a finger there does not become the stick or the camera, the tap is handled by the HUD).
+
+**Decisions:** the fire finger aims because that is how one thumb fires and aims at once, and because the old split (a fire button, then lift and reach for the camera) is what makes a shooter hard on a phone. The stick's anchor does not follow the finger (that is the Call of Duty Mobile behaviour; a following stick drifts under the thumb). Sprint needs the rim *and* a direction within about 70 degrees of straight ahead, with a looser 45 degree cone to stay in it, because running backwards at 7.6 m/s through the rim is never what the thumb meant.
+
+### `input.h` and `input.c`
+**What it does:** the one place raylib is asked about the player. Collects the fingers (and the mouse as a finger), runs the touch logic, reads the keyboard and the locked mouse where the platform has them (each behind its capability, so the code for a device a platform lacks is not compiled there), applies the same `locked` and `walkOnly` rules to the keyboard and mouse, turns USE and SWAP into once-per-press, and reports `gesture` (a finger, click or key this frame: a browser opens the sound card only after one). `Input_NewTap` returns a finger that went down this frame, for the buttons that are taps (STATS, INV, the inventory screen).
+
+**Decisions:** it takes no game types, only the `InputContext` (the same struct the touch logic uses), so it can be tested and reused. The inventory and stats toggles from the keyboard are returned as flags; the buttons for them are taps handled where the screens are.
+
+### `tests/input_headless.c`
+**What it covers (67 checks):** the floating stick (appears under the thumb, stays put, forward is -y, full speed past the ring, dead zone, clamped near the edges, no stick above the zone or after 400 px), sprint (the ring fills, starts at 0.92 ahead, holds to 0.80, not sideways or backwards, ends when the knob swings round or the finger lifts), roles (second left finger ignored, the camera finger turns by exactly how far it moves, does not press JUMP in passing, a second camera finger is ignored), the fire pad (fires, aims, keeps firing off the pad, a camera finger sliding on does not fire, an occupied pad ignores a second finger), the buttons (only when available, light and slide once per tap), tap-only regions, `walkOnly` and `locked`, twelve fingers at once, and the layout (nothing outside the screen, no two controls overlapping, thumb-sized targets). Five deliberate breakages of the logic were each caught.
+
+## Not verified
+
+- Nothing here has been run on a phone. The logic is tested without a screen; the drawing, the thumb reach on a real 6.6 inch screen, the sizes of the targets and how the fire pad feels while aiming (the camera sensitivity while firing is the look sensitivity) need a person with the device. Positions and sizes are in `TcLayout` and `hud_layout.c`, one place each.
+- The desktop path (`TOWER_INPUT_POINTER_LOCK`, the keyboard-only scheme) compiles and is checked by `tests/platform_check.sh`, but no desktop build exists to run it.
+- A browser on a phone with a hardware keyboard attached would flip to the keyboard scheme on a key press and hide the touch controls until the next touch. Intended; not seen.
+
+## Fixes and Problems
+
+- Replaces the touch code that was written inline in `main.c` (a fixed stick, a RUN toggle button with an idle timer, a shoot rectangle that fired but did not aim). The old behaviour that was kept: a finger's job is fixed when it lands, walking works with the inventory open, a locked game ignores everything.

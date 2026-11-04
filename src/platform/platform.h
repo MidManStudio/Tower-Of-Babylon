@@ -49,6 +49,24 @@
 // live. Elsewhere the config is the baked copy only.
 #define TOWER_MDIX_WASM_BRIDGE TOWER_PLATFORM_WEB
 
+// Touch controls (the floating stick, the fire pad, the buttons) exist and are drawn. The browser has them because it runs on
+// phones; the Android build is a phone. Desktop has no touch screen to design for.
+#if TOWER_PLATFORM_WEB || TOWER_PLATFORM_ANDROID
+    #define TOWER_INPUT_TOUCH 1
+#else
+    #define TOWER_INPUT_TOUCH 0
+#endif
+
+// A keyboard is read (WASD, Shift, Space and the rest). The browser may be on a PC; the Android build is not played with one.
+#if TOWER_PLATFORM_WEB || TOWER_PLATFORM_DESKTOP
+    #define TOWER_INPUT_KEYBOARD 1
+#else
+    #define TOWER_INPUT_KEYBOARD 0
+#endif
+
+// The mouse is locked to the window and turns the camera with no button held (a first person shooter on a PC).
+#define TOWER_INPUT_POINTER_LOCK TOWER_PLATFORM_DESKTOP
+
 // The browser drives the frame loop (emscripten_set_main_loop); everywhere else main() runs its own while loop.
 #define TOWER_MAIN_LOOP_CALLBACK TOWER_PLATFORM_WEB
 

@@ -9,6 +9,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | Test | What it covers | Doc |
 |---|---|---|
 | `platform_check.sh` (not a C test) | main.c and every source compiled as web, Android and desktop, and `platform.h` checked against the table in `platforms.md` | `platforms.md` |
+| `input_headless.c` | the touch controls (floating stick, sprint at the rim, the fire pad that aims, roles, buttons, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
 | `audio_headless.c` | synthesiser numbers, limiter, voices, pan and distance, footsteps, every shipped sound recipe, the bank and the config registry | `audio.md` |
 | `dungeon_headless.c` | generator, floor window, probes | `dungeon.md` |
 | `stairs_headless.c` | staircase geometry and collision | `dungeon.md` |
