@@ -7,18 +7,22 @@
 #include <math.h>
 #include <string.h>
 
+// Canvas pixels (800 x 450). Measured off the hand-drawn layout sketch (1920 x 1080, scaled by 5/12): stick ring r 87 with an inner
+// disc r 56, the sprint icon r 22 above it, PICKUP r 46 and JUMP r 37 on the upper right, the fire pad r 71 with a disc r 42, SLIDE
+// r 37 to its left. The sketch has no SWAP or LIGHT button: they sit in free spots, SWAP between PICKUP and the pad (the thumb
+// leaves the pad for a moment) and LIGHT above them, both away from where the look finger works.
 static const TcLayout g_layout = {
-    .stickRadius = 50.0f, .knobRadius = 22.0f, .deadzone = 0.08f,
+    .stickRadius = 87.0f, .stickBaseRadius = 56.0f, .knobRadius = 30.0f, .deadzone = 0.08f,
     .stickZone = { 0.0f, 44.0f, 400.0f, 406.0f },
-    .stickMinX = 62.0f, .stickMaxX = 340.0f, .stickMinY = 118.0f, .stickMaxY = 388.0f,
+    .stickMinX = 99.0f, .stickMaxX = 340.0f, .stickMinY = 160.0f, .stickMaxY = 363.0f,
     .sprintOn = 0.92f, .sprintOff = 0.80f, .sprintConeOn = 0.342f, .sprintConeOff = 0.707f,   // cos 70 degrees, cos 45 degrees
-    .sprintIconGap = 12.0f, .idleX = 100.0f, .idleY = 350.0f,
-    .firePad = { 706.0f, 352.0f, 50.0f },
-    .jump = { 556.0f, 330.0f, 92.0f, 84.0f },
-    .use = { 560.0f, 225.0f, 210.0f, 70.0f },
-    .swap = { 450.0f, 330.0f, 92.0f, 84.0f },
-    .light = { 450.0f, 150.0f, 100.0f, 66.0f },
-    .slide = { 570.0f, 150.0f, 110.0f, 66.0f },
+    .sprintIconGap = 23.0f, .sprintIconRadius = 22.0f, .idleX = 128.0f, .idleY = 326.0f,
+    .firePad = { 724.0f, 315.0f, 71.0f }, .fireInnerRadius = 42.0f,
+    .jump = { 760.0f, 175.0f, 37.0f },
+    .use = { 639.0f, 172.0f, 46.0f },
+    .swap = { 632.0f, 258.0f, 30.0f },
+    .light = { 700.0f, 88.0f, 32.0f },
+    .slide = { 606.0f, 357.0f, 37.0f },
 };
 
 const TcLayout *Tc_Layout(void) { return &g_layout; }
@@ -52,11 +56,11 @@ static int AssignRole(TcState *s, float x, float y, const TcContext *ctx)
     }
     if (ctx->walkOnly) return TC_ROLE_IGNORE;                                                  // the inventory is open: the right half is for taps
 
-    if (ctx->useAvailable && UiRect_Contains(L->use, x, y)) return TC_ROLE_USE;
-    if (ctx->swapAvailable && UiRect_Contains(L->swap, x, y)) return TC_ROLE_SWAP;
-    if (ctx->lightAvailable && UiRect_Contains(L->light, x, y)) return TC_ROLE_LIGHT;
-    if (ctx->slideAvailable && UiRect_Contains(L->slide, x, y)) return TC_ROLE_SLIDE;
-    if (UiRect_Contains(L->jump, x, y)) return TC_ROLE_JUMP;
+    if (ctx->useAvailable && UiCircle_Contains(L->use, x, y)) return TC_ROLE_USE;
+    if (ctx->swapAvailable && UiCircle_Contains(L->swap, x, y)) return TC_ROLE_SWAP;
+    if (ctx->lightAvailable && UiCircle_Contains(L->light, x, y)) return TC_ROLE_LIGHT;
+    if (ctx->slideAvailable && UiCircle_Contains(L->slide, x, y)) return TC_ROLE_SLIDE;
+    if (UiCircle_Contains(L->jump, x, y)) return TC_ROLE_JUMP;
     if (UiCircle_Contains(L->firePad, x, y)) return HasRole(s, TC_ROLE_FIRE) ? TC_ROLE_IGNORE : TC_ROLE_FIRE;
     return HasRole(s, TC_ROLE_LOOK) ? TC_ROLE_IGNORE : TC_ROLE_LOOK;                          // a free spot on the right: the camera finger
 }

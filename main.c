@@ -41,6 +41,7 @@
 #include "audio/audio_events.h"
 #include "input/input.h"
 #include "hud/hud.h"
+#include "floor/floor_game.h"
 
 // Three floors live in static storage for WASM performance.
 static FloorWindow g_window;
@@ -128,6 +129,9 @@ static void DrainInventoryEvents(void)
 
 typedef enum { SEQ_NONE = 0, SEQ_OPENING, SEQ_FADING } DoorSeq;
 
+// True on a floor the player came down into: the stair clock is not run there.
+static bool floorCleared = false;
+
 // Moves the player through a door to the next or previous floor.
 static FloorMap *UseDoor(PlayerController *player, DoorId id)
 {
@@ -139,6 +143,8 @@ static FloorMap *UseDoor(PlayerController *player, DoorId id)
     SpawnEnemiesForFloor(map, g_window.currentFloor);
     SpawnFloorPickups(map, g_window.currentFloor);
     Lighting_BuildForFloor(map, g_window.currentFloor);
+    floorCleared = !up;                         // coming down into a floor already climbed: its stairs are open and there is no clock
+    FloorGame_NewFloor(map, g_window.currentFloor, floorCleared);
 
     Vector3 pos;
     float yaw;
@@ -193,6 +199,7 @@ static void RespawnPlayer(void)
     Projectiles_Clear();
     SpawnEnemiesForFloor(currentFloorMap, g_window.currentFloor);
     SpawnFloorPickups(currentFloorMap, g_window.currentFloor);
+    FloorGame_NewFloor(currentFloorMap, g_window.currentFloor, floorCleared);       // the clock starts again on a floor that had one
     doorOpen[DOOR_UP] = doorOpen[DOOR_DOWN] = 0.0f;
     seq = SEQ_NONE;
     fadeOut = 0.0f;
@@ -344,7 +351,9 @@ static void Frame(void)
         }
         if (nearDoor < 0) nearPickup = Pickups_NearestWeapon(player.position, PICKUP_REACH);
     }
-    const bool useAvailable = (nearDoor >= 0 || nearPickup >= 0) && !invOpen;
+    // The unlock console: USE is held there, not tapped. A door or a pickup in reach comes first.
+    const bool nearConsole = nearDoor < 0 && nearPickup < 0 && seq == SEQ_NONE && player.health.isAlive && FloorGame_NearConsole(player.position);
+    const bool useAvailable = (nearDoor >= 0 || nearPickup >= 0 || nearConsole) && !invOpen;
 
     // What the player wants this frame, from whatever the platform has: fingers, mouse, keyboard (src/input). The context says
     // which controls are live: nothing while a door opens or the player is dead, only walking with the inventory open,
@@ -516,6 +525,14 @@ static void Frame(void)
         AudioEvents_Enemies(dt, awake, awakeAt, awakeDist);
     }
 
+    // The stair clock: the console, the countdown, the collapse. Whoever is still on a floor that has fallen dies.
+    {
+        FloorGameIn fin = { dt, currentFloorMap, player.position, player.health.isAlive, in.useHeld && nearConsole && !invOpen, g_window.currentFloor };
+        FloorGameOut fout;
+        FloorGame_Frame(&fin, &fout);
+        if (fout.killPlayer && player.health.isAlive) { ApplyDamage(&player.health, player.health.maxHp * 10.0f); Toast("THE FLOOR GAVE WAY"); }
+    }
+
     // Blows that land on the player: damage, knockback, red flash and camera shake.
     if (player.health.isAlive) {
         float blow;
@@ -566,6 +583,7 @@ static void Frame(void)
             DrawEnemiesSystem(player.position); // Render the enemies, with attack and hit animations
 
             DrawStairs(currentFloorMap, doorOpen, player.position);
+            FloorGame_Draw(player.position, (float)GetTime());
             Highp_FlashlightOff();                              // the tracers, the hands and the screen are not lit by the beam
             DrawProjectilesSystem(player.camera.position);      // light that adds to what is behind it: after everything opaque
             SubNote(SUB_ENTS, tEnts0, GetTime());
@@ -619,14 +637,18 @@ static void Frame(void)
             hv.useShown = useAvailable;
             if (useAvailable) {
                 hv.useLocked = nearDoor >= 0 && Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap);
-                hv.useLabel = hv.useLocked ? "LOCKED" : (nearDoor == DOOR_UP ? "USE DOOR - UP" : "USE DOOR - DOWN");
-                if (nearDoor < 0) {
+                hv.useLabel = hv.useLocked ? "LOCKED" : (nearDoor == DOOR_UP ? "DOOR\nUP" : "DOOR\nDOWN");
+                if (nearDoor < 0 && nearPickup >= 0) {
                     static char pick[40];
-                    snprintf(pick, sizeof pick, "PICK UP %s", Pickup_Label(Pickups_Get(nearPickup)->kind));
+                    snprintf(pick, sizeof pick, "PICKUP\n%s", Pickup_Label(Pickups_Get(nearPickup)->kind));
                     hv.useLabel = pick;
+                } else if (nearDoor < 0) {
+                    hv.useLabel = "HOLD\nUNLOCK";                  // the stair clock's console
                 }
             }
             hv.slideShown = SlideButtonShown(); hv.invOpen = invOpen;
+            hv.stairPhase = FloorGame_Phase(); hv.consoleProgress = FloorGame_ConsoleProgress(); hv.consoleHeld = FloorGame_ConsoleHeld();
+            hv.stairCountdown = FloorGame_CountdownLeft(); hv.collapseLeft01 = FloorGame_CollapseLeft01();
             hv.debug = (HudDebug){ g_depthBits, g_msaaSamples, { subMs[SUB_LIGHT], subMs[SUB_WORLD], subMs[SUB_ENTS], subMs[SUB_HANDS] } };
             Hud_Draw(&hv);
         }
@@ -659,6 +681,7 @@ int main(void)
     Input_Init();
     Hud_Init();
     Audio_Init();                     // hands sounds.mdix to the config layer, so it must come before GameConfig_Init
+    FloorGame_Register();             // and floor.mdix, the stair clock's numbers
     GameConfig_Init();                // weapon and projectile numbers: the baked copy now, the .mdix files once the wasm is up
     ScreenFx_Init();
     Highp_Init();
@@ -681,6 +704,7 @@ int main(void)
     Inventory_Init(&inv);
     SpawnFloorPickups(currentFloorMap, g_window.currentFloor);
     Lighting_BuildForFloor(currentFloorMap, g_window.currentFloor);
+    FloorGame_NewFloor(currentFloorMap, g_window.currentFloor, false);
 
     {
         Vector3 spawn;

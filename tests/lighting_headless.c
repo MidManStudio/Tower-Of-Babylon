@@ -6,7 +6,7 @@
 // zones are dark and lit ones are lit, and how the lights move. Inside a macro so mray's build, which
 // compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DLIGHTING_HEADLESS_TEST -Isrc -Iraylib/src tests/lighting_headless.c src/lighting/lighting.c src/dungeon/dungeon_raycast.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o lighting_headless
+//   cc -O2 -std=c99 -DLIGHTING_HEADLESS_TEST -Isrc -Iraylib/src tests/lighting_headless.c src/lighting/lighting.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o lighting_headless
 // Run:
 //   ./lighting_headless                      checks only
 //   LIGHT_DUMP=out.txt ./lighting_headless   also writes the light of floor 1 as a grid

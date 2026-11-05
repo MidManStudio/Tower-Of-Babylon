@@ -3,6 +3,7 @@
 // live in docs/dungeon.md, section "dungeon_raycast.c"
 // ============================================================================
 #include "dungeon_raycast.h"
+#include "stair_collision.h"
 
 #include <math.h>
 
@@ -84,6 +85,11 @@ bool Dungeon_Raycast(const FloorMap *f, Vector3 o, Vector3 d, float maxDist, Dun
             if (RayBox(o, d, bmin, bmax, &t, &n) && t < bestT) { bestT = t; bestN = n; found = true; }
         }
 
+    {   // the flight of stairs in the up alcove is solid too
+        float ts; Vector3 ns;
+        if (Stair_Raycast(o, d, bestT, &ts, &ns)) { bestT = ts; bestN = ns; found = true; }
+    }
+
     if (!found) { if (hit) hit->hit = false; return false; }
     if (hit) {
         hit->hit = true;
@@ -143,6 +149,7 @@ bool Dungeon_PushOutSphere(const FloorMap *f, Vector3 *c, float r)
     // A sphere in a corner can touch two boxes, so repeat until it settles.
     for (int pass = 0; pass < 4; ++pass) {
         bool m = PushOutPass(f, c, r);
+        if (Stair_PushOutSphere(c, r)) m = true;
         if (c->y < r) { c->y = r; m = true; }
         if (Dungeon_HasCeiling(TileOfWorld(c->x), TileOfWorld(c->z)) && c->y > WALL_HEIGHT - r) { c->y = WALL_HEIGHT - r; m = true; }
         if (!m) break;
@@ -166,5 +173,6 @@ float Dungeon_SurfaceDistance(const FloorMap *f, Vector3 p)
             const float d = sqrtf((p.x - px) * (p.x - px) + (p.y - py) * (p.y - py) + (p.z - pz) * (p.z - pz));
             if (d < best) best = d;
         }
-    return best;
+    const float sd = Stair_SurfaceDistance(p);
+    return sd < best ? sd : best;
 }

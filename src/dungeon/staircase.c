@@ -6,30 +6,8 @@
 
 #include <math.h>
 
-// ---- Alcove interiors in world units ---------------------------------------
-#define ALC_X0   ((float)STAIR_WALL_X * TILE_SIZE + TILE_SIZE * 0.5f)    // 73, inside face of the west wall
-#define ALC_X1   ((float)(MAP_WIDTH - 1) * TILE_SIZE - TILE_SIZE * 0.5f) // 87, inside face of the east wall
-#define UP_Z0    (TILE_SIZE * 0.5f)                                      // 1
-#define UP_Z1    ((float)UP_ALCOVE_Z1 * TILE_SIZE - TILE_SIZE * 0.5f)    // 15
-
-// ---- The flight ------------------------------------------------------------
-// Two runs of 16 steps joined by a landing, 8 m of rise in all, in a switchback:
-//   run A  climbs east  along z 6.5..9.5,  x 76..84, y 0 -> 4
-//   landing                 x 84..87, z 6.5..15,     y 4
-//   run B  climbs west  along z 12..15,    x 84..76, y 4 -> 8
-//   top landing             x 73..76, z 12..15,      y 8, door in the west wall
-// Every step is a solid block from the floor up, so the flight is one solid mass.
-#define RUN_STEPS    16
-#define STEP_TREAD   0.5f
-#define RUN_X_LOW    76.0f
-#define RUN_X_HIGH   (RUN_X_LOW + (float)RUN_STEPS * STEP_TREAD)   // 84
-#define LANE_A_Z0    6.5f
-#define LANE_A_Z1    9.5f
-#define LANE_B_Z0    12.0f
-#define LANE_B_Z1    15.0f
-#define RUN_RISE     ((float)RUN_STEPS * STEP_RISE)                // 4
-#define RAIL_HALF    0.08f
-#define RAIL_HEIGHT  0.95f
+#include "stair_collision.h"
+#include "stair_layout.h"
 
 // ---- Doors -----------------------------------------------------------------
 #define DOOR_W        1.6f
@@ -48,76 +26,6 @@ static const DoorDef k_doors[DOOR_COUNT] = {
     { ALC_X1, -1.0f, 80.0f, 0.0f },
 };
 
-// ---- Collision boxes -------------------------------------------------------
-enum { BOX_SOLID = 0, BOX_RAIL = 1 };
-
-typedef struct {
-    float x0, x1, z0, z1, y0, y1;
-    unsigned char kind;
-} SBox;
-
-#define MAX_BOXES 48
-static SBox g_boxes[MAX_BOXES];
-static int  g_count = 0;
-static bool g_built = false;
-
-static void AddBox(float x0, float x1, float z0, float z1, float y0, float y1, unsigned char kind)
-{
-    if (g_count >= MAX_BOXES) return;
-    g_boxes[g_count++] = (SBox){ x0, x1, z0, z1, y0, y1, kind };
-}
-
-static void Build(void)
-{
-    if (g_built) return;
-    g_built = true;
-    g_count = 0;
-
-    for (int j = 0; j < RUN_STEPS; ++j) {                      // run A
-        const float x0 = RUN_X_LOW + (float)j * STEP_TREAD;
-        AddBox(x0, x0 + STEP_TREAD, LANE_A_Z0, LANE_A_Z1, 0.0f, (float)(j + 1) * STEP_RISE, BOX_SOLID);
-    }
-    AddBox(RUN_X_HIGH, ALC_X1, LANE_A_Z0, LANE_B_Z1, 0.0f, RUN_RISE, BOX_SOLID);   // landing
-    for (int j = 0; j < RUN_STEPS; ++j) {                      // run B
-        const float x1 = RUN_X_HIGH - (float)j * STEP_TREAD;
-        AddBox(x1 - STEP_TREAD, x1, LANE_B_Z0, LANE_B_Z1, 0.0f, RUN_RISE + (float)(j + 1) * STEP_RISE, BOX_SOLID);
-    }
-    AddBox(ALC_X0, RUN_X_LOW, LANE_B_Z0, LANE_B_Z1, 0.0f, 2.0f * RUN_RISE, BOX_SOLID);   // top landing
-
-    // Railings. They block, they are never stood on.
-    AddBox(RUN_X_LOW, RUN_X_HIGH, LANE_A_Z0 - RAIL_HALF, LANE_A_Z0 + RAIL_HALF, STEP_RISE, RUN_RISE + 1.0f, BOX_RAIL);
-    AddBox(RUN_X_LOW, RUN_X_HIGH, LANE_A_Z1 - RAIL_HALF, LANE_A_Z1 + RAIL_HALF, STEP_RISE, RUN_RISE + 1.0f, BOX_RAIL);
-    AddBox(RUN_X_HIGH, ALC_X1, LANE_A_Z0 - RAIL_HALF, LANE_A_Z0 + RAIL_HALF, RUN_RISE, RUN_RISE + 1.0f, BOX_RAIL);
-    AddBox(RUN_X_HIGH - RAIL_HALF, RUN_X_HIGH + RAIL_HALF, LANE_A_Z1, LANE_B_Z0, RUN_RISE, RUN_RISE + 1.0f, BOX_RAIL);
-    AddBox(ALC_X0, RUN_X_HIGH, LANE_B_Z0 - RAIL_HALF, LANE_B_Z0 + RAIL_HALF, RUN_RISE + STEP_RISE, 2.0f * RUN_RISE + 1.0f, BOX_RAIL);
-}
-
-float Staircase_GroundHeight(float x, float z, float y)
-{
-    Build();
-    float ground = 0.0f;
-    const float reach = y + STEP_UP_MAX + 0.001f;
-    for (int i = 0; i < g_count; ++i) {
-        const SBox *b = &g_boxes[i];
-        if (b->kind != BOX_SOLID) continue;
-        if (x < b->x0 || x > b->x1 || z < b->z0 || z > b->z1) continue;
-        if (b->y1 <= reach && b->y1 > ground) ground = b->y1;
-    }
-    return ground;
-}
-
-bool Staircase_Blocked(float x, float z, float radius, float y, float height)
-{
-    Build();
-    const float reach = y + STEP_UP_MAX + 0.001f;
-    for (int i = 0; i < g_count; ++i) {
-        const SBox *b = &g_boxes[i];
-        if (x < b->x0 - radius || x > b->x1 + radius || z < b->z0 - radius || z > b->z1 + radius) continue;
-        if (b->y1 > reach && b->y0 < y + height - 0.05f) return true;
-    }
-    return false;
-}
-
 // ---- Doors -----------------------------------------------------------------
 bool Staircase_DoorInRange(DoorId id, Vector3 p)
 {
@@ -127,8 +35,14 @@ bool Staircase_DoorInRange(DoorId id, Vector3 p)
     return p.y > d->baseY - 0.6f && p.y < d->baseY + 1.2f;
 }
 
+static bool g_upDoorLocked = false;
+void Staircase_SetUpDoorLocked(bool locked) { g_upDoorLocked = locked; }
+
+void Staircase_DoorPosition(DoorId id, float *x, float *z) { *x = k_doors[id].wallX; *z = k_doors[id].cz; }
+
 bool Staircase_DoorLocked(DoorId id, const FloorMap *floor)
 {
+    if (id == DOOR_UP) return g_upDoorLocked;
     return id == DOOR_DOWN && floor->floorNumber <= 1;
 }
 
@@ -174,11 +88,11 @@ static void DrawFlight(void)
     const Color treadA = (Color){ 98, 92, 94, 255 };
     const Color treadB = (Color){ 80, 76, 80, 255 };
 
-    Build();
     int solid = 0;
-    for (int i = 0; i < g_count; ++i) {
-        const SBox *b = &g_boxes[i];
-        if (b->kind != BOX_SOLID) continue;
+    for (int i = 0; ; ++i) {
+        const StairBox *b = Stair_Box(i);
+        if (!b) break;
+        if (b->kind != STAIR_BOX_SOLID) continue;
         Slab(b->x0, b->x1, 0.0f, b->y1, b->z0, b->z1, body);
         Slab(b->x0, b->x1, b->y1, b->y1 + 0.03f, b->z0, b->z1, (solid & 1) ? treadB : treadA);
         ++solid;

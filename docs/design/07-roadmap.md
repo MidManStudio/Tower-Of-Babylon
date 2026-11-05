@@ -12,14 +12,16 @@ A procedural tower with stairs; patchy ceiling lighting; enemies that hunt by no
 
 The game you could ship as "Survival mode", and the first time the stair clock is real.
 
-1. **The unlock mission** (M): a console somewhere on each floor that must be worked for a time (hold USE, 8 to 12 seconds, loud, spawns monsters when started). The first mission type, and the one that is always there.
-2. **The countdown and the collapse** (M): unlocking starts a countdown (30 to 45 s); at zero the door opens and the floor collapses in a wave from the far edge; anyone still on it dies. Falling-floor visuals can be simple (quads dropping and fading).
+1. **The unlock mission** (M) *first cut built (`docs/floor_run.md`)*: a console somewhere on each floor that must be worked for a time (hold USE, 8 to 12 seconds, loud, spawns monsters when started). The first mission type, and the one that is always there.
+2. **The countdown and the collapse** (M) *first cut built*: unlocking starts a countdown (30 to 45 s); at zero the door opens and the floor collapses in a wave from the far edge; anyone still on it dies. Falling-floor visuals can be simple (quads dropping and fading).
 3. **Sight for monsters** (M): view cone, range, line of sight, light and flashlight affecting it (`03-monsters-and-senses.md`). Sound through walls at a reduced radius.
 4. **Crouch** (S): `04-mechanics-and-systems.md`.
 5. **The angry floor** (S): a rising meter that makes monsters spawn faster and, past a limit, forces the stairs (the standoff fix, `01-game-loop.md`).
 6. **Score** (S): points from the mission and from kills, floors climbed, a results screen.
 
 *Done when:* a ten floor run is tense for reasons other than difficulty numbers, and you want to do another.
+
+*Later, noted from the owner:* the HUD is to become **customisable** (positions and sizes chosen by the player). The layout today (one `TcLayout` table in `src/input/touch_controls.c` and `hud_layout.c`, measured off the owner's sketch) is a placeholder, not a design to protect; saved positions will replace the table.
 
 ### M2. Character kits (L, in parts)
 

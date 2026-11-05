@@ -58,6 +58,8 @@ sounds.mdix --wasm (web)--------------/            |
 
 **Decisions:** these numbers are the first guess, chosen by reasoning about the player's speeds (4.5 m/s walking, 7.6 sprinting), not by ear.
 
+The stair clock adds four events, built from sounds that already exist (nobody has listened to them yet): `AudioEvents_ConsoleStart` (the use sound, low), `AudioEvents_Unlocked` (the door thud, low, then the use sound), `AudioEvents_CountTick(secondsLeft)` (the UI click, higher as the last ten seconds run out), `AudioEvents_Collapse` (the door thud lower still, then the alert). See `floor_run.md`.
+
 ### `tests/audio_headless.c`
 **What it covers (68 checks):** pitch (zero crossings of a fixed tone and of a 100 to 400 Hz glide against the maths), the envelope (1/e after the top), the low-pass, a layer's delay, no clipping and no scaling up, same seed same samples, refusing a too-small buffer, the seamless loop, the mixer, the limiter (a peak of 1.8 under 0.9 in the same buffer, recovery in about half a second), voices, pan and distance, footsteps, the delay queue, the baked table (sorted, hash equals the file), the bank loading, **every take of every shipped recipe** (full length, audible, not clipped, ends on zero), bad documents refused and nothing changed, and the config registry (register after load installs at once, the list is bounded).
 

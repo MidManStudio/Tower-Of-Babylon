@@ -1214,3 +1214,17 @@ static const MdixBakedEntry k_sounds[] = {
     { "sounds[]", 'i', "87" },
 };
 const MdixBaked g_bakedSounds = { "sounds.mdix", 0xeb161ee1u, k_sounds, (int)(sizeof k_sounds / sizeof k_sounds[0]) };
+
+// floor.mdix   FNV-1a 0x2d395610
+static const MdixBakedEntry k_stair_clock[] = {
+    { "stair_clock.collapse_ease", 'i', "0" },
+    { "stair_clock.collapse_secs", 'f', "40" },
+    { "stair_clock.console_drain_per_sec", 'f', "0.15" },
+    { "stair_clock.console_hold_secs", 'f', "10" },
+    { "stair_clock.console_reach", 'f', "2.4" },
+    { "stair_clock.countdown_secs", 'f', "30" },
+    { "stair_clock.monster_gap_secs", 'f', "1.5" },
+    { "stair_clock.monsters_on_start", 'i', "3" },
+    { "stair_clock.rage_speed", 'f', "1.35" },
+};
+const MdixBaked g_bakedFloor = { "floor.mdix", 0x2d395610u, k_stair_clock, (int)(sizeof k_stair_clock / sizeof k_stair_clock[0]) };

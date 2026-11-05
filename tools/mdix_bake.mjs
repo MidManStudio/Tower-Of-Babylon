@@ -60,6 +60,11 @@ const FLASHLIGHT_FIELDS = {
   beam_outer_deg: ["float"], range: ["float"], strength: ["float"], lag: ["float"], tint: ["int"],
 };
 
+const FLOOR_FIELDS = {
+  console_hold_secs: ["float"], console_drain_per_sec: ["float"], console_reach: ["float"], monsters_on_start: ["int"], monster_gap_secs: ["float"],
+  countdown_secs: ["float"], collapse_secs: ["float"], collapse_ease: ["int"], rage_speed: ["float"],
+};
+
 const SOUND_IDS = ["footstep", "jump", "land", "slide", "pipe_swing", "pipe_hit", "pistol", "shotgun", "shotgun_pump", "rifle", "dry_fire",
   "pickup", "use_item", "flash_click", "battery", "hurt", "death", "hit_confirm", "kill_confirm", "skitter", "alert", "door", "heartbeat",
   "ambient", "ui_click"];                                 // the order of SoundId in src/audio/sound_bank.h
@@ -70,6 +75,7 @@ const FILES = [
   { file: "projectiles.mdix", array: "projectiles", symbol: "g_bakedProjectiles", shape: "array" },
   { file: "flashlight.mdix", array: "flashlight", symbol: "g_bakedFlashlight", shape: "object" },
   { file: "sounds.mdix", array: "sounds", symbol: "g_bakedSounds", shape: "array" },
+  { file: "floor.mdix", array: "stair_clock", symbol: "g_bakedFloor", shape: "object" },
 ];
 
 // ---- helpers -----------------------------------------------------------------------------------------------
@@ -207,6 +213,11 @@ if (dbs.flashlight) {
   if (!(g("range") > 0 && g("range") <= 100)) bad("flashlight.range: must be above 0 and at most 100");
   if (!(g("strength") >= 0 && g("strength") <= 4)) bad("flashlight.strength: must be between 0 and 4");
   if (!(g("lag") > 0)) bad("flashlight.lag: must be above 0");
+}
+
+if (dbs.stair_clock) {
+  // The ranges are checked by the C loader (src/floor/floor_config.c), which tests/floor_run_headless.c runs on this very table.
+  checkFields(dbs.stair_clock, "stair_clock", FLOOR_FIELDS);
 }
 
 if (dbs.sounds) {

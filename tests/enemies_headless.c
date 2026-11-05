@@ -5,7 +5,7 @@
 // Everything is inside the macro so mray's build, which compiles every .c file,
 // does not pick up a second main(). It stubs the draw calls it links against.
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DENEMIES_HEADLESS_TEST -Isrc -Iraylib/src tests/enemies_headless.c src/enemies/enemy_manager.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o enemies_headless
+//   cc -O2 -std=c99 -DENEMIES_HEADLESS_TEST -Isrc -Iraylib/src tests/enemies_headless.c src/enemies/enemy_manager.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o enemies_headless
 // Run:
 //   ./enemies_headless
 #ifdef ENEMIES_HEADLESS_TEST
@@ -16,6 +16,8 @@
 #include "dungeon/dungeon_generator.h"
 #include "enemies/enemy_manager.h"
 #include "enemies/spider.h"
+#include "dungeon/stair_collision.h"
+#include "dungeon/staircase.h"
 
 void DrawCylinder(Vector3 p, float rt, float rb, float h, int slices, Color c) { (void)p; (void)rt; (void)rb; (void)h; (void)slices; (void)c; }
 void DrawCylinderWires(Vector3 p, float rt, float rb, float h, int slices, Color c) { (void)p; (void)rt; (void)rb; (void)h; (void)slices; (void)c; }
@@ -301,6 +303,73 @@ int main(void)
         }
         // Reach test: the stop distance is inside the bite reach, so a spider that stops there bites.
         Check(1.35f + 0.0f < 0.36f + 0.17f + 0.35f + SPIDER_REACH + 0.5f, "the spider's stop distance is inside its bite reach");
+    }
+
+    // Climbing the stairs: a monster that hears the player up on the flight follows the switchback to the top, and back down
+    // when the player goes down. Each seed is a different floor; the flight is the same on all of them.
+    {
+        const float dt = 1.0f / 60.0f;
+        const Vector3 top = { 74.5f, 8.0f, 13.5f }, below = { 64.0f, 0.0f, 8.0f };
+        int reachedTop = 0, reachedBottom = 0, trials = 0;
+        float worstStep = 0.0f, nearestToSolid = 1e9f, slowest = 0.0f;
+        for (uint32_t seed = 1; seed <= 4; ++seed) {
+            GenerateFloorMap(&g_floor, 2, seed * 4099u);
+            InitEnemiesSystem();
+            const int slot = Enemies_SpawnAt((Vector3){ 62.0f, 0.0f, 8.0f }, 1, true);
+            const Enemy *e = Enemies_At(slot);
+            ++trials;
+            if (!e || !e->active) continue;
+            Enemies_SetPlayerNoise(200.0f);
+            float prevY = e->position.y, t = 0.0f;
+            while (t < 40.0f) {                                                  // up
+                UpdateEnemiesSystem(dt, top, &g_floor);
+                t += dt;
+                const float dy = fabsf(e->position.y - prevY); prevY = e->position.y;
+                if (dy > worstStep) worstStep = dy;
+                const float sd = Stair_SurfaceDistance((Vector3){ e->position.x, e->position.y + 1.0f, e->position.z });
+                if (sd < nearestToSolid) nearestToSolid = sd;
+                if (e->position.y > 7.9f && hypotf(e->position.x - top.x, e->position.z - top.z) < 2.2f) { ++reachedTop; if (t > slowest) slowest = t; break; }
+            }
+            t = 0.0f;
+            const int gotUp = e->position.y > 7.9f;
+            while (gotUp && t < 40.0f) {                                         // and the player goes down: it follows
+                UpdateEnemiesSystem(dt, below, &g_floor);
+                t += dt;
+                const float dy = fabsf(e->position.y - prevY); prevY = e->position.y;
+                if (dy > worstStep) worstStep = dy;
+                if (e->position.y < 0.3f && hypotf(e->position.x - below.x, e->position.z - below.z) < 2.2f) { ++reachedBottom; break; }
+            }
+        }
+        printf("  (up in %.1f s at the slowest)\n", slowest);
+        Check(reachedTop == trials, "a monster that hears the player on the top landing climbs both runs and the landing to reach it (every seed)");
+        Check(slowest > 0.0f && slowest < 30.0f, "and does it in well under 30 s (about 40 m of route at 3.9 m/s)");
+        Check(worstStep < 0.31f, "it never jumps by more than a step (0.25 m) between frames, up or down");
+        Check(nearestToSolid > 0.2f, "and never walks into the blocks: the middle of its body stays clear of every step");
+        Check(reachedBottom == reachedTop && reachedBottom == trials, "when the player goes down to the hall it follows back down the flight (every seed)");
+
+        // A railing stops it like a wall: a monster beside the flight, the player up on it. It must never be inside the railing,
+        // and it must still get there, by going round to the foot of the flight.
+        GenerateFloorMap(&g_floor, 2, 4099u);
+        InitEnemiesSystem();
+        const int s2 = Enemies_SpawnAt((Vector3){ 80.0f, 0.0f, 3.0f }, 1, true);       // north of run A, inside the alcove
+        Enemies_SetPlayerNoise(200.0f);
+        const Enemy *e2 = Enemies_At(s2);
+        int inRail = 0, climbedRound = 0;
+        for (int i = 0; i < 60 * 30; ++i) {
+            UpdateEnemiesSystem(dt, (Vector3){ 80.0f, 2.0f, 8.0f }, &g_floor);
+            if (Staircase_Blocked(e2->position.x, e2->position.z, ENEMY_STAIR_CLEARANCE, e2->position.y, e2->height)) ++inRail;
+            if (e2->position.y > 1.0f) { climbedRound = 1; break; }
+        }
+        Check(inRail == 0, "a monster beside the flight never walks into the railing on the way to the player on it");
+        Check(climbedRound, "it goes round to the foot of the flight and climbs");
+
+        // Enemies_SpawnAt: slots are used, recycled, and run out.
+        InitEnemiesSystem();
+        int made = 0;
+        for (int i = 0; i < MAX_FLOOR_ENEMIES + 3; ++i) if (Enemies_SpawnAt((Vector3){ 20.0f, 0.0f, 20.0f }, 1, false) >= 0) ++made;
+        Check(made == MAX_FLOOR_ENEMIES && Enemies_SpawnAt((Vector3){ 20.0f, 0.0f, 20.0f }, 1, false) == -1, "Enemies_SpawnAt fills the slots and then says no (-1)");
+        for (int i = 0; i < 400; ++i) CheckAndHandleEnemyDamage((Vector3){ 20.0f, 1.0f, 20.0f }, 0.4f, 50.0f);
+        Check(Enemies_SpawnAt((Vector3){ 20.0f, 0.0f, 20.0f }, 1, false) >= 0, "and a killed enemy's slot is used again");
     }
 
     printf("\n%s\n", g_failures ? "FAIL" : "PASS");

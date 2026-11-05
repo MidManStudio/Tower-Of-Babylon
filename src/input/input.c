@@ -94,7 +94,7 @@ void Input_Update(const InputContext *ctx, InputFrame *f)
         if (IsKeyDown(KEY_F)) { f->fire = true; key = true; }
         if (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_LEFT_CONTROL)) { f->slide = true; key = true; }
         if (IsKeyPressed(KEY_L)) { f->light = true; key = true; }
-        if (IsKeyPressed(KEY_E)) { useHeld = true; key = true; }
+        if (IsKeyDown(KEY_E)) { useHeld = true; key = true; }
         if (IsKeyPressed(KEY_Q)) { swapHeld = true; key = true; }
         if (IsKeyPressed(KEY_I) || IsKeyPressed(KEY_TAB)) { f->inventoryToggle = true; key = true; }
         if (IsKeyPressed(KEY_P)) { f->statsToggle = true; key = true; }
@@ -121,6 +121,7 @@ void Input_Update(const InputContext *ctx, InputFrame *f)
         f->jump = f->fire = f->light = f->slide = false;
         useHeld = swapHeld = false;
     }
+    f->useHeld = useHeld;
     f->use = useHeld && !g_prevUse;                                // USE and SWAP act once per press, not on every frame they are held
     f->swap = swapHeld && !g_prevSwap;
     g_prevUse = useHeld;

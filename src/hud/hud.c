@@ -65,6 +65,8 @@ void Hud_Draw(const HudView *v)
         DrawText("STATS", (int)HudLayout_StatsButton().x + 10, (int)HudLayout_StatsButton().y + 9, 14, WHITE);
     }
 
+    if (!v->invOpen) HudRun_Draw(v);
+
 #if HUD_VITALS_ALWAYS_ON
     DrawText(v->weaponIsGun ? TextFormat("%s  %d", v->weaponName, v->ammo) : v->weaponName, 800 / 2 + 108, 450 - 24, 16, v->weaponDry ? RED : WHITE);
     ScreenFx_DrawHealthBar(800 / 2 - 100, 450 - 22, 200, 14, v->hp, v->maxHp);

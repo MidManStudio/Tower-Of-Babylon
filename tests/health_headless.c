@@ -6,7 +6,7 @@
 // real player controller, staircase and screen_fx code and stubs the draw calls. Inside a
 // macro so mray's build, which compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DHEALTH_HEADLESS_TEST -Isrc -Iraylib/src tests/health_headless.c src/player/player_controller.c src/dungeon/staircase.c src/ui/screen_fx.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o health_headless
+//   cc -O2 -std=c99 -DHEALTH_HEADLESS_TEST -Isrc -Iraylib/src tests/health_headless.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/ui/screen_fx.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o health_headless
 // Run:
 //   ./health_headless
 #ifdef HEALTH_HEADLESS_TEST

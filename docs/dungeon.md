@@ -42,6 +42,8 @@ Three dimensional queries against a floor treated as solid geometry: the floor p
 
 Rays only test tiles inside the ray's own bounding box, so a query costs a handful of box tests. A ray that starts inside a solid tile reports no hit for that tile. All normals are axis aligned.
 
+The flight of stairs in the up alcove is solid too: all three queries also ask `stair_collision.c`. That one change is why shots stop at the stairs and spiders (which crawl by these queries) can crawl over them. The railings are left out (bars: a shot goes between them).
+
 ### `dungeon_generator.h` and `dungeon_generator.c`
 
 `GenerateFloorMap(out, floor, towerSeed)` runs the steps above. `DungeonFloorSeed` mixes tower seed and floor number with an integer hash. `ValidateFloorMap` checks the hard rules: shell and alcoves unchanged, up pad and upper arrival reachable, no cut-off pockets, route no longer than 260 steps.
@@ -62,9 +64,9 @@ The up alcove holds a real flight: two runs of 16 steps (0.25 m rise, 0.5 m trea
 
 Every step is a solid block from the floor up, kept in one table of boxes. Drawing, ground height and blocking all read that same table, so what is seen is what is walked on. Railings are boxes that block but are never stood on, and are drawn as handrails with posts.
 
-- `Staircase_GroundHeight(x, z, y)`: height of the highest standable surface under the point that is at most `STEP_UP_MAX` (0.30 m) above `y`. A player on the floor under the top landing is not lifted onto it.
-- `Staircase_Blocked(x, z, radius, y, height)`: true when the body would overlap a block or railing it cannot step onto. The player controller uses a 0.30 m clearance, which keeps the camera off the step faces.
-- `Staircase_DoorInRange`, `Staircase_DoorLocked`: a door is in reach within 2.4 m of its wall and about 1.7 m either side of its centre, at the right height. Only the down door of floor 1 is locked.
+- `Staircase_GroundHeight(x, z, y)` (defined in `stair_collision.c`): height of the highest standable surface under the point that is at most `STEP_UP_MAX` (0.30 m) above `y`. A player on the floor under the top landing is not lifted onto it.
+- `Staircase_Blocked(x, z, radius, y, height)` (also in `stair_collision.c`): true when the body would overlap a block or railing it cannot step onto. The player controller uses a 0.30 m clearance, which keeps the camera off the step faces.
+- `Staircase_DoorInRange`, `Staircase_DoorLocked`: a door is in reach within 2.4 m of its wall and about 1.7 m either side of its centre, at the right height. The down door of floor 1 is locked for good; the up door is locked while the stair clock runs (`Staircase_SetUpDoorLocked`, set each frame by `src/floor`, off by default so a floor with no clock never locks it; `floor_run.md`). `Staircase_DoorPosition` gives a door's middle for the collapse wave to run toward.
 - `Staircase_SpawnBelow` / `Staircase_SpawnAbove`: where the player stands after a door. Below is 2.8 m in front of the down door at floor level, facing west. Above is on the top landing 2.6 m from the up door, facing east. Both are just outside door reach, so arriving does not offer the door again.
 - `DrawStairs(floor, doorOpen)`: draws the shaft, flight, rails and both doors. The alcove walls are only 6 m tall, so the shaft carries them up to 11.5 m and caps the top, which makes the climb end in a small dark room. Only the current floor's flight is drawn.
 
@@ -72,7 +74,21 @@ Doors are sliding slabs in front of a frame, with a doorway panel that goes from
 
 The flight is identical on every floor, so it is constants, not part of `FloorMap`.
 
+### `stair_layout.h`
+
+The numbers of the flight (alcove edges, the runs, the lanes, the rises, the railing size), moved out of `staircase.c` so the drawing and the collision read one copy and cannot drift apart. Included only by `staircase.c` and `stair_collision.c`.
+
+### `stair_collision.h` and `stair_collision.c`
+
+**What it does:** the flight as solid geometry with no drawing in it. The box table (steps, landings, railings: `Stair_Box` for the drawing); the player's queries (`Staircase_GroundHeight`, `Staircase_Blocked`, moved here unchanged); `Stair_Raycast` (slab test, the nearest solid box, normal out, a ray that starts inside a box ignores it, railings ignored), `Stair_PushOutSphere`, `Stair_SurfaceDistance` (all three hooked into `dungeon_raycast.c`); and the route a walking monster takes, `Stair_OnFlight` and `Stair_ChaseWaypoint`.
+
+**The route:** the flight is a switchback, and a monster that steers straight at its target runs into a railing and stays there. The route is four points: the foot of run A, the far end of run A with the landing, the start of run B, the top landing. `Stair_ChaseWaypoint(from, to)` says where a monster should head: in the hall, to the doorway of the alcove, then in to the foot; on the flight, on to the next corner when the target is above and back to the previous one when it is below; or nothing (walk straight) when neither is on the flight, or both are on the same stretch. It keeps no state: it works from where the two are now, so a monster knocked back or overshooting a corner just takes the next corner.
+
+**Decisions:** monsters keep 0.3 m from steps and railings, the player's own clearance (`ENEMY_STAIR_CLEARANCE`), not their body radius. A monster up to 0.7 m wide would otherwise be wider than a 0.5 m tread and never get onto the first step (found on one seed of the first test).
+
 ### `dungeon_renderer.h` and `dungeon_renderer.c`
+`DrawFloorMapCollapse(cx, cz, radius)`: floor tiles farther than the radius from the point are not drawn (the ceiling stays); a negative radius is off. The stair clock sets it each frame.
+
 
 `DrawFloorMap(floor, viewer, yOffset)` draws everything in view of one floor: a floor quad for every open tile, a ceiling quad over every open tile that has a ceiling (`Dungeon_HasCeiling`, so not over the stair alcoves) and the faces of every wall tile that touches open space. Where a ceiling light hangs, the ceiling tile is built around it: nine quads (four of ceiling, four of dark frame, the glowing panel) that touch along their edges and never overlap, so the light is part of the ceiling and not a second surface laid over it. Ceiling colour inside such a tile is interpolated from the tile's four corner colours, so the light does not break the gradient. All of it is within 18 tiles of the viewer. Every surface is a quad whose four corners are coloured separately, and the colour of a corner is its surface colour times a shade for the direction it faces, times a fade with distance, times the light at that corner (`Lighting_Corner`, `Lighting_Tint`, see `lighting.md`). So pools of light, dark patches and the fade to black are smooth gradients over each surface, not one flat colour per tile.
 
@@ -106,7 +122,7 @@ Replaces the raylib draw calls with recorders, runs `DrawFloorMapFacing` on gene
 
 ### `stairs_headless.c`
 
-Links the real player controller and staircase code with stubbed draw calls. It walks the whole flight up and down with scripted input, and checks the rail, the solid mass, falling, jumping on the stairs and the door queries. Build line in the file header. Whole file sits inside `STAIRS_HEADLESS_TEST`.
+Links the real player controller and staircase code with stubbed draw calls. It walks the whole flight up and down with scripted input, and checks the rail, the solid mass, falling, jumping on the stairs and the door queries. It also covers `stair_collision.c`: rays along and down onto the steps, a ray that misses, starts inside, or goes between the railings, push-out and distance, and every case of the monster route (hall, doorway, foot, each stretch, up and down). Build line in the file header. Whole file sits inside `STAIRS_HEADLESS_TEST`.
 
 ## CI and Workflows
 
@@ -188,11 +204,14 @@ The depth range changes stay: they cost nothing, give the hands real depth sorti
 
 Nothing here could be run on the phone. The renderer test checks the geometry and offline renders were looked at by eye; neither can show a shader precision problem, which is why this one survived three rounds.
 
+### The stairs became solid (monsters and shots)
+The flight was drawn and walkable for the player but invisible to everything else: shots went through it and monsters walked through the steps. Now: the geometry lives in `stair_collision.c`; `Dungeon_Raycast`, `Dungeon_PushOutSphere` and `Dungeon_SurfaceDistance` include it (shots stop, spiders crawl on it); the cylinder enemies follow the ground height up and down, are blocked by railings and steps they cannot climb, and follow the route above to reach a player on the flight, up and down. Two bugs the tests found on the way: a monster waited forever at the doorway waypoint because the rule that sent it there stayed true on arrival; and a monster 0.6 m wide could not mount the first step (0.5 m tread) until it used the player's 0.3 m clearance. Every mutation (route off, no ground following, full radius, stairs left out of the raycast) was caught by the tests.
+
 ### Known limits
 
 - The test obstacle at tile (3, 3) may land inside a generated wall.
 - The down door is a plain door at floor level, not the top of a descending flight. It leads to the top landing of the flight on the floor below, so going down means walking down the flight there.
-- Spiders and the cylinder enemies do not see the stair blocks. They can walk or crawl through the flight if they wander into the up alcove, and projectiles pass through it.
+- The stairs are solid for shots, spiders and the cylinder enemies, and the cylinder enemies climb them (see "The stairs became solid" below). Spiders crawl over them by the raycast like any surface; that has only been tested for not walking through, not for how it looks. Melee does not stop at the stairs (it is a sphere or arc test around the player).
 - The stairs were checked headless on x86 with scripted input only. How they look and feel on screen, and the frame rate on the phone, are not checked.
 - Open space is steady around 84 percent. Making floors more maze-like needs a different partition rule, not smaller span targets, because the 3 tile corridor rule is what limits density.
 - `src/world.c` and `src/world.h` are not used by `main.c`.

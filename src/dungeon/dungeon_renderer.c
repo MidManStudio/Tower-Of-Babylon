@@ -114,6 +114,9 @@ static bool InView(float cx, float cy, float cz, float radius)
     return dot > limit;
 }
 
+static float g_collapseX = 0.0f, g_collapseZ = 0.0f, g_collapseR = -1.0f;
+void DrawFloorMapCollapse(float cx, float cz, float radius) { g_collapseX = cx; g_collapseZ = cz; g_collapseR = radius; }
+
 static bool g_keepDark = false;
 void DrawFloorMapKeepDark(bool keep) { g_keepDark = keep; }
 
@@ -336,7 +339,8 @@ static void DrawView(const FloorMap *floor, Vector3 viewer, float yOffset)
                 // Open ground: a floor tile, and a ceiling tile above it wherever there is a ceiling.
                 // Beyond the fade distance both are black, so they are not drawn at all.
                 if (d - 1.5f > g_fadeEnd) continue;
-                if (InView(tx, yOffset, tz, 1.5f)) DrawSurfaceTile(floor, x, z, yOffset, FloorColour(x, z), SHADE_FLOOR, true);
+                const bool fallen = g_collapseR >= 0.0f && hypotf(tx - g_collapseX, tz - g_collapseZ) > g_collapseR;
+                if (!fallen && InView(tx, yOffset, tz, 1.5f)) DrawSurfaceTile(floor, x, z, yOffset, FloorColour(x, z), SHADE_FLOOR, true);
                 if (Dungeon_HasCeiling(x, z) && InView(tx, ceilY, tz, 1.5f)) {
                     const Fixture *panel = Lighting_PanelOnTile(x, z);
                     if (panel) DrawCeilingWithPanel(floor, x, z, ceilY, panel);

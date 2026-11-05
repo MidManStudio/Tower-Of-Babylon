@@ -7,7 +7,7 @@
 // muzzle against a wall, pellets). Drawing goes through stubs that collect the quads.
 // Inside a macro so mray's build, which compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DPROJECTILES_HEADLESS_TEST -Isrc -Iraylib/src tests/projectiles_headless.c src/projectiles/projectiles.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/projectiles/projectile_simulation.c src/weapons/gunfire.c src/weapons/weapons.c src/dungeon/dungeon_raycast.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c -lm -o projectiles_headless
+//   cc -O2 -std=c99 -DPROJECTILES_HEADLESS_TEST -Isrc -Iraylib/src tests/projectiles_headless.c src/projectiles/projectiles.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/projectiles/projectile_simulation.c src/weapons/gunfire.c src/weapons/weapons.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c -lm -o projectiles_headless
 // Run:
 //   ./projectiles_headless
 #ifdef PROJECTILES_HEADLESS_TEST
@@ -222,6 +222,38 @@ int main(void)
         Projectiles_Spawn(PISTOL, (Vector3){ 10.0f, 1.5f, 18.0f }, (Vector3){ 0.3f, 0.95f, 0 }, 55.0f, 25.0f);
         for (frames = 0; Projectiles_Active() && frames < 20; ++frames) Step(&g_map);
         Check(Projectiles_Active() == 0 && Impacts_Active() == 1, "and into the ceiling");
+
+        // The flight of stairs in the up alcove is solid: a round stops at it (it used to go straight through).
+        {
+            static FloorMap hall;
+            memset(&hall, 0, sizeof hall);
+            for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) hall.grid[z][x].type = TILE_FLOOR;   // open, so only the stairs are in the way
+
+            InitProjectilesSystem(); ClearTargets();
+            AddTarget(86.0f, 1.1f, 8.0f, 0.4f);                                       // on the far side of run A and the landing
+            Projectiles_Spawn(RIFLE, (Vector3){ 74.0f, 1.1f, 8.0f }, (Vector3){ 1, 0, 0 }, 85.0f, 14.0f);
+            int frames2 = 0;
+            while (Projectiles_Active() && frames2 < 40) { Step(&hall); ++frames2; }
+            Check(Projectiles_Active() == 0 && g_targets[0].hits == 0, "a round fired along run A at knee height stops at the steps: the target behind them is not hit");
+            Check(Impacts_Active() == 1, "and sparks on them");
+
+            InitProjectilesSystem(); ClearTargets();
+            AddTarget(86.5f, 5.0f, 8.0f, 0.4f);
+            Projectiles_Spawn(RIFLE, (Vector3){ 74.0f, 5.0f, 8.0f }, (Vector3){ 1, 0, 0 }, 85.0f, 14.0f);
+            for (frames2 = 0; Projectiles_Active() && frames2 < 40; ++frames2) Step(&hall);
+            Check(g_targets[0].hits == 1 && Impacts_Active() == 0, "the same shot a metre above the top of the flight flies over it and hits (the stairs are not an invisible wall)");
+
+            InitProjectilesSystem(); ClearTargets();
+            Projectiles_Spawn(RIFLE, (Vector3){ 60.0f, 5.0f, 13.5f }, (Vector3){ 1, 0, 0 }, 85.0f, 14.0f);          // at the top landing's 8 m mass, from the hall
+            for (frames2 = 0; Projectiles_Active() && frames2 < 40; ++frames2) Step(&hall);
+            Check(Projectiles_Active() == 0 && Impacts_Active() == 1, "a round from the hall into the solid under the top landing is stopped by it");
+
+            InitProjectilesSystem(); ClearTargets();
+            AddTarget(80.25f, 2.45f, 8.0f, 0.3f);                                     // a target on run A (the step there is 2.25 m up)
+            Projectiles_Spawn(RIFLE, (Vector3){ 74.0f, 2.5f, 8.0f }, (Vector3){ 1, 0, 0 }, 85.0f, 14.0f);
+            for (frames2 = 0; Projectiles_Active() && frames2 < 40; ++frames2) Step(&hall);
+            Check(g_targets[0].hits == 1, "and a target on the flight is still hit by a round that clears the steps below it");
+        }
 
         // Hits on the first frame count too: a target right at the muzzle.
         InitProjectilesSystem(); ClearTargets();

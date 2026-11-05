@@ -16,7 +16,7 @@
 #define GRID_X  (PANEL_X + 16)
 #define GRID_Y  (PANEL_Y + 42)
 
-static const Rectangle OPEN_BTN  = { 698.0f, 178.0f, 92.0f, 36.0f };
+static const Rectangle OPEN_BTN  = { 698.0f, 8.0f, 92.0f, 36.0f };      // top right corner, mirroring STATS: the layout sketch has the round buttons where it used to be
 static const Rectangle CLOSE_BTN = { PANEL_X + PANEL_W - 52.0f, PANEL_Y + 6.0f, 40.0f, 26.0f };
 static const Rectangle MAIN_BTN  = { PANEL_X + 330.0f, PANEL_Y + 202.0f, 150.0f, 30.0f };
 static const Rectangle DROP_BTN  = { PANEL_X + 330.0f, PANEL_Y + 240.0f, 150.0f, 30.0f };

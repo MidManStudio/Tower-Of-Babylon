@@ -19,7 +19,10 @@ The popup also holds the **DIAGNOSTICS switch**, which shows the overlay that us
 **What it does:** `Hud_Draw(view)`; the toast (`Hud_Toast`, shown for 1.8 s, fading); `Hud_HandleTap(tap, inventoryOpen)`, which uses a tap on the STATS button, the popup's X and switch, the popup body (it swallows taps on itself) and the diagnostic rows, and says whether it did; `Hud_BlockedRects`, the tap-only regions to give the input system (the STATS button, the popup while open, the diagnostic rows while on); open, close and toggle for the popup. Touch controls are drawn only when the touch scheme is in use (`docs/input.md`).
 
 ### `hud_controls.c`
-**What it does:** draws the touch controls from the touch state: the floating stick (a faint ring where it would appear when no finger is down), the sprint icon above it (two chevrons in a ring: white, a ring filling as the knob nears the rim, yellow while sprinting, orange with TIRED when the push is there but the player cannot), the fire pad (red while held; FIRE, SWING or PUNCH by weapon), JUMP, and the contextual USE (green, red when locked), SWAP, SLIDE, LIGHT (with its charge bar and the low-charge blink).
+**What it does:** draws the touch controls from the touch state, laid out as in the owner's sketch (`input.md`, "The layout"; a placeholder until the HUD is customisable): the floating stick as an outer ring, an inner disc and a knob (a faint ring where it would appear when no finger is down), the sprint icon above it (two chevrons in a ring: white, a ring filling as the knob nears the rim, yellow while sprinting, orange with TIRED when the push is there but the player cannot), the fire pad as a ring with a button disc and a bullet (red while held; FIRE, SWING or PUNCH by weapon), and round buttons: JUMP, the contextual USE (green, red when locked; its label is two lines, PICKUP over the item's name, DOOR over UP or DOWN, HOLD over UNLOCK at the stair clock's console), SWAP, SLIDE, and LIGHT with its charge as a ring round the button and the low-charge blink. A button's label is shrunk until it fits its disc.
+
+### `hud_run.c`
+**What it does:** the stair clock on the screen (`floor_run.md`), top middle: a bar while the console is being worked ("UNLOCKING THE STAIRS", orange when let go), then STAIRS UNLOCKED with the countdown as m:ss (red and blinking in the last ten seconds), then THE FLOOR IS COLLAPSING with a bar of how much floor is left and GET TO THE DOOR. `HudView` carries `stairPhase`, `consoleProgress`, `consoleHeld`, `stairCountdown`, `collapseLeft01`; the HUD asks the game for nothing.
 
 ### `hud_stats.c`
 **What it does:** the popup. Reuses `ScreenFx_DrawHealthBar` and `ScreenFx_DrawStaminaBar`.
@@ -29,6 +32,7 @@ The popup also holds the **DIAGNOSTICS switch**, which shows the overlay that us
 
 ## Not verified
 
+- The whole layout is a placeholder: the HUD is to become customisable (positions and sizes chosen by the player). The layout today is one table plus `hud_layout.c`; saved positions will replace the table.
 - Not seen on a screen. The popup's size (330 x 270 of 800 x 450), the text sizes (11 to 20 px) and the button sizes were chosen from the numbers, not by eye on the phone. The layout test checks that everything is inside the screen, that nothing overlaps, and that the X and the buttons are big enough to hit; it cannot say whether the popup is comfortable to read.
 - With the vitals off the screen, the player's only live health cues are the screen effects (the red flash, the low-health vignette) and the heartbeat sound. If that is too little, set `HUD_VITALS_ALWAYS_ON` to 1.
 

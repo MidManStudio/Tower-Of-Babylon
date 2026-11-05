@@ -28,6 +28,10 @@ void DrawFloorMapView(const FloorMap *floor, Vector3 eye, Vector3 forward, float
 // them anyway: for tests that count every surface, and for seeing the whole map when hunting a rendering fault.
 void DrawFloorMapKeepDark(bool keep);
 
+// The collapse: floor tiles farther than radius from (cx, cz) are not drawn (they have fallen away; the ceiling stays). A negative
+// radius turns it off. Set each frame by src/floor.
+void DrawFloorMapCollapse(float cx, float cz, float radius);
+
 // The flashlight, for the renderer. Pass the flashlight and where the light is before drawing each frame (NULL, or a light
 // that is off, clears it). Two things change:
 //   * A quad the lighting left black is normally not drawn at all. One the beam can reach is drawn anyway (black), so the

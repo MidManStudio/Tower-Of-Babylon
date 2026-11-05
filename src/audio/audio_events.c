@@ -77,6 +77,10 @@ void AudioEvents_UseItem(void)  { Audio_Play(SND_USE_ITEM, 1.0f); }
 void AudioEvents_Battery(void)  { Audio_Play(SND_BATTERY, 1.0f); }
 void AudioEvents_Flashlight(bool on) { Audio_PlayEx(SND_FLASH_CLICK, 1.0f, on ? 1.12f : 0.88f, 0.0f); }
 void AudioEvents_Door(void)     { Audio_Play(SND_DOOR, 1.0f); }
+void AudioEvents_ConsoleStart(void) { Audio_PlayEx(SND_USE_ITEM, 1.0f, 0.8f, 0.0f); }
+void AudioEvents_Unlocked(void) { Audio_PlayEx(SND_DOOR, 1.0f, 0.75f, 0.0f); Audio_PlayIn(SND_USE_ITEM, 0.25f, 1.0f); }
+void AudioEvents_CountTick(int secondsLeft) { Audio_PlayEx(SND_UI_CLICK, 1.0f, 0.9f + (float)(10 - secondsLeft) * 0.07f, 0.0f); }      // higher as it runs out
+void AudioEvents_Collapse(void) { Audio_PlayEx(SND_DOOR, 1.0f, 0.6f, 0.0f); Audio_PlayIn(SND_ALERT, 0.3f, 1.0f); }
 
 void AudioEvents_Health(float fraction, bool alive)
 {

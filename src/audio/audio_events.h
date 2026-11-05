@@ -29,6 +29,10 @@ void AudioEvents_UseItem(void);
 void AudioEvents_Battery(void);
 void AudioEvents_Flashlight(bool on);                                           // the switch
 void AudioEvents_Door(void);
+void AudioEvents_ConsoleStart(void);                                            // the stair clock (src/floor): the console is being worked
+void AudioEvents_Unlocked(void);                                                // ...it unlocked
+void AudioEvents_CountTick(int secondsLeft);                                    // ...a second of the last ten
+void AudioEvents_Collapse(void);                                                // ...the door opened and the floor goes
 void AudioEvents_Enemies(float dt, bool anyAwake, Vector3 at, float dist);      // from Enemies_NearestAwake: the first growl and the skittering
 void AudioEvents_Ambience(bool on);
 

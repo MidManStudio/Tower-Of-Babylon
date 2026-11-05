@@ -36,6 +36,13 @@ bool Staircase_DoorInRange(DoorId id, Vector3 playerPos);
 // The down door of floor 1 is locked. The up door is never locked.
 bool Staircase_DoorLocked(DoorId id, const FloorMap *floor);
 
+// The up door is shut until the stair clock opens it (src/floor): the game sets this each frame. Off by default, so a test or a
+// floor with no clock has an up door that is never locked.
+void Staircase_SetUpDoorLocked(bool locked);
+
+// Where a door is in the floor (the middle of its opening on the wall), for the clock's wave to run toward.
+void Staircase_DoorPosition(DoorId id, float *x, float *z);
+
 // Where the player stands, and which way they face, after coming out of a door.
 // Below: came up from the floor beneath, stands in front of this floor's down door.
 // Above: came down from the floor above, stands on the top landing by the up door.

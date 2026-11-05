@@ -6,7 +6,7 @@
 // does not pick up a second main(). It links the real player controller and
 // staircase code and stubs the draw calls and the obstacle test.
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DSTAIRS_HEADLESS_TEST -Isrc -Iraylib/src tests/stairs_headless.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o stairs_headless
+//   cc -O2 -std=c99 -DSTAIRS_HEADLESS_TEST -Isrc -Iraylib/src tests/stairs_headless.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o stairs_headless
 // Run:
 //   ./stairs_headless
 #ifdef STAIRS_HEADLESS_TEST
@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include "dungeon/dungeon_generator.h"
+#include "dungeon/stair_collision.h"
 #include "dungeon/staircase.h"
 #include "player/player_controller.h"
 
@@ -171,6 +172,56 @@ int main(void)
     GenerateFloorMap(&g_floor, 1, 12345u);
     Check(Staircase_DoorLocked(DOOR_DOWN, &g_floor), "down door is locked on floor 1");
     Check(!Staircase_DoorLocked(DOOR_UP, &g_floor), "up door is never locked");
+
+    printf("\nThe flight as solid geometry: rays, push-out, distance\n");
+    {
+        float tt; Vector3 n;
+        const Vector3 east = { 1, 0, 0 };
+        Check(Stair_Raycast((Vector3){ 74.0f, 1.1f, 8.0f }, east, 50.0f, &tt, &n) && fabsf(tt - 4.0f) < 1e-3f && n.x == -1.0f && n.y == 0.0f && n.z == 0.0f,
+              "a ray along run A at 1.1 m flies over the first four steps and meets the face of the fifth at 4 m, normal pointing back at the shooter");
+        Check(Stair_Raycast((Vector3){ 76.25f, 2.0f, 8.0f }, (Vector3){ 0, -1, 0 }, 10.0f, &tt, &n) && fabsf(tt - 1.75f) < 1e-3f && n.y == 1.0f,
+              "a ray straight down onto the first step lands on its top, 0.25 m up, normal up");
+        Check(!Stair_Raycast((Vector3){ 74.0f, 9.0f, 8.0f }, east, 50.0f, &tt, &n), "a ray above the whole flight hits nothing");
+        Check(!Stair_Raycast((Vector3){ 74.0f, 1.1f, 8.0f }, east, 3.9f, &tt, &n), "and one that is too short to reach the face does not hit it");
+        Check(Stair_Raycast((Vector3){ 76.25f, 0.1f, 8.0f }, east, 5.0f, &tt, &n) && fabsf(tt - 0.25f) < 1e-3f,
+              "a ray that starts inside a step ignores that step (like a ray starting in a wall) and meets the next");
+        Check(Stair_Raycast((Vector3){ 80.25f, 3.0f, 3.0f }, (Vector3){ 0, 0, 1 }, 30.0f, &tt, &n) && fabsf(tt - 9.0f) < 1e-3f && n.z == -1.0f,
+              "railings are bars: a ray at rail height goes between them and meets run B's face, not the rail");
+
+        Vector3 c = { 76.1f, 0.1f, 8.0f };                         // the middle of the first step
+        Check(Stair_PushOutSphere(&c, 0.3f) && Stair_SurfaceDistance(c) >= 0.3f - 1e-3f, "a sphere whose centre is inside a step is pushed out of it");
+        Vector3 b = { 75.9f, 0.1f, 8.0f };                         // 10 cm from the face of the first step
+        Check(Stair_PushOutSphere(&b, 0.3f) && fabsf(b.x - 75.7f) < 1e-3f && b.y == 0.1f, "a sphere touching a face is pushed straight back along the normal, to its own radius");
+        Vector3 far = { 60.0f, 1.0f, 8.0f };
+        Check(!Stair_PushOutSphere(&far, 0.3f) && far.x == 60.0f, "a sphere far from the flight is left alone");
+        Check(Stair_SurfaceDistance((Vector3){ 60.0f, 1.0f, 8.0f }) > 10.0f && Stair_SurfaceDistance((Vector3){ 76.25f, 0.1f, 8.0f }) == 0.0f, "distance to the flight: far away is far, inside is 0");
+        Check(Stair_Box(0) != NULL && Stair_Box(-1) == NULL && Stair_Box(1000) == NULL, "the box list answers NULL outside itself");
+    }
+
+    printf("\nThe route a monster walks\n");
+    {
+        float wx = -1.0f, wz = -1.0f;
+        const Vector3 top = { 74.5f, 8.0f, 13.5f };
+        Check(!Stair_OnFlight(60.0f, 8.0f, 0.0f) && !Stair_OnFlight(80.0f, 10.5f, 0.0f) && Stair_OnFlight(76.25f, 8.0f, 0.25f) && Stair_OnFlight(74.5f, 13.5f, 8.0f),
+              "the flight is where the steps are, above the floor: the slot between the runs at floor level is not on it");
+        Check(!Stair_ChaseWaypoint((Vector3){ 60, 0, 8 }, (Vector3){ 50, 0, 8 }, &wx, &wz), "with neither on the flight a monster just walks at its target");
+        Check(Stair_ChaseWaypoint((Vector3){ 60, 0, 8 }, (Vector3){ 76.25f, 0.25f, 8 }, &wx, &wz) && fabsf(wx - 70.0f) < 0.01f && fabsf(wz - 8.0f) < 0.01f,
+              "from the hall to a target on the flight: first to the doorway");
+        Check(Stair_ChaseWaypoint((Vector3){ 70, 0, 8 }, top, &wx, &wz) && fabsf(wx - 75.0f) < 0.01f && fabsf(wz - 8.0f) < 0.01f,
+              "in front of the doorway and in line with it: in through it to the foot of run A (not back to the doorway: it must not wait there)");
+        Check(Stair_ChaseWaypoint((Vector3){ 70, 0, 20 }, top, &wx, &wz) && fabsf(wx - 70.0f) < 0.01f, "in front of the wall but off to the side: to the doorway first");
+        Check(Stair_ChaseWaypoint((Vector3){ 80, 0, 3 }, top, &wx, &wz) && fabsf(wx - 75.0f) < 0.01f && fabsf(wz - 8.0f) < 0.01f,
+              "inside the alcove but north of the railing: round to the foot of run A");
+        Check(Stair_ChaseWaypoint((Vector3){ 75.2f, 0, 8 }, top, &wx, &wz) && fabsf(wx - 85.5f) < 0.01f && fabsf(wz - 8.0f) < 0.01f, "at the foot: along run A");
+        Check(Stair_ChaseWaypoint((Vector3){ 80.25f, 2.25f, 8 }, top, &wx, &wz) && fabsf(wx - 85.5f) < 0.01f && fabsf(wz - 8.0f) < 0.01f, "on run A, the player above: on to the landing");
+        Check(Stair_ChaseWaypoint((Vector3){ 85.5f, 4.0f, 10 }, top, &wx, &wz) && fabsf(wx - 85.5f) < 0.01f && fabsf(wz - 13.5f) < 0.01f, "on the landing: across to the start of run B");
+        Check(!Stair_ChaseWaypoint((Vector3){ 80, 6.0f, 13.5f }, top, &wx, &wz), "on run B with the player ahead on it: straight at them");
+        Check(Stair_ChaseWaypoint((Vector3){ 80, 6.0f, 13.5f }, (Vector3){ 60, 0, 8 }, &wx, &wz) && fabsf(wx - 85.5f) < 0.01f && fabsf(wz - 13.5f) < 0.01f,
+              "on run B with the player down on the floor: back to the landing");
+        Check(Stair_ChaseWaypoint((Vector3){ 80.25f, 2.25f, 8 }, (Vector3){ 60, 0, 8 }, &wx, &wz) && fabsf(wx - 75.0f) < 0.01f, "on run A with the player below: back down to the foot");
+        Check(Stair_ChaseWaypoint((Vector3){ 76.25f, 0.25f, 8 }, (Vector3){ 60, 0, 8 }, &wx, &wz) && fabsf(wx - 75.0f) < 0.01f, "on the first step with the player below: off it, to the foot");
+        Check(!Stair_ChaseWaypoint((Vector3){ 75.0f, 0.3f, 8 }, (Vector3){ 60, 0, 8 }, &wx, &wz), "and from the very foot it is an ordinary walk at them");
+    }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");
     return g_failures ? 1 : 0;

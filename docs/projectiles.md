@@ -58,7 +58,7 @@ Build line in the file. Checks, with stubs that collect the drawn quads as trian
 
 - The old draw call drew a 0.3 m wireframe sphere per shot (`DrawSphereWires`), which is what showed up on the phone. Replaced by the streaks.
 - A shot used to be tested only where it was at the end of a frame, against a radius of 0.25 m. At the old 22 m/s that was 0.37 m a frame, nearly enough; the new speeds (55 to 85 m/s) are 0.9 to 1.4 m a frame and would have gone through enemies. Hence the swept test.
-- Shots used to pass through walls and the floor was their only end. They now stop at walls, floor and ceiling.
+- Shots used to pass through walls and the floor was their only end. They now stop at walls, floor and ceiling, and at the flight of stairs in the up alcove (it is part of `Dungeon_Raycast`; railings are bars and let a shot through).
 - Every shot used to do the pistol's 25. A shot now carries its weapon's damage.
 - The pool was 32; a shotgun blast is 8 projectiles and a rifle fires 8 shots a second with a 1.2 s lifetime, so it is 64.
 

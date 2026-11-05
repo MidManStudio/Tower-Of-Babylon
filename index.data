@@ -38,6 +38,40 @@
     tint           = 0xFFE9B0
 )
 // Brought to u by MidManStudio
+// The stair clock of a floor: the unlock console, the countdown, the collapse. What each number does in the game is in
+// docs/floor_run.md; notes on writing this file are in docs/config.md.
+@CONFIG(
+  version  -> "1.0.0"
+  author   -> "MidManStudio"
+  features -> "data"
+)
+
+@DATA(
+  config_version<int> = 1
+
+  // The unlock console:
+  //   console_hold_secs      USE held this long at the console unlocks the stairs
+  //   console_drain_per_sec  when let go, the progress falls by this share of the whole per second (0.0 keeps it)
+  //   console_reach          metres from the console within which USE works
+  //   monsters_on_start      how many monsters the console calls, once per floor, from the first moment it is worked
+  //   monster_gap_secs       between one call and the next
+  // The clock:
+  //   countdown_secs         from unlocked until the top door opens (the door is shut during it)
+  //   collapse_secs          from the door opening until the whole floor has gone, a wave from the far edge to the stairs
+  //   collapse_ease          the wave's pace: 0 steady, 1 slow then fast, 2 fast then slow, 3 slow at both ends
+  //   rage_speed             monsters walk this many times faster once the door has opened
+  stair_clock:
+    console_hold_secs     = 10.0f,
+    console_drain_per_sec = 0.15f,
+    console_reach         = 2.4f,
+    monsters_on_start     = 3,
+    monster_gap_secs      = 1.5f,
+    countdown_secs        = 30.0f,
+    collapse_secs         = 40.0f,
+    collapse_ease         = 0,
+    rage_speed            = 1.35f
+)
+// Brought to u by MidManStudio
 // Projectile configs: how a shot flies, how it fades with distance and how its tracer looks.
 // A weapon in weapons.mdix names one of these by `id` (the Unity project's weapon -> projectile
 // config reference). Notes on writing this file are in docs/config.md.

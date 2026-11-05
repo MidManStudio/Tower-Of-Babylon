@@ -5,7 +5,7 @@
 // Records what DrawFloorMapFacing asks raylib to draw and checks it. Inside a macro so
 // mray's build, which compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DRENDERER_HEADLESS_TEST -Isrc -Iraylib/src tests/renderer_headless.c src/dungeon/dungeon_renderer.c src/dungeon/dungeon_raycast.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c src/lighting/lighting.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c src/weapons/weapons.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c -lm -o renderer_headless
+//   cc -O2 -std=c99 -DRENDERER_HEADLESS_TEST -Isrc -Iraylib/src tests/renderer_headless.c src/dungeon/dungeon_renderer.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c src/lighting/lighting.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c src/weapons/weapons.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c -lm -o renderer_headless
 // Run:
 //   ./renderer_headless                       checks only
 //   RENDER_DUMP=out.txt ./renderer_headless   also writes the triangles of one view

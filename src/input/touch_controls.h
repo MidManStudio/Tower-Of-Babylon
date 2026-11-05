@@ -15,7 +15,7 @@
 //               out, ahead, is a sprint (the sprint icon above the stick lights up).
 //   right side  a FIRE pad that also aims: the finger that holds it fires, and moving that finger turns the camera, so you
 //               can shoot and aim with one thumb. A finger anywhere else on the right half that is not on a button is the
-//               LOOK finger. JUMP, USE, SWAP, LIGHT and SLIDE are buttons.
+//               LOOK finger. JUMP, USE (PICKUP), SWAP, LIGHT and SLIDE are round buttons: JUMP and PICKUP above the pad, SLIDE beside it.
 // A finger keeps the job it had when it went down until it lifts: a look finger that slides over JUMP does not jump, and a
 // stick finger that wanders into the right half is still the stick.
 
@@ -26,18 +26,22 @@
 
 typedef struct { int id; float x, y; } TcTouch;
 
+// Every control is a circle, as in the layout sketch (a placeholder: the HUD is to become customisable, and this table is the one
+// place that will have to give way to saved positions).
 typedef struct {
-    float    stickRadius;                   // 50: how far the knob travels
-    float    knobRadius;                    // 22 (drawing)
+    float    stickRadius;                   // 87: the ring, and how far the knob travels
+    float    stickBaseRadius;               // 56: the inner disc drawn in the middle of the ring (drawing)
+    float    knobRadius;                    // 30 (drawing)
     float    deadzone;                      // 0.08 of the radius
     UiRect   stickZone;                     // where a stick may begin: the left half, below the STATS button
     float    stickMinX, stickMaxX, stickMinY, stickMaxY;   // where the stick's centre may sit, so the whole ring stays on screen
     float    sprintOn, sprintOff;           // push beyond 0.92 of the radius to start a sprint, drop under 0.80 to end it
     float    sprintConeOn, sprintConeOff;   // and it must be ahead: within about 70 degrees of straight up (45 once started)
-    float    sprintIconGap;                 // the icon sits this many pixels above the top of the ring
+    float    sprintIconGap, sprintIconRadius;   // the icon sits this many pixels above the top of the ring; its size
     float    idleX, idleY;                  // where the faint "stick goes here" ring is drawn when no finger is down
-    UiCircle firePad;
-    UiRect   jump, use, swap, light, slide;
+    UiCircle firePad;                       // the outer ring: where a finger counts as being on the pad
+    float    fireInnerRadius;               // 42: the button disc inside it (drawing)
+    UiCircle jump, use, swap, light, slide;
 } TcLayout;
 const TcLayout *Tc_Layout(void);
 

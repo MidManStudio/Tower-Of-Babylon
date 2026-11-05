@@ -30,6 +30,7 @@ typedef struct {
     bool    jump;                     // try to jump this frame
     bool    fire;                     // held
     bool    use, swap, light, slide;  // once per press
+    bool    useHeld;                  // USE is down right now (the unlock console is worked by holding it)
     bool    inventoryToggle;          // the I or Tab key (the INV button is a tap: Input_NewTap)
     bool    statsToggle;              // the P key (the STATS button is a tap)
     bool    gesture;                  // a finger, a click or a key this frame: a browser opens the sound card only after one

@@ -12,12 +12,28 @@
 
 #define MAX_FLOOR_ENEMIES 24
 
+// How close to a step or railing of the flight a monster's body may come. Its own radius (up to 0.7 m) would be wider than a
+// 0.5 m tread, so a fat monster could never get onto the first step; the player's own clearance is the same 0.3 m.
+#define ENEMY_STAIR_CLEARANCE 0.3f
+
 void InitEnemiesSystem(void);
 
 // Clears the pool and spawns the enemies of one floor. The layout is a
 // function of the floor's seed, so the same floor always gets the same enemies.
 // tier is normally the floor number and scales count and health.
 void SpawnEnemiesForFloor(const FloorMap *floorMap, int tier);
+
+// One more enemy at a place the game chooses (the unlock console calls them). Returns its slot, or -1 when every slot is
+// in use. alerted: it starts out hunting, as if it had heard the player.
+int Enemies_SpawnAt(Vector3 pos, int tier, bool alerted);
+
+// Read-only look at one enemy slot (0 .. MAX_FLOOR_ENEMIES - 1), alive or not; NULL for a slot that does not exist. For the missions,
+// the HUD and the tests; the enemies stay owned by the manager.
+const Enemy *Enemies_At(int slot);
+
+// Every monster walks this many times faster (1 = normal): the stair clock raises it when the top door opens. A new floor
+// (SpawnEnemiesForFloor) puts it back to 1.
+void Enemies_SetRage(float speedMultiplier);
 
 void UpdateEnemiesSystem(float dt, Vector3 playerPos, const FloorMap *floorMap);
 

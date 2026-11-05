@@ -6,7 +6,7 @@
 // does not pick up a second main(). It needs raylib's headers for the Vector3
 // and Color types and stubs the few draw calls it links against.
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DSPIDER_HEADLESS_TEST -Isrc -Iraylib/src tests/spider_headless.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o spider_headless
+//   cc -O2 -std=c99 -DSPIDER_HEADLESS_TEST -Isrc -Iraylib/src tests/spider_headless.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o spider_headless
 // Run:
 //   ./spider_headless
 #ifdef SPIDER_HEADLESS_TEST

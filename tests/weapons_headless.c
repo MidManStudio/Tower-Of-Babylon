@@ -6,7 +6,7 @@
 // are stubbed. Inside a macro so mray's build, which compiles every .c file, does not pick up a
 // second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DWEAPONS_HEADLESS_TEST -Isrc -Iraylib/src tests/weapons_headless.c src/weapons/weapons.c src/weapons/parts.c src/weapons/viewmodel.c src/weapons/pickups.c src/weapons/gunfire.c src/projectiles/projectiles.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/projectiles/projectile_simulation.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c src/ui/view_clip.c src/enemies/enemy_manager.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o weapons_headless
+//   cc -O2 -std=c99 -DWEAPONS_HEADLESS_TEST -Isrc -Iraylib/src tests/weapons_headless.c src/weapons/weapons.c src/weapons/parts.c src/weapons/viewmodel.c src/weapons/pickups.c src/weapons/gunfire.c src/projectiles/projectiles.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/projectiles/projectile_simulation.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c src/ui/view_clip.c src/enemies/enemy_manager.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o weapons_headless
 // Run:
 //   ./weapons_headless                      checks only
 //   VM_DUMP=/tmp/vm ./weapons_headless      also writes /tmp/vm_<pose>.txt, the view model triangles of several poses

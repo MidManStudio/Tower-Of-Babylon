@@ -22,6 +22,9 @@ Spawn counts: cylinder enemies `6 + 2 * floor` up to 24, spiders `1 + floor / 4`
 
 The enemy system. `InitEnemiesSystem`, `SpawnEnemiesForFloor(floorMap, tier)`, `UpdateEnemiesSystem(dt, playerPos, floorMap)`, `DrawEnemiesSystem`, `UnloadEnemiesSystem`, `CheckAndHandleEnemyDamage(pos, radius, damage)` and `CountActiveEnemies`. Each call also drives the spider system, so `main.c` never touches spiders directly. A damage check tests cylinders first and then spiders. The pool holds `MAX_FLOOR_ENEMIES` cylinders in static storage.
 
+### Stairs, `Enemies_SpawnAt`, `Enemies_At`, `Enemies_SetRage`
+The cylinder enemies now stand on whatever is under them: each frame they follow `Staircase_GroundHeight` (a step up of a quarter metre is nothing, and if the ground drops away they fall at 9 m/s), are blocked by the flight's steps and railings with the player's 0.3 m clearance, and ask `Stair_ChaseWaypoint` where to head when the player or they are on the flight (`dungeon.md`, `stair_collision.c`). `Enemies_SpawnAt(pos, tier, alerted)` adds one enemy at a place the game chooses (the stair clock's console calls monsters with it; -1 when every slot is used; a killed enemy's slot is reused). `Enemies_At(slot)` is a read-only look at a slot. `Enemies_SetRage(m)` makes every monster walk m times faster; a new floor puts it back to 1.
+
 ### `enemies.h` and `enemies.c`
 
 Retired. Two competing implementations existed and the build could not link, so everything was merged into `enemy_manager.c`. `enemies.h` is kept as a one-line compatibility include. `enemies.c` is a placeholder because an archive cannot delete a file. Both can be deleted with mray (option 4, then 3).
@@ -135,8 +138,8 @@ Not verified: how the spider looks and moves on screen, speed on the phone, and 
 
 ### Known limits
 
-- Attacks are contact only: no ranged attack, and enemies ignore the stair blocks, so they can bite a player through a rail. The cylinder wind-up is a crouch and swell, not a proper limb animation (the cylinders have no limbs yet).
-- Projectiles pass through walls.
+- Attacks are contact only: no ranged attack, and a monster beside the flight can bite a player on it through a railing (it cannot walk through one). The cylinder wind-up is a crouch and swell, not a proper limb animation (the cylinders have no limbs yet).
+- A monster walks to the player by line of sight, and up the flight by the route; across the rest of the floor it does not path-find, so it still gets stuck behind a wall that is not on the way.
 - Cylinder enemies chase by line of sight and a three second memory, not by path, so they can lose the player around a corner. Spiders use the path field.
 - Spiders do not avoid each other and can overlap.
 - A spider on the ceiling cannot cross into a stair alcove, since there is no ceiling there. It comes down a wall first.

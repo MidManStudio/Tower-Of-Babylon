@@ -7,7 +7,7 @@
 // controller and stairs and stubs the draw calls. Inside a macro so mray's build, which compiles every .c file,
 // does not pick up a second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DMOVEMENT_HEADLESS_TEST -Isrc -Iraylib/src tests/movement_headless.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o movement_headless
+//   cc -O2 -std=c99 -DMOVEMENT_HEADLESS_TEST -Isrc -Iraylib/src tests/movement_headless.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o movement_headless
 // Run:
 //   ./movement_headless
 #ifdef MOVEMENT_HEADLESS_TEST

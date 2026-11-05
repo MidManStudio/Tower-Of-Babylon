@@ -8,6 +8,8 @@
 #include <string.h>
 
 #include "../dungeon/dungeon_probes.h"
+#include "../dungeon/stair_collision.h"
+#include "../dungeon/staircase.h"
 #include "spider.h"
 
 #define ENEMY_LATTICE     3      // candidate spawn tiles sit on every third tile
@@ -61,6 +63,34 @@ static bool SpawnCandidate(const FloorMap *map, int x, int z)
     return true;
 }
 
+static float g_rage = 1.0f;     // the stair clock raises it when the top door opens (Enemies_SetRage)
+
+// Fills one enemy: size, colour, health and speed from a hash of its place and the floor's tier.
+static void InitEnemy(Enemy *e, uint32_t id, float x, float z, uint32_t h, int tier)
+{
+    e->id = id;
+    e->position = (Vector3){ x, 0.0f, z };
+    e->height = 2.0f + (float)(h % 100) * 0.018f;
+    e->radius = 0.40f + (float)((h >> 8) % 100) * 0.003f;
+
+    switch ((h >> 16) % 3) {
+        case 0:  e->tint = (Color){ 210, 60, 40, 255 };   break;  // hazard orange
+        case 1:  e->tint = (Color){ 95, 105, 115, 255 };  break;  // inmate steel
+        default: e->tint = (Color){ 140, 40, 160, 255 };  break;  // alien mutation
+    }
+
+    InitHealth(&e->health, 40.0f + 20.0f * (float)tier);
+    e->state = ENEMY_STATE_IDLE;
+    e->aggroRange = 14.0f;
+    e->attackRange = 1.8f;
+    e->moveSpeed = ENEMY_CHASE_SPEED_BASE + ENEMY_CHASE_SPEED_STEP * (float)(tier % 4);
+    e->alertTimer = 0.0f;
+    e->attackTimer = ENEMY_WINDUP_SECS;   // a fresh enemy winds up before its first blow
+    e->hurtTimer = e->rear = e->lunge = 0.0f;
+    e->faceX = e->faceZ = 0.0f;
+    e->active = true;
+}
+
 void InitEnemiesSystem(void)
 {
     memset(g_enemies, 0, sizeof g_enemies);
@@ -69,6 +99,7 @@ void InitEnemiesSystem(void)
 
 void SpawnEnemiesForFloor(const FloorMap *floorMap, int tier)
 {
+    g_rage = 1.0f;
     memset(g_enemies, 0, sizeof g_enemies);
     Spiders_SpawnForFloor(floorMap, tier);
     if (!floorMap) return;
@@ -95,31 +126,48 @@ void SpawnEnemiesForFloor(const FloorMap *floorMap, int tier)
 
     for (int i = 0; i < target; ++i) {
         const int x = cand[i] % MAP_WIDTH, z = cand[i] / MAP_WIDTH;
-        const uint32_t h = Hash32(floorMap->seed + (uint32_t)i * 0x9e3779b1U);
-        Enemy *e = &g_enemies[i];
-
-        e->id = (uint32_t)i;
-        e->position = (Vector3){ (float)x * TILE_SIZE, 0.0f, (float)z * TILE_SIZE };
-        e->height = 2.0f + (float)(h % 100) * 0.018f;
-        e->radius = 0.40f + (float)((h >> 8) % 100) * 0.003f;
-
-        switch ((h >> 16) % 3) {
-            case 0:  e->tint = (Color){ 210, 60, 40, 255 };   break;  // hazard orange
-            case 1:  e->tint = (Color){ 95, 105, 115, 255 };  break;  // inmate steel
-            default: e->tint = (Color){ 140, 40, 160, 255 };  break;  // alien mutation
-        }
-
-        InitHealth(&e->health, 40.0f + 20.0f * (float)tier);
-        e->state = ENEMY_STATE_IDLE;
-        e->aggroRange = 14.0f;
-        e->attackRange = 1.8f;
-        e->moveSpeed = ENEMY_CHASE_SPEED_BASE + ENEMY_CHASE_SPEED_STEP * (float)(tier % 4);
-        e->alertTimer = 0.0f;
-        e->attackTimer = ENEMY_WINDUP_SECS;   // a fresh enemy winds up before its first blow
-        e->hurtTimer = e->rear = e->lunge = 0.0f;
-        e->active = true;
+        InitEnemy(&g_enemies[i], (uint32_t)i, (float)x * TILE_SIZE, (float)z * TILE_SIZE,
+                  Hash32(floorMap->seed + (uint32_t)i * 0x9e3779b1U), tier);
     }
 }
+
+// One more enemy at a place chosen by the game (the unlock console calls them). Returns its slot, or -1 when all are in use.
+// alerted: it starts out hunting, as if it had heard the player.
+int Enemies_SpawnAt(Vector3 pos, int tier, bool alerted)
+{
+    static uint32_t made = 0;
+    if (tier < 1) tier = 1;
+    for (int i = 0; i < MAX_FLOOR_ENEMIES; ++i) {
+        if (g_enemies[i].active) continue;
+        InitEnemy(&g_enemies[i], (uint32_t)i, pos.x, pos.z, Hash32(0xC0FFEEu + (made++) * 0x9e3779b1U), tier);
+        g_enemies[i].position.y = pos.y;
+        if (alerted) g_enemies[i].alertTimer = ENEMY_ALERT_SECS * 4.0f;
+        return i;
+    }
+    return -1;
+}
+
+// ---- walking on the stairs ---------------------------------------------------------------------------------
+#define ENEMY_FALL_SPEED 9.0f      // m/s when the ground drops away under it
+
+static bool StairBlocked(const Enemy *e, float x, float z)
+{
+    const float r = e->radius < ENEMY_STAIR_CLEARANCE ? e->radius : ENEMY_STAIR_CLEARANCE;
+    return Staircase_Blocked(x, z, r, e->position.y, e->height);
+}
+
+// An enemy stands on whatever is under it: the floor, or a step of the flight (a step up of a quarter metre is nothing to it).
+static void FollowGround(Enemy *e, float dt)
+{
+    const float gy = Staircase_GroundHeight(e->position.x, e->position.z, e->position.y);
+    if (gy >= e->position.y) { e->position.y = gy; return; }
+    e->position.y -= ENEMY_FALL_SPEED * dt;
+    if (e->position.y < gy) e->position.y = gy;
+}
+
+void Enemies_SetRage(float speedMultiplier) { g_rage = speedMultiplier < 1.0f ? 1.0f : speedMultiplier; }
+
+const Enemy *Enemies_At(int slot) { return (slot >= 0 && slot < MAX_FLOOR_ENEMIES) ? &g_enemies[slot] : NULL; }
 
 static float g_playerNoise = 0.0f;
 void Enemies_SetPlayerNoise(float metres) { g_playerNoise = metres < 0.0f ? 0.0f : metres; }
@@ -154,15 +202,27 @@ void UpdateEnemiesSystem(float dt, Vector3 playerPos, const FloorMap *floorMap)
         else if (e->alertTimer > 0.0f)   e->state = ENEMY_STATE_CHASE;
         else                             e->state = ENEMY_STATE_IDLE;
 
+        FollowGround(e, dt);
         if (e->state != ENEMY_STATE_CHASE || dist < 0.01f || !floorMap) continue;
         if (e->hurtTimer > 0.0f) continue;                 // staggered by a hit
 
-        // Axis-separated movement lets an enemy slide along a wall instead of sticking to it.
-        const float step = e->moveSpeed * dt;
-        const float nx = e->position.x + (dx / dist) * step;
-        if (!Blocked(floorMap, nx, e->position.z, e->radius)) e->position.x = nx;
-        const float nz = e->position.z + (dz / dist) * step;
-        if (!Blocked(floorMap, e->position.x, nz, e->radius)) e->position.z = nz;
+        // Where to walk: straight at the player, unless the stairs are in the way (either of them on the flight), then
+        // along the switchback to the next corner, up or down.
+        float gx = playerPos.x, gz = playerPos.z, wx, wz;
+        if (Stair_ChaseWaypoint(e->position, playerPos, &wx, &wz)) { gx = wx; gz = wz; }
+        float mx = gx - e->position.x, mz = gz - e->position.z;
+        const float ml = sqrtf(mx * mx + mz * mz);
+        if (ml < 0.01f) continue;
+        mx /= ml; mz /= ml;
+
+        // Axis-separated movement lets an enemy slide along a wall instead of sticking to it. A block or railing of the flight
+        // stops it like a wall, unless it is a step it can climb.
+        const float step = e->moveSpeed * g_rage * dt;
+        const float nx = e->position.x + mx * step;
+        if (!Blocked(floorMap, nx, e->position.z, e->radius) && !StairBlocked(e, nx, e->position.z)) e->position.x = nx;
+        const float nz = e->position.z + mz * step;
+        if (!Blocked(floorMap, e->position.x, nz, e->radius) && !StairBlocked(e, e->position.x, nz)) e->position.z = nz;
+        FollowGround(e, dt);
     }
 }
 
@@ -238,8 +298,8 @@ int EnemiesMeleeHit(const FloorMap *floorMap, Vector3 eye, float fx, float fz, f
         // Knock it back along the line from the player, one axis at a time so it slides along walls.
         if (floorMap && knockback > 0.0f && dist > 0.01f) {
             const float nx = e->position.x + dx / dist * knockback, nz = e->position.z + dz / dist * knockback;
-            if (!Blocked(floorMap, nx, e->position.z, e->radius)) e->position.x = nx;
-            if (!Blocked(floorMap, e->position.x, nz, e->radius)) e->position.z = nz;
+            if (!Blocked(floorMap, nx, e->position.z, e->radius) && !StairBlocked(e, nx, e->position.z)) e->position.x = nx;
+            if (!Blocked(floorMap, e->position.x, nz, e->radius) && !StairBlocked(e, e->position.x, nz)) e->position.z = nz;
         }
     }
 
