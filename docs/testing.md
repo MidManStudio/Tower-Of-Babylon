@@ -25,6 +25,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `sim_headless.c` | the input latch, the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |
 | `floor_game_headless.c` | the stair clock in the game: where the console goes, the door lock, the monster calls, the kill, frame rate independence | `floor_run.md` |
+| `characters_headless.c` | the roster file and its loader, the choice kept as an id, the selection screen's taps, keys and layout, the word wrap, and that every shipped text fits its room | `characters.md` |
 | `config_headless.c` | the config layer, the baked tables, bad documents | `config.md` |
 | `flashlight_headless.c` | charge, batteries, flicker, the beam's shape | `flashlight.md` |
 

@@ -40,6 +40,11 @@ typedef struct {
 void Input_Init(void);
 void Input_Update(const InputContext *ctx, InputFrame *out);           // once per frame
 
+// What the character selection screen (and any menu) takes from the player: a step left or right (A, D or the arrows), a confirm
+// (Enter or Space), and whether anything touched the device this frame (the sound card opens after a gesture). Taps are Input_NewTap.
+typedef struct { int step; bool confirm; bool gesture; } InputMenu;
+void Input_Menu(InputMenu *out);
+
 // A finger that went down this frame (or a mouse click when no finger is down): where. Call once per frame.
 bool Input_NewTap(Vector2 *where);
 

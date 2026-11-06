@@ -36,6 +36,7 @@ typedef struct {
     bool  useShown, useLocked; const char *useLabel;
     bool  slideShown;
     bool  invOpen;
+    const char *characterName;          // the chosen character's short name, or NULL when none is chosen (shown beside STATS in the popup)
     int   stairPhase;                   // the stair clock: 0 none on this floor, 1 find the console, 2 countdown, 3 collapsing
     float consoleProgress, stairCountdown, collapseLeft01; bool consoleHeld;
     HudDebug debug;

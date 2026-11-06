@@ -1,0 +1,60 @@
+// Brought to u by MidManStudio
+// The roster shown on the character selection screen at launch: who each character is and what their kit does, in words only.
+// There are no numbers here on purpose (no health, no speed, no cooldowns): none are decided yet. Notes on writing this file are in
+// docs/characters.md. Strings are plain ASCII, and no quote marks inside them.
+@CONFIG(
+  version  -> "1.0.0"
+  author   -> "MidManStudio"
+  features -> "quickfuncs,data"
+)
+
+// character(id, name, call, role, overview, backstory, passive, activatable, special)
+//   id           what the game and, later, the server refer to the character by (lowercase letters, digits and _)
+//   name         the full name
+//   call         the short name for cards and voice chat (a proposal in docs/design/02-characters.md)
+//   role         one short line
+//   overview     who they are
+//   backstory    why they are in the Tower
+//   passive, activatable, special   the three parts of the kit, as the design document words them (docs/design/02-characters.md)
+// The order here is the order on the screen.
+@QUICKFUNCS(
+
+  ~character<object>(_id, _name, _call, _role, _overview, _backstory, _passive, _activatable, _special) {
+    return { id = _id, name = _name, call = _call, role = _role, overview = _overview, backstory = _backstory,
+             passive = _passive, activatable = _activatable, special = _special }
+  }
+
+)
+
+@DATA(
+  config_version<int> = 1
+
+  characters::
+    character("steve", "Sinless Steve", "Steve", "Stealth saboteur",
+      "The poster boy of the game. An assassin type; a man with vitiligo (or something like it); the only human among the characters.",
+      "A priest who started a cult after his vitiligo worsened and he took it as a sign from God that he should do more with his life. The cult set out to take down the oppressors on his side of the planet. What began as a faithful revolution became a massacre on both sides, with Steve at the front of it, hundreds of thousands of lives lost for a promise of ethereal salvation.",
+      "Faster, slide boost, quieter steps, senses things from further away",
+      "See no evil, hear no evil, do evil: unseen and unheard, cannot attack, can cause a ruckus",
+      "The sinless blade: ultra powerful melee with ranged strikes"),
+
+    character("brou", "Brouugenxxxgerrrrr", "Brou", "Area control",
+      "A member of the xxxgerrr race, an alien species known for bio-chemical knowledge; violent and feared; the bad guys of the setting. One of the yellow ones (green, brown and yellow; yellow is the worst).",
+      "The xxxgerrr like chemical warfare and fouling things with chemicals; loud and destructive. The niu declared them an invasive species, to be hunted and exterminated on sight. This one is a big one, one of the worst, and refuses to die: it poisoned planets, caused famines that killed entire species, and killed millions of aliens and thousands of federation officers, until they blew up a planet it was busy ruining. It somehow survived, weakened, and was captured and locked up tight.",
+      "Toxic gas around him, tentacles (aim assist), a little passive healing",
+      "Chemical Warfare: a damaging toxic shroud that also hides him",
+      "Tentacle-launched globulus orbs: toxic splash, lure monsters, spawn larvae"),
+
+    character("khan", "Totour Khan", "Khan", "Brawler",
+      "A four-armed warlord who wants to conquer the galaxy; only war and pillage on his mind; only the strong survive and all belongs to the strongest of the strong.",
+      "A conqueror who wanted the whole galaxy to bow; fought countless wars; killed uncountable living things; destroyed several niu outposts and planets; enslaved many planets to fuel his empire; tried to take on the niu home base and was utterly beaten and captured.",
+      "More health and durability, stronger melee, higher jumps",
+      "Smash: a shockwave in a line, very loud",
+      "Four armed machine: a four armed minigun"),
+
+    character("lele", "Elelelelele", "Lele", "Assassin",
+      "The ninja and assassin. From an alien race called the exmuin who lived in an ocean world. A sea-creature-looking alien in what looks like a jester costume.",
+      "Her homeworld was peaceful, ruled by strict rules, one with nature, until corporations protected by the federation arrived for its resources. She hated the peace and hated the corporations, and used their arrival as an opportunity: taking resources and funds from her own people to go around assassinating corporate leaders, profiting, and living freely. She is not a Robin Hood figure; she is a criminal, and her file lists violent crimes. Her killings left evidence that pointed at her own people, which led to a war in which they suffered most. She was caught when she went after a federation leader.",
+      "Stealthy movement, electric slide, wall bounce",
+      "A very long slide that leaves a stunning electric trail",
+      "A silent laser gun that pierces")
+)

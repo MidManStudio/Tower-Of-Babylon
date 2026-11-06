@@ -44,6 +44,9 @@
 #include "floor/floor_game.h"
 #include "core/fixed_step.h"
 #include "input/input_latch.h"
+#include "characters/characters.h"
+#include "characters/character_select.h"
+#include "characters/character_select_ui.h"
 
 // Three floors live in static storage for WASM performance.
 static FloorWindow g_window;
@@ -511,8 +514,47 @@ static void SimTick(SimCmd cmd)
     }
 }
 
+// ---- The character selection screen, once, at launch -------------------------------------------------------------
+// Nothing of the game runs behind it (no steps, no monsters, no clock): the screen is only a row of cards, a story and a button.
+// Choosing stores the character's id (characters/characters.h) and the game begins as if it had just been loaded. docs/characters.md.
+static CharSelect g_charSel;
+static bool g_selecting = false;
+
+static void SelectFrame(void)
+{
+    float dt = GetFrameTime();
+    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+    GameConfig_Poll();                                    // the web build swaps the real characters.mdix in when the wasm is up
+    CharSelect_Resync(&g_charSel, Characters_Count());
+
+    InputMenu menu;
+    Input_Menu(&menu);
+    Vector2 tap = { 0 };
+    if (Input_NewTap(&tap)) CharSelect_Tap(&g_charSel, tap.x, tap.y);
+    if (menu.step != 0) CharSelect_Move(&g_charSel, menu.step);
+    if (menu.confirm) CharSelect_Press(&g_charSel);
+
+    float lfx, lfz;
+    FlatForward(&lfx, &lfz);
+    Audio_Update(dt, player.camera.position, lfx, lfz, menu.gesture);     // the sound card opens after a touch or a key, and this is the first one
+
+    if (g_charSel.done) {
+        const CharacterDef *c = Characters_Get(g_charSel.focus);
+        if (c) Characters_Select(c->id);
+        g_selecting = false;
+        FixedStep_Init(&g_simStep, SIM_STEP_SECS, SIM_MAX_STEPS_PER_FRAME);   // the game starts from a clean clock
+        SimCmd_Init(&g_simCmd);
+        fade = 1.0f;                                                          // and fades in, as after a door
+    }
+
+    BeginDrawing();
+        CharSelectUI_Draw(&g_charSel, Input_Scheme() == INPUT_SCHEME_KEYBOARD);
+    EndDrawing();
+}
+
 static void Frame(void)
 {
+    if (g_selecting) { SelectFrame(); return; }
     const double tFrame0 = GetTime();
     const float rawDt = GetFrameTime();
     float dt = rawDt;
@@ -717,6 +759,7 @@ static void Frame(void)
                 }
             }
             hv.slideShown = SlideButtonShown(); hv.invOpen = invOpen;
+            hv.characterName = Characters_SelectedCall();
             hv.stairPhase = FloorGame_Phase(); hv.consoleProgress = FloorGame_ConsoleProgress(); hv.consoleHeld = FloorGame_ConsoleHeld();
             hv.stairCountdown = FloorGame_CountdownLeft(); hv.collapseLeft01 = FloorGame_CollapseLeft01();
             hv.debug = (HudDebug){ g_depthBits, g_msaaSamples, { subMs[SUB_LIGHT], subMs[SUB_WORLD], subMs[SUB_ENTS], subMs[SUB_HANDS] } };
@@ -756,7 +799,10 @@ int main(void)
     Hud_Init();
     Audio_Init();                     // hands sounds.mdix to the config layer, so it must come before GameConfig_Init
     FloorGame_Register();             // and floor.mdix, the stair clock's numbers
+    Characters_Register();            // and characters.mdix, the roster
     GameConfig_Init();                // weapon and projectile numbers: the baked copy now, the .mdix files once the wasm is up
+    g_selecting = Characters_Count() > 0;          // the selection screen runs once, before the game (no roster, no screen)
+    CharSelect_Init(&g_charSel, Characters_Count());
     ScreenFx_Init();
     Highp_Init();
     ViewClip_QueryBuffers(&g_depthBits, &g_msaaSamples);

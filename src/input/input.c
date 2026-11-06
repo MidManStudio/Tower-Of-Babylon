@@ -49,6 +49,21 @@ bool Input_NewTap(Vector2 *out)
     return got;
 }
 
+void Input_Menu(InputMenu *m)
+{
+    m->step = 0; m->confirm = false; m->gesture = false;
+#if TOWER_INPUT_KEYBOARD
+    {
+        const bool left = IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A), right = IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D);
+        m->step = (right ? 1 : 0) - (left ? 1 : 0);
+        m->confirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE);
+        if (left || right || m->confirm) { m->gesture = true; g_scheme = INPUT_SCHEME_KEYBOARD; }
+    }
+#endif
+    if (GetTouchPointCount() > 0) { m->gesture = true; g_scheme = INPUT_SCHEME_TOUCH; }
+    else if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) m->gesture = true;
+}
+
 void Input_Update(const InputContext *ctx, InputFrame *f)
 {
     memset(f, 0, sizeof *f);

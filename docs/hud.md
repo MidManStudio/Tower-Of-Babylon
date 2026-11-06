@@ -25,7 +25,7 @@ The popup also holds the **DIAGNOSTICS switch**, which shows the overlay that us
 **What it does:** the stair clock on the screen (`floor_run.md`), top middle: a bar while the console is being worked ("UNLOCKING THE STAIRS", orange when let go), then STAIRS UNLOCKED with the countdown as m:ss (red and blinking in the last ten seconds), then THE FLOOR IS COLLAPSING with a bar of how much floor is left and GET TO THE DOOR. `HudView` carries `stairPhase`, `consoleProgress`, `consoleHeld`, `stairCountdown`, `collapseLeft01`; the HUD asks the game for nothing.
 
 ### `hud_stats.c`
-**What it does:** the popup. Reuses `ScreenFx_DrawHealthBar` and `ScreenFx_DrawStaminaBar`.
+**What it does:** the popup. Reuses `ScreenFx_DrawHealthBar` and `ScreenFx_DrawStaminaBar`. Beside the word STATS it shows the chosen character's short name (`HudView.characterName`, NULL when none was chosen; `characters.md`), in the title line so the rows below did not have to move.
 
 ### `hud_debug.c`
 **What it does:** the diagnostics overlay and its two tap rows (moved here from `main.c` with their state; the sound row's "next sound" is kept here). It reads the other systems' status directly (`GameConfig_Status`, `Audio_Status`, the lighting counts, the shader state) and the few values `main.c` owns (depth bits, MSAA, the 3D stage timings) from the view.

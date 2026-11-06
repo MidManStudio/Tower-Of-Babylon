@@ -14,6 +14,7 @@ void HudStats_Draw(const HudView *v)
     DrawRectangleRec(R(p), Fade(BLACK, 0.88f));
     DrawRectangleLines((int)p.x, (int)p.y, (int)p.w, (int)p.h, WHITE);
     DrawText("STATS", (int)p.x + 16, (int)p.y + 14, 20, YELLOW);
+    if (v->characterName && v->characterName[0]) DrawText(v->characterName, (int)p.x + 100, (int)p.y + 18, 15, (Color){ 230, 170, 60, 255 });
 
     DrawRectangleRec(R(x), Fade(MAROON, 0.9f));                                  // the way out
     DrawRectangleLines((int)x.x, (int)x.y, (int)x.w, (int)x.h, WHITE);

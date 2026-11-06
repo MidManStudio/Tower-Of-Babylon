@@ -18,6 +18,7 @@ If anything about the second goes wrong, the baked values stay, and the diagnost
 | `assets/config/weapons.mdix` | One row per weapon, in the order of `WeaponId`: hands, pipe, pistol, shotgun, rifle. |
 | `assets/config/projectiles.mdix` | One row per projectile config; a gun names one by `id`. |
 | `assets/config/flashlight.mdix` | One table, `flashlight`: capacity, battery size, when it fails, the beam. See `flashlight.md`. A single object, read as `flashlight.range`, not a group array. |
+| `assets/config/characters.mdix` | The roster for the character selection screen: a `character(...)` row per character, words only. Registered as an **extra** file (below). See `characters.md`. |
 | `assets/config/sounds.mdix` | Every sound as a synthesiser recipe: a `snd(...)` row per sound and a `lyr(...)` row per layer. Registered as an **extra** file (below). See `audio.md`. |
 | `assets/mdix/mdix_wasm_bg.wasm`, `mdix_wasm_bg.js` | The DixScript engine and its glue, copied from the npm package (`@midmanstudio/mdix` 1.0.2, `wasm-pkg/`). 3.5 MB. |
 | `src/config/config_baked.c` | Generated. Do not edit. |
@@ -77,6 +78,9 @@ Modelled on `com.midmanstudio.mdix.webgl` in the DixScript-Rust repository, whic
 
 ### `assets/config/floor.mdix`
 The stair clock: `stair_clock` is one table of nine values (hold time, drain, reach, the monsters the console calls and their spacing, the countdown, the collapse time and pace, the monsters' rage). Baked by `tools/mdix_bake.mjs` as an object-shaped file like the flashlight; read by `src/floor/floor_config.c`, which checks every range (`floor_run.md`). Registered with `GameConfig_RegisterExtra` by `FloorGame_Register`.
+
+### `assets/config/characters.mdix`
+The roster: a group array `characters::` of rows `character(id, name, call, role, overview, backstory, passive, activatable, special)`, all plain ASCII text. Baked as an array-shaped file like the weapons; read by `src/characters/characters.c`, which checks every length, the characters allowed and the unique ids (`characters.md`). Registered with `GameConfig_RegisterExtra` by `Characters_Register`, before `GameConfig_Init`.
 
 ### `tests/config_headless.c`
 
