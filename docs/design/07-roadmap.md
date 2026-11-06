@@ -21,6 +21,9 @@ The game you could ship as "Survival mode", and the first time the stair clock i
 
 *Done when:* a ten floor run is tense for reasons other than difficulty numbers, and you want to do another.
 
+*Done, to be tried on a phone:* the rules run on a fixed 30 Hz step with the picture blended between steps (`docs/sim.md`), and at most two weapons can be equipped (the bag holds more; `docs/weapons.md`).
+*Next, in the owner's order:* the character selection screen at launch (information and the selection UI only, from `02-characters.md`; no abilities), then the first multiplayer step: the game protocol and a server loop over a loopback transport with fake lag (see the handover for what `mid-net` has and lacks).
+
 *Later, noted from the owner:* the HUD is to become **customisable** (positions and sizes chosen by the player). The layout today (one `TcLayout` table in `src/input/touch_controls.c` and `hud_layout.c`, measured off the owner's sketch) is a placeholder, not a design to protect; saved positions will replace the table.
 
 ### M2. Character kits (L, in parts)

@@ -74,3 +74,6 @@ Everything about a shot is in `projectiles.mdix`. In code: `HIT_STEP` (0.25 m) a
 - Enemies do not shoot yet, so the pool is the player's only.
 - The tracers are not lit by the light map (they glow by themselves).
 - How the streaks look and cost on the phone is not verified. Each projectile is 12 vertices; with a rifle at full auto about ten are alive at once.
+
+### Drawing between steps
+`Projectiles_SetRenderLag(seconds)` draws each round that much of its flight behind where the last 30 Hz step left it, never behind its muzzle (`sim.md`).

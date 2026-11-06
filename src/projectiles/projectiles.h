@@ -36,6 +36,9 @@ float Projectile_FalloffDamage(const ProjectileConfig *cfg, float baseDamage, fl
 // Draws the live projectiles as glowing streaks and the wall sparks, additively and without writing depth. Call after
 // everything opaque in the 3D pass has been drawn.
 void DrawProjectilesSystem(Vector3 viewer);
+// For drawing between fixed steps: how long ago (seconds) the last step ended, as drawn time runs ahead of it. Rounds are drawn
+// that much of their flight behind where the last step left them (never behind where they were fired from).
+void Projectiles_SetRenderLag(float seconds);
 
 int Projectiles_Active(void);
 const Projectile *Projectiles_Get(int index);     // 0 .. MAX_PROJECTILES - 1; may be dead

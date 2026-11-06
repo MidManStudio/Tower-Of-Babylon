@@ -42,6 +42,8 @@
 #include "input/input.h"
 #include "hud/hud.h"
 #include "floor/floor_game.h"
+#include "core/fixed_step.h"
+#include "input/input_latch.h"
 
 // Three floors live in static storage for WASM performance.
 static FloorWindow g_window;
@@ -132,6 +134,10 @@ typedef enum { SEQ_NONE = 0, SEQ_OPENING, SEQ_FADING } DoorSeq;
 // True on a floor the player came down into: the stair clock is not run there.
 static bool floorCleared = false;
 
+// Where the camera was at the start of the last step: the picture blends from here to where it is now (docs/sim.md). Reset whenever
+// the player is put somewhere new, or the blend would sweep across the floor.
+static Vector3 g_prevEye;
+
 // Moves the player through a door to the next or previous floor.
 static FloorMap *UseDoor(PlayerController *player, DoorId id)
 {
@@ -151,6 +157,7 @@ static FloorMap *UseDoor(PlayerController *player, DoorId id)
     if (up) Staircase_SpawnBelow(&pos, &yaw);   // came up: stand in front of this floor's down door
     else    Staircase_SpawnAbove(&pos, &yaw);   // came down: stand on the top landing of the flight
     TeleportPlayer(player, pos, yaw);
+    g_prevEye = player->camera.position;
     return map;
 }
 
@@ -196,6 +203,7 @@ static void RespawnPlayer(void)
     float yaw;
     Staircase_SpawnBelow(&pos, &yaw);
     TeleportPlayer(&player, pos, yaw);
+    g_prevEye = player.camera.position;
     Projectiles_Clear();
     SpawnEnemiesForFloor(currentFloorMap, g_window.currentFloor);
     SpawnFloorPickups(currentFloorMap, g_window.currentFloor);
@@ -276,10 +284,24 @@ static void UseSlot(int slot)
     }
 }
 
+// The weapon's button in the inventory: equip it from the bag, swap it for the weapon in hand when both places are taken, take an
+// equipped one in hand, or put the one in hand away (it stays in the bag).
 static void EquipSlot(int slot)
 {
     const ItemId item = inv.slots[slot].item;
-    if (Arsenal_Equip(&arsenal, Item_Weapon(item))) Inventory_Post(&inv, INV_EV_EQUIPPED, item, 1);
+    const WeaponId w = Item_Weapon(item);
+    if (Arsenal_IsEquipped(&arsenal, w)) {
+        if (arsenal.current == w) { Arsenal_Remove(&arsenal, w); Toast(TextFormat("PUT AWAY %s. STILL IN THE BAG", Item_Name(item))); }
+        else if (Arsenal_Equip(&arsenal, w)) Inventory_Post(&inv, INV_EV_EQUIPPED, item, 1);
+        return;
+    }
+    if (Arsenal_Give(&arsenal, w)) { Inventory_Post(&inv, INV_EV_EQUIPPED, item, 1); return; }
+    if (arsenal.current == WEAPON_HANDS) { Toast("BOTH PLACES TAKEN. HOLD ONE TO SWAP IT"); return; }
+    const WeaponId out = arsenal.current;
+    if (Arsenal_Replace(&arsenal, w, out)) {
+        Toast(TextFormat("SWAPPED IN %s. %s IS IN THE BAG", Item_Name(item), Weapon_Def(out)->name));
+        Inventory_Post(&inv, INV_EV_EQUIPPED, item, 1);
+    }
 }
 
 static void DoInventoryTap(Vector2 tap)
@@ -299,41 +321,41 @@ static void DoInventoryTap(Vector2 tap)
 // turn into a jump across the map.
 #define MAX_FRAME_DT 0.05f
 
-static void Frame(void)
-{
-    const double tFrame0 = GetTime();
-    const float rawDt = GetFrameTime();
-    float dt = rawDt;
-    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
-    GameConfig_Poll();                // swaps in the .mdix files as soon as the DixScript wasm has started (web builds)
-    Vector2 moveDelta = { 0 };
-    Vector2 lookDelta = { 0 };
-    bool triggerShoot = false;
-    bool triggerJump = false;
-    bool triggerUse = false;
-    bool triggerSwap = false;
+// ---- The rules run 30 times a second ---------------------------------------------------------------------------
+// The screen is drawn at whatever pace the display runs (60, 144 frames a second). The rules (movement, weapons, monsters, shots, the
+// stair clock) step at a fixed 30 a second, so the game plays the same at any frame rate and a server can run the same steps.
+//   every frame:  input, UI taps, turning the camera (aim never waits for a step), the sound and the flashlight, drawing
+//   every step:   SimTick(): everything that decides what happens
+// A press that comes and goes between two steps is kept until the next step takes it (input/input_latch.h), and the picture blends
+// between the last two steps (the camera, the monsters, the shots). See docs/sim.md.
+#define SIM_STEP_SECS (1.0f / 30.0f)
+#define SIM_MAX_STEPS_PER_FRAME 5
+static FixedStep g_simStep;
+static SimCmd g_simCmd;
 
-    // Which door, if any, is within reach right now.
-    int nearDoor = -1;
+// Which door, pickup or console is within reach right now.
+static void FindNear(int *nearDoor, int *nearPickup, bool *nearConsole)
+{
+    *nearDoor = -1;
     if (seq == SEQ_NONE) {
         for (int i = 0; i < DOOR_COUNT; ++i)
-            if (Staircase_DoorInRange((DoorId)i, player.position)) { nearDoor = i; break; }
+            if (Staircase_DoorInRange((DoorId)i, player.position)) { *nearDoor = i; break; }
     }
+    *nearPickup = -1;
+    if (seq == SEQ_NONE && player.health.isAlive && *nearDoor < 0) *nearPickup = Pickups_NearestWeapon(player.position, PICKUP_REACH);
+    // The unlock console: USE is held there, not tapped. A door or a pickup in reach comes first.
+    *nearConsole = *nearDoor < 0 && *nearPickup < 0 && seq == SEQ_NONE && player.health.isAlive && FloorGame_NearConsole(player.position);
+}
 
-    // Taps this frame: the STATS button and popup, the INV button, the inventory screen.
-    const bool wasOpen = invOpen;
-    Vector2 tap = { 0 };
-    const bool tapped = Input_NewTap(&tap);
-    if (tapped && Hud_HandleTap(tap, wasOpen)) { /* the HUD used it */ }
-    else if (tapped && !wasOpen && CheckCollisionPointRec(tap, InvUI_OpenButton())) invOpen = true;
-    else if (tapped && wasOpen) DoInventoryTap(tap);
-    if (invOpen) Hud_SetStatsOpen(false);
-    Hud_Update(dt);
-    if (blockToastT > 0.0f) blockToastT -= dt;
+// One step of the rules. cmd is what the player wanted since the last step.
+static void SimTick(SimCmd cmd)
+{
+    const float dt = SIM_STEP_SECS;
+    Enemies_BeginTick();                          // remembers where the monsters are, for drawing between steps
+    g_prevEye = player.camera.position;
     Pickups_Update(dt);
 
     // Ammo boxes are picked up by walking over them; a weapon or a medkit needs the USE button.
-    int nearPickup = -1;
     if (seq == SEQ_NONE && player.health.isAlive) {
         for (int box = 0; box < MAX_PICKUPS; ++box) {
             const Pickup *pk = Pickups_Get(box);
@@ -349,11 +371,169 @@ static void Frame(void)
             Inventory_Add(&inv, boxItem, rounds);
             Pickups_Take(box, NULL);
         }
-        if (nearDoor < 0) nearPickup = Pickups_NearestWeapon(player.position, PICKUP_REACH);
     }
-    // The unlock console: USE is held there, not tapped. A door or a pickup in reach comes first.
-    const bool nearConsole = nearDoor < 0 && nearPickup < 0 && seq == SEQ_NONE && player.health.isAlive && FloorGame_NearConsole(player.position);
-    const bool useAvailable = (nearDoor >= 0 || nearPickup >= 0 || nearConsole) && !invOpen;
+    int nearDoor, nearPickup; bool nearConsole;
+    FindNear(&nearDoor, &nearPickup, &nearConsole);
+
+    // Nothing is live while a door opens or the player is dead, and with the inventory open only walking is.
+    if (seq != SEQ_NONE || !player.health.isAlive || invOpen) {
+        cmd.jump = cmd.fire = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.useHeld = false;
+        if (seq != SEQ_NONE || !player.health.isAlive) cmd.move = (Vector2){ 0 };
+    }
+    if (cmd.light && Inventory_Has(&inv, ITEM_FLASHLIGHT)) ToggleTorch();
+    if (cmd.slide) TrySlide();
+
+    // Start using a door. The player stands still while it opens.
+    if (cmd.use && nearDoor >= 0 && !Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap)) {
+        seq = SEQ_OPENING;
+        seqDoor = (DoorId)nearDoor;
+        AudioEvents_Door();
+    }
+    if (cmd.use && nearDoor < 0 && nearPickup >= 0 && seq == SEQ_NONE && player.health.isAlive) {
+        const Pickup *pk = Pickups_Get(nearPickup);
+        const ItemId item = ItemForPickup(pk->kind);
+        const int count = pk->count;
+        const int addCount = item == ITEM_FLASHLIGHT ? 1 : count;       // a flashlight's count is the seconds of charge it holds
+        if (Inventory_CanAdd(&inv, item, addCount)) {
+            PickupKind got;
+            Pickups_Take(nearPickup, &got);
+            Inventory_Add(&inv, item, addCount);
+            if (item == ITEM_FLASHLIGHT) { Flashlight_Give(&torch, (float)count); Toast("FLASHLIGHT. TAP LIGHT, OR PRESS L"); }
+            // A new weapon goes straight into the hand when there is a free place for it. With both places taken it stays in the
+            // bag, to be swapped in from the inventory screen.
+            if (Item_Equippable(item) && !Arsenal_Give(&arsenal, Item_Weapon(item)) && !Arsenal_IsEquipped(&arsenal, Item_Weapon(item)))
+                Toast("IN THE BAG. SWAP IT IN FROM THE INVENTORY");
+            const WeaponDef *gun = Item_Equippable(item) ? Weapon_Def(Item_Weapon(item)) : NULL;
+            if (gun && gun->kind == WEAPON_KIND_GUN) {
+                // A gun comes with a clip of its own kind of ammo. Anything that does not fit is left on the floor beside the player.
+                const int added = Inventory_Add(&inv, Item_ForAmmo(gun->ammo), gun->pickupAmmo);
+                if (added < gun->pickupAmmo) {
+                    float fx, fz;
+                    FlatForward(&fx, &fz);
+                    Pickups_Drop(currentFloorMap, player.position, fx, fz, Pickup_ForAmmo(gun->ammo), gun->pickupAmmo - added);
+                }
+            }
+        } else {
+            Inventory_Post(&inv, INV_EV_FULL, item, count);
+        }
+    }
+    if (cmd.swap && seq == SEQ_NONE && player.health.isAlive) Arsenal_Cycle(&arsenal);
+    if (seq != SEQ_NONE || !player.health.isAlive) {
+        cmd.move = (Vector2){ 0 };
+        cmd.jump = false;
+        cmd.fire = false;
+    }
+
+    // Sprint: the move stick pushed all the way out ahead (the icon above it turns yellow), or Shift. The controller holds
+    // it back when the player is too tired. The camera was already turned this frame; the step only moves the body.
+    player.wantSprint = cmd.sprint;
+    PlayerStep(&player, cmd.move, dt, currentFloorMap);
+    if (cmd.jump) PlayerTryJump(&player);
+
+    // --- DOORS: open, fade out, change floor ---
+    if (seq == SEQ_OPENING) {
+        doorOpen[seqDoor] += dt / DOOR_OPEN_SECS;
+        if (doorOpen[seqDoor] >= 1.0f) { doorOpen[seqDoor] = 1.0f; seq = SEQ_FADING; fadeOut = 0.0f; }
+    } else if (seq == SEQ_FADING) {
+        fadeOut += dt / DOOR_FADE_SECS;
+        if (fadeOut >= 1.0f) {
+            currentFloorMap = UseDoor(&player, seqDoor);
+            doorOpen[DOOR_UP] = doorOpen[DOOR_DOWN] = 0.0f;
+            seq = SEQ_NONE;
+            fadeOut = 0.0f;
+            fade = 1.0f;
+        }
+    }
+
+    Vector3 lookDir = Vector3Normalize(Vector3Subtract(player.camera.target, player.camera.position));
+    // Attack with whatever is in hand: punch, swing or fire.
+    const AimFrame aim = Aim_FromCamera(&player.camera);
+    ArsenalEvents weaponEv;
+    // The inventory holds the rounds, of the kind the weapon in hand uses; the arsenal spends them.
+    const ItemId ammoItem = Item_ForAmmo(Weapon_Def(arsenal.current)->ammo);     // ITEM_NONE for the hands and the pipe
+    arsenal.ammo = ammoItem != ITEM_NONE ? Inventory_Count(&inv, ammoItem) : 0;
+    const int ammoBefore = arsenal.ammo;
+    const float spreadBefore = Arsenal_SpreadDeg(&arsenal);                      // a shot uses the spread from before it heated the gun
+    Arsenal_Update(&arsenal, dt, cmd.fire, &weaponEv);
+    if (ammoItem != ITEM_NONE && arsenal.ammo < ammoBefore) Inventory_Remove(&inv, ammoItem, ammoBefore - arsenal.ammo);
+    if (weaponEv.shot) { Gunfire_Shoot(weaponEv.def, &aim, currentFloorMap, spreadBefore, &shotRng); AudioEvents_Shot(weaponEv.def->id); }
+    if (weaponEv.dryFire) AudioEvents_DryFire();
+    if (weaponEv.impact) {
+        // Aim along the floor plane: a swing hits what is in front of the player, level with the eye.
+        const float fl = sqrtf(lookDir.x * lookDir.x + lookDir.z * lookDir.z);
+        const float fx = fl > 0.001f ? lookDir.x / fl : 0.0f, fz = fl > 0.001f ? lookDir.z / fl : 1.0f;
+        const int meleeHits = EnemiesMeleeHit(currentFloorMap, player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg,
+                                              weaponEv.def->damage, weaponEv.def->knockback);
+        AudioEvents_Melee(meleeHits > 0);
+    }
+
+    // Move projectiles, then let any that touch an active enemy damage it and disappear
+    UpdateProjectilesSystem(dt);
+    ResolveProjectileHits(currentFloorMap, CheckAndHandleEnemyDamage);
+
+    // A change in the running totals means a shot landed, or killed, since the last step.
+    const bool hitNow = EnemyHitsLanded() != lastHitCount, killNow = EnemyKillsLanded() != lastKillCount;
+    if (hitNow) { lastHitCount = EnemyHitsLanded(); hitMarker = 1.0f; }
+    if (killNow) { lastKillCount = EnemyKillsLanded(); killMarker = 1.0f; }
+    if (killNow) AudioEvents_HitMarker(true); else if (hitNow) AudioEvents_HitMarker(false);
+
+    // Update Enemy AI and tracking
+    // How far the player can be heard: footsteps and breathing, and for a moment after a shot, the shot.
+    if (weaponEv.shot) { gunNoiseT = weaponEv.def->noiseSecs; gunNoiseM = weaponEv.def->noiseMetres; }   // each gun is as loud as its row says
+    else if (gunNoiseT > 0.0f) gunNoiseT -= dt;
+    {
+        const float steps = player.health.isAlive ? PlayerNoise(&player) : 0.0f;
+        Enemies_SetPlayerNoise(gunNoiseT > 0.0f ? (steps > gunNoiseM ? steps : gunNoiseM) : steps);
+    }
+    UpdateEnemiesSystem(dt, player.position, currentFloorMap);
+
+    // The stair clock: the console, the countdown, the collapse. Whoever is still on a floor that has fallen dies.
+    {
+        FloorGameIn fin = { dt, currentFloorMap, player.position, player.health.isAlive, cmd.useHeld && nearConsole && !invOpen, g_window.currentFloor };
+        FloorGameOut fout;
+        FloorGame_Tick(&fin, &fout);
+        if (fout.killPlayer && player.health.isAlive) { ApplyDamage(&player.health, player.health.maxHp * 10.0f); Toast("THE FLOOR GAVE WAY"); }
+    }
+
+    // Blows that land on the player: damage, knockback, red flash and camera shake.
+    if (player.health.isAlive) {
+        float blow;
+        Vector3 blowFrom;
+        if (EnemiesAttackPlayer(dt, player.position, player.height, &blow, &blowFrom)) {
+            DamagePlayer(&player, blow, blowFrom);
+            AudioEvents_Hurt();
+        }
+    } else {
+        // Dead: cancel any door in progress, fade out, then come back.
+        seq = SEQ_NONE;
+        deathT += dt;
+        if (deathT >= DEATH_TOTAL_SECS) RespawnPlayer();
+    }
+}
+
+static void Frame(void)
+{
+    const double tFrame0 = GetTime();
+    const float rawDt = GetFrameTime();
+    float dt = rawDt;
+    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+    GameConfig_Poll();                // swaps in the .mdix files as soon as the DixScript wasm has started (web builds)
+
+    int nearDoor, nearPickup; bool nearConsole;
+    FindNear(&nearDoor, &nearPickup, &nearConsole);
+
+    // Taps this frame: the STATS button and popup, the INV button, the inventory screen.
+    const bool wasOpen = invOpen;
+    Vector2 tap = { 0 };
+    const bool tapped = Input_NewTap(&tap);
+    if (tapped && Hud_HandleTap(tap, wasOpen)) { /* the HUD used it */ }
+    else if (tapped && !wasOpen && CheckCollisionPointRec(tap, InvUI_OpenButton())) invOpen = true;
+    else if (tapped && wasOpen) DoInventoryTap(tap);
+    if (invOpen) Hud_SetStatsOpen(false);
+    Hud_Update(dt);
+    if (blockToastT > 0.0f) blockToastT -= dt;
+
+    bool useAvailable = (nearDoor >= 0 || nearPickup >= 0 || nearConsole) && !invOpen;
 
     // What the player wants this frame, from whatever the platform has: fingers, mouse, keyboard (src/input). The context says
     // which controls are live: nothing while a door opens or the player is dead, only walking with the inventory open,
@@ -372,71 +552,32 @@ static void Frame(void)
     }
     InputFrame in;
     Input_Update(&ictx, &in);
-    moveDelta = in.move;
-    lookDelta = in.look;
-    triggerShoot = in.fire;
-    triggerJump = in.jump;
-    triggerUse = in.use;
-    triggerSwap = in.swap;
-    if (in.light && Inventory_Has(&inv, ITEM_FLASHLIGHT)) ToggleTorch();
-    if (in.slide) TrySlide();
     if (in.inventoryToggle) invOpen = !invOpen;
     if (in.statsToggle && !invOpen) Hud_ToggleStats();
+    SimCmd_Add(&g_simCmd, &in);                       // the rules take it at the next step
 
-    // Size of this frame's look movement as the input gave it, for the frame graph, then capped.
+    // Aim: turned every frame, so it never waits for a step. Size of this frame's look movement as the input gave it, for the
+    // frame graph, then capped.
+    Vector2 lookDelta = in.look;
     const float lookRaw = sqrtf(lookDelta.x * lookDelta.x + lookDelta.y * lookDelta.y);
     if (lookRaw > MAX_LOOK_PX) lookDelta = Vector2Scale(lookDelta, MAX_LOOK_PX / lookRaw);
     FrameGraph_Push(rawDt * 1000.0f, lookRaw);
-
-    // Start using a door. The player stands still while it opens.
-    if (triggerUse && nearDoor >= 0 && !Staircase_DoorLocked((DoorId)nearDoor, currentFloorMap)) {
-        seq = SEQ_OPENING;
-        seqDoor = (DoorId)nearDoor;
-        AudioEvents_Door();
-    }
-    if (triggerUse && nearDoor < 0 && nearPickup >= 0 && seq == SEQ_NONE && player.health.isAlive) {
-        const Pickup *pk = Pickups_Get(nearPickup);
-        const ItemId item = ItemForPickup(pk->kind);
-        const int count = pk->count;
-        const int addCount = item == ITEM_FLASHLIGHT ? 1 : count;       // a flashlight's count is the seconds of charge it holds
-        if (Inventory_CanAdd(&inv, item, addCount)) {
-            PickupKind got;
-            Pickups_Take(nearPickup, &got);
-            Inventory_Add(&inv, item, addCount);
-            if (item == ITEM_FLASHLIGHT) { Flashlight_Give(&torch, (float)count); Toast("FLASHLIGHT. TAP LIGHT, OR PRESS L"); }
-            if (Item_Equippable(item)) Arsenal_Give(&arsenal, Item_Weapon(item));      // a new weapon goes straight into the hand
-            const WeaponDef *gun = Item_Equippable(item) ? Weapon_Def(Item_Weapon(item)) : NULL;
-            if (gun && gun->kind == WEAPON_KIND_GUN) {
-                // A gun comes with a clip of its own kind of ammo. Anything that does not fit is left on the floor beside the player.
-                const int added = Inventory_Add(&inv, Item_ForAmmo(gun->ammo), gun->pickupAmmo);
-                if (added < gun->pickupAmmo) {
-                    float fx, fz;
-                    FlatForward(&fx, &fz);
-                    Pickups_Drop(currentFloorMap, player.position, fx, fz, Pickup_ForAmmo(gun->ammo), gun->pickupAmmo - added);
-                }
-            }
-        } else {
-            Inventory_Post(&inv, INV_EV_FULL, item, count);
-        }
-    }
-    if (triggerSwap && seq == SEQ_NONE && player.health.isAlive) Arsenal_Cycle(&arsenal);
-    if (seq != SEQ_NONE || !player.health.isAlive) {
-        moveDelta = (Vector2){ 0 };
-        lookDelta = (Vector2){ 0 };
-        triggerJump = false;
-        triggerShoot = false;
-    }
-
-    // Sprint: the move stick pushed all the way out ahead (the icon above it turns yellow), or Shift. The controller holds
-    // it back when the player is too tired.
-    player.wantSprint = in.sprint;
+    if (seq == SEQ_NONE && player.health.isAlive) PlayerApplyLook(&player, lookDelta);
+    PlayerSyncCamera(&player);                        // the camera's direction follows; its position is as the last step left it
 
     const double tInput = GetTime();
-    UpdatePlayerController(&player, moveDelta, lookDelta, dt, currentFloorMap);
+    // The rules: as many fixed steps as the time since the last frame is worth (a stall is capped, and the rest dropped).
+    const int steps = FixedStep_Advance(&g_simStep, rawDt);
+    for (int i = 0; i < steps; ++i) SimTick(SimCmd_Take(&g_simCmd));
+    const double tSim = GetTime();
+    const float alpha = FixedStep_Alpha(&g_simStep);  // how far the next step has got: the picture is blended that far
 
-    if (triggerJump) PlayerTryJump(&player);
+    // What the steps changed, as the screen and the speakers see it.
+    FindNear(&nearDoor, &nearPickup, &nearConsole);
+    useAvailable = (nearDoor >= 0 || nearPickup >= 0 || nearConsole) && !invOpen;
 
-    // The flashlight: drains while on, flickers when low, and its beam follows where the camera looks.
+    // The flashlight: drains while on, flickers when low, and its beam follows where the camera looks (every frame, so the beam
+    // is never behind the view; its charge drains by time, so the frame rate does not change it).
     {
         const Vector3 lookNow = { player.camera.target.x - player.camera.position.x, player.camera.target.y - player.camera.position.y,
                                   player.camera.target.z - player.camera.position.z };
@@ -456,100 +597,29 @@ static void Frame(void)
                              player.sprinting, player.sliding, player.exhausted, player.health.isAlive);
         AudioEvents_Health(player.health.hp / player.health.maxHp, player.health.isAlive);
         AudioEvents_Ambience(player.health.isAlive);
-    }
-
-    // --- DOORS: open, fade out, change floor ---
-    if (seq == SEQ_OPENING) {
-        doorOpen[seqDoor] += dt / DOOR_OPEN_SECS;
-        if (doorOpen[seqDoor] >= 1.0f) { doorOpen[seqDoor] = 1.0f; seq = SEQ_FADING; fadeOut = 0.0f; }
-    } else if (seq == SEQ_FADING) {
-        fadeOut += dt / DOOR_FADE_SECS;
-        if (fadeOut >= 1.0f) {
-            currentFloorMap = UseDoor(&player, seqDoor);
-            doorOpen[DOOR_UP] = doorOpen[DOOR_DOWN] = 0.0f;
-            seq = SEQ_NONE;
-            fadeOut = 0.0f;
-            fade = 1.0f;
-        }
-    }
-    if (fade > 0.0f) fade -= dt * 1.6f;
-
-    Vector3 lookDir = Vector3Normalize(Vector3Subtract(player.camera.target, player.camera.position));
-    // Attack with whatever is in hand: punch, swing or fire.
-    const AimFrame aim = Aim_FromCamera(&player.camera);
-    ArsenalEvents weaponEv;
-    // The inventory holds the rounds, of the kind the weapon in hand uses; the arsenal spends them.
-    const ItemId ammoItem = Item_ForAmmo(Weapon_Def(arsenal.current)->ammo);     // ITEM_NONE for the hands and the pipe
-    arsenal.ammo = ammoItem != ITEM_NONE ? Inventory_Count(&inv, ammoItem) : 0;
-    const int ammoBefore = arsenal.ammo;
-    const float spreadBefore = Arsenal_SpreadDeg(&arsenal);                      // a shot uses the spread from before it heated the gun
-    Arsenal_Update(&arsenal, dt, triggerShoot, &weaponEv);
-    if (ammoItem != ITEM_NONE && arsenal.ammo < ammoBefore) Inventory_Remove(&inv, ammoItem, ammoBefore - arsenal.ammo);
-    if (weaponEv.shot) { Gunfire_Shoot(weaponEv.def, &aim, currentFloorMap, spreadBefore, &shotRng); AudioEvents_Shot(weaponEv.def->id); }
-    if (weaponEv.dryFire) AudioEvents_DryFire();
-    if (weaponEv.impact) {
-        // Aim along the floor plane: a swing hits what is in front of the player, level with the eye.
-        const float fl = sqrtf(lookDir.x * lookDir.x + lookDir.z * lookDir.z);
-        const float fx = fl > 0.001f ? lookDir.x / fl : 0.0f, fz = fl > 0.001f ? lookDir.z / fl : 1.0f;
-        const int meleeHits = EnemiesMeleeHit(currentFloorMap, player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg,
-                                              weaponEv.def->damage, weaponEv.def->knockback);
-        AudioEvents_Melee(meleeHits > 0);
-    }
-
-    // Move projectiles, then let any that touch an active enemy damage it and disappear
-    UpdateProjectilesSystem(dt);
-    ResolveProjectileHits(currentFloorMap, CheckAndHandleEnemyDamage);
-
-    // A change in the running totals means a shot landed, or killed, since the last frame.
-    const bool hitNow = EnemyHitsLanded() != lastHitCount, killNow = EnemyKillsLanded() != lastKillCount;
-    if (hitNow) { lastHitCount = EnemyHitsLanded(); hitMarker = 1.0f; }
-    if (killNow) { lastKillCount = EnemyKillsLanded(); killMarker = 1.0f; }
-    if (killNow) AudioEvents_HitMarker(true); else if (hitNow) AudioEvents_HitMarker(false);
-    hitMarker -= dt / HIT_MARKER_SECS;   if (hitMarker < 0.0f) hitMarker = 0.0f;
-    killMarker -= dt / KILL_MARKER_SECS; if (killMarker < 0.0f) killMarker = 0.0f;
-    const double tSim = GetTime();
-
-    // Update Enemy AI and tracking
-    // How far the player can be heard: footsteps and breathing, and for a moment after a shot, the shot.
-    if (weaponEv.shot) { gunNoiseT = weaponEv.def->noiseSecs; gunNoiseM = weaponEv.def->noiseMetres; }   // each gun is as loud as its row says
-    else if (gunNoiseT > 0.0f) gunNoiseT -= dt;
-    {
-        const float steps = player.health.isAlive ? PlayerNoise(&player) : 0.0f;
-        Enemies_SetPlayerNoise(gunNoiseT > 0.0f ? (steps > gunNoiseM ? steps : gunNoiseM) : steps);
-    }
-    UpdateEnemiesSystem(dt, player.position, currentFloorMap);
-    {
         Vector3 awakeAt = { 0 };
         float awakeDist = 0.0f;
         const bool awake = player.health.isAlive && Enemies_NearestAwake(player.position, 40.0f, &awakeAt, &awakeDist);
         AudioEvents_Enemies(dt, awake, awakeAt, awakeDist);
     }
 
-    // The stair clock: the console, the countdown, the collapse. Whoever is still on a floor that has fallen dies.
-    {
-        FloorGameIn fin = { dt, currentFloorMap, player.position, player.health.isAlive, in.useHeld && nearConsole && !invOpen, g_window.currentFloor };
-        FloorGameOut fout;
-        FloorGame_Frame(&fin, &fout);
-        if (fout.killPlayer && player.health.isAlive) { ApplyDamage(&player.health, player.health.maxHp * 10.0f); Toast("THE FLOOR GAVE WAY"); }
-    }
-
-    // Blows that land on the player: damage, knockback, red flash and camera shake.
-    if (player.health.isAlive) {
-        float blow;
-        Vector3 blowFrom;
-        if (EnemiesAttackPlayer(dt, player.position, player.height, &blow, &blowFrom)) {
-            DamagePlayer(&player, blow, blowFrom);
-            AudioEvents_Hurt();
-        }
-    } else {
-        // Dead: cancel any door in progress, fade out, then come back.
-        seq = SEQ_NONE;
-        deathT += dt;
-        if (deathT >= DEATH_TOTAL_SECS) RespawnPlayer();
-    }
-
+    // Screen effects that fade by the clock, not by the step.
+    if (fade > 0.0f) fade -= dt * 1.6f;
+    hitMarker -= dt / HIT_MARKER_SECS;   if (hitMarker < 0.0f) hitMarker = 0.0f;
+    killMarker -= dt / KILL_MARKER_SECS; if (killMarker < 0.0f) killMarker = 0.0f;
     if (healFlash > 0.0f) healFlash -= dt * 2.0f;
     DrainInventoryEvents();
+
+    // Drawn between the last two steps: the camera, the monsters and the shots are blended that far from where the last step began.
+    Enemies_SetRenderAlpha(alpha);
+    Projectiles_SetRenderLag((1.0f - alpha) * SIM_STEP_SECS);
+    Camera3D viewCam = player.camera;
+    {
+        const Vector3 dir = Vector3Subtract(player.camera.target, player.camera.position);
+        viewCam.position = Vector3Lerp(g_prevEye, player.camera.position, alpha);
+        viewCam.target = Vector3Add(viewCam.position, dir);
+    }
+    const AimFrame viewAim = Aim_FromCamera(&viewCam);
 
     const double tAi = GetTime();
     const double tLight0 = GetTime();
@@ -559,23 +629,23 @@ static void Frame(void)
         ClearBackground(BLACK);
         Highp_Begin();                    // from here on, vertex math is 32 bit even on a phone (see ui/highp_shader.h)
 
-        BeginMode3D(player.camera);
-            ViewClip_Apply(&player.camera, WORLD_NEAR, WORLD_FAR);
+        BeginMode3D(viewCam);
+            ViewClip_Apply(&viewCam, WORLD_NEAR, WORLD_FAR);
             // Only what is inside a cone around where the camera looks is drawn, up or down as well as sideways.
-            Vector3 look = { player.camera.target.x - player.camera.position.x, player.camera.target.y - player.camera.position.y,
-                             player.camera.target.z - player.camera.position.z };
+            Vector3 look = { viewCam.target.x - viewCam.position.x, viewCam.target.y - viewCam.position.y,
+                             viewCam.target.z - viewCam.position.z };
             // The flashlight: held a little to the right of and below the eye. The renderer keeps the dark surfaces the beam reaches,
             // and the beam shader lights them (or, with no shader, a soft glow stands in).
-            const Vector3 torchPos = { player.camera.position.x + aim.forward.x * 0.10f + aim.right.x * 0.12f - aim.up.x * 0.08f,
-                                       player.camera.position.y + aim.forward.y * 0.10f + aim.right.y * 0.12f - aim.up.y * 0.08f,
-                                       player.camera.position.z + aim.forward.z * 0.10f + aim.right.z * 0.12f - aim.up.z * 0.08f };
+            const Vector3 torchPos = { viewCam.position.x + viewAim.forward.x * 0.10f + viewAim.right.x * 0.12f - viewAim.up.x * 0.08f,
+                                       viewCam.position.y + viewAim.forward.y * 0.10f + viewAim.right.y * 0.12f - viewAim.up.y * 0.08f,
+                                       viewCam.position.z + viewAim.forward.z * 0.10f + viewAim.right.z * 0.12f - viewAim.up.z * 0.08f };
             if (torch.level > 0.0f) {
                 const FlashlightConfig *fc = Flashlight_Config();
                 Highp_SetFlashlight(torchPos, torch.dir, cosf(fc->beamInnerDeg * DEG2RAD), cosf(fc->beamOuterDeg * DEG2RAD), fc->range, fc->strength * torch.level, fc->tint);
             }
             DrawFloorMapFlashlight(&torch, torchPos, !Highp_FlashlightAvailable());
             const double tWorld0 = GetTime();
-            DrawFloorMapView(currentFloorMap, player.camera.position, look, 0.0f);
+            DrawFloorMapView(currentFloorMap, viewCam.position, look, 0.0f);
             SubNote(SUB_WORLD, tWorld0, GetTime());
             const double tEnts0 = GetTime();
             DrawObstaclesSystem();
@@ -585,13 +655,13 @@ static void Frame(void)
             DrawStairs(currentFloorMap, doorOpen, player.position);
             FloorGame_Draw(player.position, (float)GetTime());
             Highp_FlashlightOff();                              // the tracers, the hands and the screen are not lit by the beam
-            DrawProjectilesSystem(player.camera.position);      // light that adds to what is behind it: after everything opaque
+            DrawProjectilesSystem(viewCam.position);      // light that adds to what is behind it: after everything opaque
             SubNote(SUB_ENTS, tEnts0, GetTime());
             // The hands and what they hold, over everything else in the 3D view.
             const double tHands0 = GetTime();
             if (player.health.isAlive) {
                 const float walk01 = PlayerSpeed(&player) / PLAYER_WALK_SPEED > 1.5f ? 1.5f : PlayerSpeed(&player) / PLAYER_WALK_SPEED;
-                Viewmodel_Draw(&arsenal, &aim, player.isGrounded ? walk01 : 0.0f, (float)GetTime(), Lighting_AtPoint(player.position));
+                Viewmodel_Draw(&arsenal, &viewAim, player.isGrounded ? walk01 : 0.0f, (float)GetTime(), Lighting_AtPoint(player.position));
             }
             SubNote(SUB_HANDS, tHands0, GetTime());
         EndMode3D();
@@ -653,7 +723,11 @@ static void Frame(void)
             Hud_Draw(&hv);
         }
 
-        if (invOpen) InvUI_Draw(&inv, arsenal.current);
+        if (invOpen) {
+            InvLoadout lo = { arsenal.current, 0u, Arsenal_EquippedCount(&arsenal), ARSENAL_MAX_EQUIPPED };
+            for (int w = WEAPON_HANDS + 1; w < WEAPON_COUNT; ++w) if (arsenal.owned[w]) lo.equippedMask |= 1u << w;
+            InvUI_Draw(&inv, &lo);
+        }
         else         InvUI_DrawOpenButton(&inv, false);
 
     const double tUi = GetTime();
@@ -713,6 +787,9 @@ int main(void)
         InitPlayerController(&player, spawn.x, spawn.z);
         TeleportPlayer(&player, spawn, spawnYaw);
     }
+    g_prevEye = player.camera.position;
+    FixedStep_Init(&g_simStep, SIM_STEP_SECS, SIM_MAX_STEPS_PER_FRAME);
+    SimCmd_Init(&g_simCmd);
 
 #if TOWER_MAIN_LOOP_CALLBACK
     // The browser drives the loop from requestAnimationFrame (fps 0), so frames are paced

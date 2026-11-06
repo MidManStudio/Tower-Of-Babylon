@@ -29,8 +29,12 @@ Rectangle InvUI_Panel(void);
 // for that slot; a tap on a slot returns SELECT; the X or a tap outside the panel returns CLOSE.
 InvUiResult InvUI_Tap(const Inventory *inv, Vector2 pos);
 
-// Draws the screen. held is the weapon in hand (its slot is marked); the open button is drawn by InvUI_DrawOpenButton.
-void InvUI_Draw(const Inventory *inv, WeaponId held);
+// What the screen needs to know about the weapons: which is in hand, which are equipped (a bit per WeaponId), how many, how many
+// there may be. The bag can hold more weapons than can be equipped; the weapon's button says what tapping it will do.
+typedef struct { WeaponId held; unsigned equippedMask; int equippedCount, equippedMax; } InvLoadout;
+
+// Draws the screen; the open button is drawn by InvUI_DrawOpenButton.
+void InvUI_Draw(const Inventory *inv, const InvLoadout *loadout);
 void InvUI_DrawOpenButton(const Inventory *inv, bool pressedDown);
 
 // Rectangle of one slot, for tests.

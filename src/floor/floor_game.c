@@ -119,15 +119,9 @@ static void CallMonster(const FloorMap *map, int floorNumber)
     }
 }
 
-void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out)
+// What follows a step (or a frame with no step): do what the rules asked for, lock or open the door, let the floor fall, see who is on it.
+static void Settle(const FloorGameIn *in, FloorGameOut *out)
 {
-    out->killPlayer = false;
-    if (g_cleared) return;
-
-    const bool reach = in->alive && FloorGame_NearConsole(in->player);
-    const int steps = FixedStep_Advance(&g_step, in->dt);
-    for (int i = 0; i < steps; ++i) FloorRun_Step(&g_run, g_step.step, reach, in->useHeld && reach);
-
     RunEvent ev;
     while (FloorRun_PopEvent(&g_run, &ev)) {
         switch (ev.kind) {
@@ -144,6 +138,28 @@ void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out)
     Staircase_SetUpDoorLocked(!FloorRun_DoorOpen(&g_run));
     DrawFloorMapCollapse(g_doorX, g_doorZ, g_run.phase == RUN_COLLAPSING ? g_run.waveRadius : -1.0f);
     if (in->alive && FloorRun_Gone(&g_run, in->player.x, in->player.z)) out->killPlayer = true;
+}
+
+// One step of the clock, for a game that already runs its rules on fixed steps (src/sim): in->dt is not used, the step is
+// always RUN_TICK_SECS, which is the game's own step.
+void FloorGame_Tick(const FloorGameIn *in, FloorGameOut *out)
+{
+    out->killPlayer = false;
+    if (g_cleared) return;
+    const bool reach = in->alive && FloorGame_NearConsole(in->player);
+    FloorRun_Step(&g_run, RUN_TICK_SECS, reach, in->useHeld && reach);
+    Settle(in, out);
+}
+
+// The same from frame time: the clock keeps its own accumulator and takes as many steps as the time is worth.
+void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out)
+{
+    out->killPlayer = false;
+    if (g_cleared) return;
+    const bool reach = in->alive && FloorGame_NearConsole(in->player);
+    const int steps = FixedStep_Advance(&g_step, in->dt);
+    for (int i = 0; i < steps; ++i) FloorRun_Step(&g_run, g_step.step, reach, in->useHeld && reach);
+    Settle(in, out);
 }
 
 // ---- drawing the console ------------------------------------------------------------------------------------

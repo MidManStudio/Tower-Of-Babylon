@@ -189,6 +189,11 @@ void Spiders_SpawnForFloor(const FloorMap *f, int tier)
     }
 }
 
+void Spiders_BeginTick(void)
+{
+    for (int n = 0; n < MAX_SPIDERS; ++n) if (g_spiders[n].active) g_spiders[n].prevPos = g_spiders[n].pos;
+}
+
 void Spiders_Update(float dt, Vector3 playerPos, const FloorMap *f)
 {
     if (!f || dt <= 0.0f) return;

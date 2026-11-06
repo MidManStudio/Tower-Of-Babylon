@@ -46,7 +46,15 @@
 #define PLAYER_SLIDE_NOISE     14.0f   // how far a slide is heard: loud, but less than a sprint's 20
 
 void InitPlayerController(PlayerController *player, float startX, float startZ);
+// The game runs the rules on fixed steps but turns the camera every frame, so the aim never waits for a step:
+//   PlayerApplyLook(&p, lookDelta)    every frame: turns yaw and pitch (lookDelta in canvas pixels)
+//   PlayerSyncCamera(&p)              every frame after it: the camera's direction follows (its position stays as the last step left it)
+//   PlayerStep(&p, move, dt, map)     every step: movement, stamina, sliding, falling, the camera's position
 // moveDelta is the stick or keys: x to the right, y negative forward, length 0 to 1. Set player->wantSprint first.
+void PlayerApplyLook(PlayerController *player, Vector2 lookDelta);
+void PlayerSyncCamera(PlayerController *player);
+void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const FloorMap *map);
+// All three in one call (look, then a step), for the tests and anything that has no frame/step split.
 void UpdatePlayerController(PlayerController *player, Vector2 moveDelta, Vector2 lookDelta, float dt, const FloorMap *map);
 // Jumps if standing on something. Costs stamina; when there is too little, or the player is exhausted, it is a weak hop.
 // Returns true if the player left the ground.

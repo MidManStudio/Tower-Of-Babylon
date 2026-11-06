@@ -100,7 +100,14 @@ Vector3 Aim_Muzzle(const AimFrame *aim);
 Vector3 Aim_MuzzleFor(const AimFrame *aim, WeaponId id);
 
 void Arsenal_Init(Arsenal *a);                        // hands only, no ammo
-bool Arsenal_Give(Arsenal *a, WeaponId id);           // false when already owned; otherwise owned and equipped
+// Only ARSENAL_MAX_EQUIPPED weapons (not counting the hands) can be equipped at once. "owned" in the struct means equipped; a
+// weapon the player merely carries is in the inventory bag and not here. Giving up an equipped weapon (Arsenal_Remove) leaves
+// it in the bag; dropping it is the inventory's job.
+#define ARSENAL_MAX_EQUIPPED 2
+bool Arsenal_Give(Arsenal *a, WeaponId id);           // false when already equipped, or when ARSENAL_MAX_EQUIPPED are; otherwise equipped and in hand
+bool Arsenal_IsEquipped(const Arsenal *a, WeaponId id);   // the hands count as always equipped
+int  Arsenal_EquippedCount(const Arsenal *a);         // equipped weapons, not counting the hands
+bool Arsenal_Replace(Arsenal *a, WeaponId in, WeaponId out);   // equips "in" in place of the equipped "out" and takes it in hand; false if either is not as required
 bool Arsenal_Equip(Arsenal *a, WeaponId id);          // takes an owned weapon in hand; false if not owned or already in hand
 bool Arsenal_Remove(Arsenal *a, WeaponId id);         // gives a weapon up (dropped); hands again if it was in hand. Hands cannot be removed
 void Arsenal_AddAmmo(Arsenal *a, int n);

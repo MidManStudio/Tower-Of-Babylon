@@ -95,11 +95,31 @@ static void Equip(Arsenal *a, WeaponId id)
     a->pressBuf = 0.0f;
 }
 
+bool Arsenal_IsEquipped(const Arsenal *a, WeaponId id) { return id >= 0 && id < WEAPON_COUNT && a->owned[id]; }
+
+int Arsenal_EquippedCount(const Arsenal *a)
+{
+    int n = 0;
+    for (int i = WEAPON_HANDS + 1; i < WEAPON_COUNT; ++i) n += a->owned[i] ? 1 : 0;
+    return n;
+}
+
 bool Arsenal_Give(Arsenal *a, WeaponId id)
 {
     if (id <= WEAPON_HANDS || id >= WEAPON_COUNT || a->owned[id]) return false;
+    if (Arsenal_EquippedCount(a) >= ARSENAL_MAX_EQUIPPED) return false;
     a->owned[id] = true;
     Equip(a, id);
+    return true;
+}
+
+bool Arsenal_Replace(Arsenal *a, WeaponId in, WeaponId out)
+{
+    if (in <= WEAPON_HANDS || in >= WEAPON_COUNT || a->owned[in]) return false;
+    if (out <= WEAPON_HANDS || out >= WEAPON_COUNT || !a->owned[out]) return false;
+    a->owned[out] = false;
+    a->owned[in] = true;
+    Equip(a, in);
     return true;
 }
 

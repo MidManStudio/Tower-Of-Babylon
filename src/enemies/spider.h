@@ -46,6 +46,7 @@ typedef struct {
 
     // Body, following the legs.
     Vector3 pos, vel, up, fwd;
+    Vector3 prevPos;                    // where the body was at the start of the last step: drawing blends from here to pos (Spiders_BeginTick)
 
     float     gaitPhase;
     SpiderLeg legs[SPIDER_LEGS];
@@ -79,6 +80,10 @@ void Spider_BodySpheres(const Spider *s, Vector3 centers[3], float radii[3]);
 void Spiders_Init(void);
 void Spiders_SpawnForFloor(const FloorMap *f, int tier);
 void Spiders_Update(float dt, Vector3 playerPos, const FloorMap *f);
+// For drawing between fixed steps: BeginTick before each step remembers where the bodies are, SetRenderAlpha (0 the start of the
+// last step, 1 its end) says how far to blend when drawing.
+void Spiders_BeginTick(void);
+void Spiders_SetRenderAlpha(float alpha);
 // Sets how far the player can be heard, metres (see Enemies_SetPlayerNoise). A spider hunts from a base of 12 tiles of
 // path, plus a tile for every metre of noise, up to the whole map (22 m, a hunt of 34 tiles, until it is called).
 void Spiders_SetNoise(float metres);

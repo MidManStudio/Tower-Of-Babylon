@@ -21,6 +21,7 @@ typedef enum {
 typedef struct {
     uint32_t        id;
     Vector3         position;     // centre of the cylinder base
+    Vector3         prevPosition; // where it was at the start of the last step: drawing blends from here (Enemies_BeginTick)
     float           radius;
     float           height;
     Color           tint;

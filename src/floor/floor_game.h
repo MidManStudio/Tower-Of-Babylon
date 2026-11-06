@@ -29,7 +29,8 @@ bool FloorGame_NearConsole(Vector3 player);
 // Where the console stands. False when this floor has no clock.
 bool FloorGame_ConsolePosition(float *x, float *z);
 
-void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out);   // once per frame, after the player has moved
+void FloorGame_Tick(const FloorGameIn *in, FloorGameOut *out);    // once per simulation step (30 a second): the game's own fixed step
+void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out);   // or once per frame, when the caller has no steps: it keeps its own accumulator
 void FloorGame_Draw(Vector3 viewer, float time);                  // in the 3D view
 
 // For the HUD.

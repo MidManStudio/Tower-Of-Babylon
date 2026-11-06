@@ -241,13 +241,17 @@ void TeleportPlayer(PlayerController *player, Vector3 pos, float yaw) {
     SyncPlayerCamera(player);
 }
 
-void UpdatePlayerController(PlayerController *player, Vector2 moveDelta, Vector2 lookDelta, float dt, const FloorMap *map) {
-    // 1. Camera Look Rotation
+void PlayerApplyLook(PlayerController *player, Vector2 lookDelta) {
     float lookSensitivity = 0.005f;
     player->yaw -= lookDelta.x * lookSensitivity;
     player->pitch -= lookDelta.y * lookSensitivity;
     if (player->pitch > 1.4f) player->pitch = 1.4f;
     if (player->pitch < -1.4f) player->pitch = -1.4f;
+}
+
+void PlayerSyncCamera(PlayerController *player) { SyncPlayerCamera(player); }
+
+void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const FloorMap *map) {
 
     Vector3 forward = { sinf(player->yaw), 0.0f, cosf(player->yaw) };
     Vector3 right = { sinf(player->yaw - 1.5708f), 0.0f, cosf(player->yaw - 1.5708f) };
@@ -412,4 +416,11 @@ void UpdatePlayerController(PlayerController *player, Vector2 moveDelta, Vector2
     if (player->fireCooldown > 0.0f) {
         player->fireCooldown -= dt;
     }
+}
+
+// Look and movement together, as one call: what the game did every frame before the rules ran on fixed steps, and what the
+// movement tests still use. The game itself calls PlayerApplyLook every frame and PlayerStep every tick.
+void UpdatePlayerController(PlayerController *player, Vector2 moveDelta, Vector2 lookDelta, float dt, const FloorMap *map) {
+    PlayerApplyLook(player, lookDelta);
+    PlayerStep(player, moveDelta, dt, map);
 }

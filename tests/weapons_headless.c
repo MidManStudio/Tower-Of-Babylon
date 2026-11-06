@@ -189,6 +189,23 @@ int main(void)
     Arsenal_Cycle(&a);
     Check(a.current == WEAPON_PIPE, "and on to the pipe");
 
+    printf("Two weapons equipped at most\n");
+    Arsenal_Init(&a);
+    Check(Arsenal_EquippedCount(&a) == 0 && Arsenal_IsEquipped(&a, WEAPON_HANDS) && !Arsenal_IsEquipped(&a, WEAPON_PISTOL), "at the start nothing is equipped but the hands");
+    Arsenal_Give(&a, WEAPON_PIPE); Arsenal_Give(&a, WEAPON_PISTOL);
+    Check(Arsenal_EquippedCount(&a) == ARSENAL_MAX_EQUIPPED && ARSENAL_MAX_EQUIPPED == 2, "two weapons are equipped, and two is the limit");
+    Check(!Arsenal_Give(&a, WEAPON_SHOTGUN) && !Arsenal_IsEquipped(&a, WEAPON_SHOTGUN) && a.current == WEAPON_PISTOL, "a third weapon cannot be equipped, and the one in hand is left alone");
+    Check(!Arsenal_Give(&a, WEAPON_RIFLE) && Arsenal_EquippedCount(&a) == 2, "nor a fourth");
+    Check(!Arsenal_Replace(&a, WEAPON_SHOTGUN, WEAPON_HANDS) && !Arsenal_Replace(&a, WEAPON_SHOTGUN, WEAPON_RIFLE) && !Arsenal_Replace(&a, WEAPON_PIPE, WEAPON_PISTOL),
+          "swapping needs an equipped weapon to swap out and a weapon that is not equipped to swap in (not the hands, not one that is not equipped)");
+    Check(Arsenal_Replace(&a, WEAPON_SHOTGUN, WEAPON_PISTOL) && a.current == WEAPON_SHOTGUN && !Arsenal_IsEquipped(&a, WEAPON_PISTOL) && Arsenal_IsEquipped(&a, WEAPON_PIPE) &&
+          Arsenal_EquippedCount(&a) == 2, "swapping the pistol out for the shotgun: the shotgun is in hand, the pipe is still equipped, the pistol is not, still two");
+    Check(a.equipT == 0.0f, "and the new weapon is brought up from below");
+    Arsenal_Cycle(&a); Arsenal_Cycle(&a); Arsenal_Cycle(&a);
+    Check(Arsenal_OwnedCount(&a) == 3 && a.current == WEAPON_SHOTGUN, "cycling still goes round the hands and the two equipped weapons, and only those");
+    Check(Arsenal_Remove(&a, WEAPON_PIPE) && Arsenal_EquippedCount(&a) == 1 && Arsenal_Give(&a, WEAPON_RIFLE) && Arsenal_EquippedCount(&a) == 2, "putting one away makes room for another");
+    Check(a.current == WEAPON_RIFLE && Arsenal_Remove(&a, WEAPON_RIFLE) && a.current == WEAPON_HANDS && Arsenal_IsEquipped(&a, WEAPON_SHOTGUN), "putting away the weapon in hand (the rifle just equipped) takes the hands up again and leaves the other equipped");
+
     printf("Pipe: swings\n");
     Arsenal_Init(&a);
     Arsenal_Give(&a, WEAPON_PIPE);

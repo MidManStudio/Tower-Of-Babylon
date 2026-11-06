@@ -120,3 +120,6 @@ Running is meant to buy a lead and then take it back. Two things do that.
 - There is no crouch, no sliding and no footstep sound; the breathing is only a view heave.
 - The RUN toggle ends when the stick is released for 0.4 s, so a run does not carry across a pause in walking.
 - Running now costs something against the enemies (see "The cost of running" above).
+
+### `PlayerApplyLook`, `PlayerSyncCamera`, `PlayerStep`
+`UpdatePlayerController` is split so the game can turn the camera every frame and move the body every fixed step (`sim.md`): `PlayerApplyLook` (yaw and pitch), `PlayerSyncCamera` (the camera follows; its position is as the last step left it), `PlayerStep` (everything else). `UpdatePlayerController` is the three in one call and gives exactly the same result (tested); the movement tests still use it.

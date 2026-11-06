@@ -70,6 +70,7 @@ static void InitEnemy(Enemy *e, uint32_t id, float x, float z, uint32_t h, int t
 {
     e->id = id;
     e->position = (Vector3){ x, 0.0f, z };
+    e->prevPosition = e->position;
     e->height = 2.0f + (float)(h % 100) * 0.018f;
     e->radius = 0.40f + (float)((h >> 8) % 100) * 0.003f;
 
@@ -141,6 +142,7 @@ int Enemies_SpawnAt(Vector3 pos, int tier, bool alerted)
         if (g_enemies[i].active) continue;
         InitEnemy(&g_enemies[i], (uint32_t)i, pos.x, pos.z, Hash32(0xC0FFEEu + (made++) * 0x9e3779b1U), tier);
         g_enemies[i].position.y = pos.y;
+        g_enemies[i].prevPosition = g_enemies[i].position;
         if (alerted) g_enemies[i].alertTimer = ENEMY_ALERT_SECS * 4.0f;
         return i;
     }
@@ -166,6 +168,18 @@ static void FollowGround(Enemy *e, float dt)
 }
 
 void Enemies_SetRage(float speedMultiplier) { g_rage = speedMultiplier < 1.0f ? 1.0f : speedMultiplier; }
+
+static float g_renderAlpha = 1.0f;
+void Enemies_BeginTick(void)
+{
+    for (int i = 0; i < MAX_FLOOR_ENEMIES; ++i) if (g_enemies[i].active) g_enemies[i].prevPosition = g_enemies[i].position;
+    Spiders_BeginTick();
+}
+void Enemies_SetRenderAlpha(float alpha)
+{
+    g_renderAlpha = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha);
+    Spiders_SetRenderAlpha(g_renderAlpha);
+}
 
 const Enemy *Enemies_At(int slot) { return (slot >= 0 && slot < MAX_FLOOR_ENEMIES) ? &g_enemies[slot] : NULL; }
 
@@ -246,7 +260,9 @@ void DrawEnemiesSystem(Vector3 viewer)
         const float hurt = e->hurtTimer > 0.0f ? e->hurtTimer / ENEMY_HURT_SECS : 0.0f;
         const float radius = e->radius * (1.0f + 0.22f * e->rear);
         const float height = e->height * (1.0f - 0.10f * e->rear + 0.06f * e->lunge);
-        Vector3 pos = e->position;
+        Vector3 pos = { e->prevPosition.x + (e->position.x - e->prevPosition.x) * g_renderAlpha,
+                        e->prevPosition.y + (e->position.y - e->prevPosition.y) * g_renderAlpha,
+                        e->prevPosition.z + (e->position.z - e->prevPosition.z) * g_renderAlpha };
         pos.x += e->faceX * e->lunge * 0.5f;
         pos.z += e->faceZ * e->lunge * 0.5f;
         Color col = MixColor(e->tint, (Color){ 255, 140, 90, 255 }, 0.6f * e->rear);

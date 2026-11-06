@@ -35,6 +35,11 @@ const Enemy *Enemies_At(int slot);
 // (SpawnEnemiesForFloor) puts it back to 1.
 void Enemies_SetRage(float speedMultiplier);
 
+// For drawing between fixed steps: call Enemies_BeginTick before each simulation step (it remembers where everything is, spiders
+// included) and Enemies_SetRenderAlpha before drawing (0 the start of the last step, 1 its end).
+void Enemies_BeginTick(void);
+void Enemies_SetRenderAlpha(float alpha);
+
 void UpdateEnemiesSystem(float dt, Vector3 playerPos, const FloorMap *floorMap);
 
 // How far the player can be heard right now, metres, set once a frame by the caller (standing about 3, walking

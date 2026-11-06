@@ -512,6 +512,7 @@ void Spider_Init(Spider *s, const FloorMap *f, Vector3 anchor, Vector3 normal, V
     s->up = s->normal;
     s->fwd = s->heading;
     s->pos = V3Mad(anchor, s->normal, BODY_H);
+    s->prevPos = s->pos;
     s->tint = (Color){ 28, 24, 30, 255 };
     InitHealth(&s->health, 90.0f);
 

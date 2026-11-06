@@ -156,7 +156,7 @@ void InvUI_DrawOpenButton(const Inventory *inv, bool pressedDown)
     DrawText(TextFormat("INV %d/%d", Inventory_UsedSlots(inv), INV_SLOTS), (int)OPEN_BTN.x + 10, (int)OPEN_BTN.y + 10, 16, WHITE);
 }
 
-void InvUI_Draw(const Inventory *inv, WeaponId held)
+void InvUI_Draw(const Inventory *inv, const InvLoadout *lo)
 {
     const Rectangle panel = InvUI_Panel();
     DrawRectangle(0, 0, 800, 450, Fade(BLACK, 0.45f));
@@ -164,6 +164,7 @@ void InvUI_Draw(const Inventory *inv, WeaponId held)
     DrawRectangleLinesEx(panel, 2.0f, (Color){ 170, 140, 30, 255 });
     DrawText(TextFormat("INVENTORY   %d / %d", Inventory_UsedSlots(inv), INV_SLOTS), PANEL_X + 16, PANEL_Y + 10, 18, YELLOW);
     Button(CLOSE_BTN, "X", (Color){ 110, 30, 30, 230 });
+    DrawText(TextFormat("WEAPONS EQUIPPED %d / %d", lo->equippedCount, lo->equippedMax), PANEL_X + 215, PANEL_Y + 13, 14, (Color){ 90, 200, 230, 255 });
 
     for (int i = 0; i < INV_SLOTS; ++i) {
         const Rectangle r = InvUI_SlotRect(i);
@@ -177,7 +178,11 @@ void InvUI_Draw(const Inventory *inv, WeaponId held)
             const char *t = TextFormat("x%d", s->count);
             DrawText(t, (int)(r.x + r.width) - MeasureText(t, 14) - 5, (int)(r.y + r.height) - 18, 14, WHITE);
         }
-        if (Item_Equippable(s->item) && Item_Weapon(s->item) == held) DrawText("HELD", (int)r.x + 5, (int)r.y + 4, 12, GREEN);
+        if (Item_Equippable(s->item)) {
+            const WeaponId w = Item_Weapon(s->item);
+            if (w == lo->held) DrawText("HELD", (int)r.x + 5, (int)r.y + 4, 12, GREEN);
+            else if ((lo->equippedMask >> w) & 1u) DrawText("EQUIPPED", (int)r.x + 5, (int)r.y + 4, 12, (Color){ 90, 200, 230, 255 });
+        }
     }
 
     const int dx = PANEL_X + 330;
@@ -189,8 +194,14 @@ void InvUI_Draw(const Inventory *inv, WeaponId held)
         Wrapped(Item_Description(s->item), dx, PANEL_Y + 116, 150, 14, LIGHTGRAY);
         if (Item_Usable(s->item)) Button(MAIN_BTN, "USE", (Color){ 24, 110, 50, 235 });
         else if (Item_Equippable(s->item)) {
-            const bool inHand = Item_Weapon(s->item) == held;
-            Button(MAIN_BTN, inHand ? "IN HAND" : "EQUIP", inHand ? (Color){ 60, 60, 66, 235 } : (Color){ 24, 90, 130, 235 });
+            // Three states: in the bag (equip it, or swap it for the weapon in hand when both places are taken), equipped (take it
+            // in hand), in hand (put it away: it stays in the bag).
+            const WeaponId w = Item_Weapon(s->item);
+            const bool equipped = (lo->equippedMask >> w) & 1u, inHand = w == lo->held, full = lo->equippedCount >= lo->equippedMax;
+            if (equipped) Button(MAIN_BTN, inHand ? "UNEQUIP" : "HOLD", inHand ? (Color){ 90, 70, 30, 235 } : (Color){ 24, 90, 130, 235 });
+            else if (!full) Button(MAIN_BTN, "EQUIP", (Color){ 24, 90, 130, 235 });
+            else if (lo->held != WEAPON_HANDS) Button(MAIN_BTN, "SWAP IN", (Color){ 24, 90, 130, 235 });
+            else Button(MAIN_BTN, "HOLD ONE FIRST", (Color){ 60, 60, 66, 235 });
         }
         if (Item_Droppable(s->item)) Button(DROP_BTN, "DROP", (Color){ 110, 60, 20, 235 });
     } else {

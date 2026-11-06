@@ -63,3 +63,6 @@ Found by the test that sends a monster up the flight: the monster walked to the 
 
 ### Test mistakes worth remembering
 The first sequence test ran a clock that had already almost finished (the checks run one after another on the same floor, so time adds up) and one "farthest corner" point was farther than the radius the test had given. Both were the tests, not the game; the sequence is now split into floors that each start from zero.
+
+### `FloorGame_Tick`
+The game now runs its rules on fixed 30 Hz steps (`sim.md`), so `main.c` calls `FloorGame_Tick` once per step (always `RUN_TICK_SECS`, `in->dt` unused). `FloorGame_Frame`, which keeps its own accumulator, is still there for callers with no steps and for the tests of frame-rate independence.

@@ -177,6 +177,9 @@ static void Ribbon(Vector3 a, Vector3 b, Vector3 viewer, float width, Color ca, 
     rlEnd();
 }
 
+static float g_renderLag = 0.0f;
+void Projectiles_SetRenderLag(float seconds) { g_renderLag = seconds < 0.0f ? 0.0f : seconds; }
+
 void DrawProjectilesSystem(Vector3 viewer)
 {
     if (Projectiles_Active() == 0 && Impacts_Active() == 0) return;
@@ -196,8 +199,10 @@ void DrawProjectilesSystem(Vector3 viewer)
         const float sp = sqrtf(p->vx * p->vx + p->vy * p->vy + p->vz * p->vz);
         if (sp < 1e-3f) continue;
         const Vector3 d = V(p->vx / sp, p->vy / sp, p->vz / sp);
-        const Vector3 head = V(p->x, p->y, p->z);
-        const float len = cfg->trailLength < p->travelDist ? cfg->trailLength : p->travelDist;     // no streak behind the gun when it has just left it
+        const float back = g_renderLag * sp < p->travelDist ? g_renderLag * sp : p->travelDist;        // drawn between two steps: a little of the flight behind
+        const Vector3 head = V(p->x - d.x * back, p->y - d.y * back, p->z - d.z * back);
+        const float shown = p->travelDist - back;
+        const float len = cfg->trailLength < shown ? cfg->trailLength : shown;                         // no streak behind the gun when it has just left it
         const Vector3 tail = V(head.x - d.x * len, head.y - d.y * len, head.z - d.z * len);
         const float w = cfg->trailWidth;
         Ribbon(head, tail, viewer, w * 3.4f, Col(cfg->colorGlow, 80), Col(cfg->colorGlow, 0));       // the glow around it

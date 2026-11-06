@@ -144,3 +144,6 @@ Not verified: how the spider looks and moves on screen, speed on the phone, and 
 - Spiders do not avoid each other and can overlap.
 - A spider on the ceiling cannot cross into a stair alcove, since there is no ceiling there. It comes down a wall first.
 - The first feet-off-surface count above comes from front-foot probes around pillar corners, where the landing spot can fall outside the face.
+
+### Drawing between steps
+`Enemies_BeginTick` (before each simulation step: remembers each monster's and spider's position) and `Enemies_SetRenderAlpha` (before drawing: how far between the last two steps) let the picture blend monsters between 30 Hz steps (`sim.md`). A new monster starts with nothing to blend from. Spiders: the body and the hips blend, the planted feet do not.
