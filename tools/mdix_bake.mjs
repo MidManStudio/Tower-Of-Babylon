@@ -65,6 +65,13 @@ const FLOOR_FIELDS = {
   countdown_secs: ["float"], collapse_secs: ["float"], collapse_ease: ["int"], rage_speed: ["float"],
 };
 
+const SWARM_FIELDS = {
+  worms: ["int"], dots_per_worm: ["int"], iterations: ["int"], first_floor: ["int"], every_n_floors: ["int"], show_core: ["int"],
+  dot_radius: ["float"], link_length: ["float"], crawl_speed: ["float"], speed_spread: ["float"], weave: ["float"], gravity: ["float"],
+  damping: ["float"], squirm: ["float"], sense_range: ["float"], spawn_min_dist: ["float"], core_health: ["float"], core_half: ["float"],
+  death_secs: ["float"], bite_damage: ["float"], bite_windup: ["float"], bite_interval: ["float"], bite_cap: ["float"], bite_reach: ["float"],
+};
+
 const CHARACTER_FIELDS = Object.fromEntries(["id", "name", "call", "role", "overview", "backstory", "passive", "activatable", "special"].map((k) => [k, ["string"]]));
 
 const SOUND_IDS = ["footstep", "jump", "land", "slide", "pipe_swing", "pipe_hit", "pistol", "shotgun", "shotgun_pump", "rifle", "dry_fire",
@@ -79,6 +86,7 @@ const FILES = [
   { file: "sounds.mdix", array: "sounds", symbol: "g_bakedSounds", shape: "array" },
   { file: "floor.mdix", array: "stair_clock", symbol: "g_bakedFloor", shape: "object" },
   { file: "characters.mdix", array: "characters", symbol: "g_bakedCharacters", shape: "array" },
+  { file: "swarm.mdix", array: "swarm", symbol: "g_bakedSwarm", shape: "object" },
 ];
 
 // ---- helpers -----------------------------------------------------------------------------------------------
@@ -221,6 +229,11 @@ if (dbs.flashlight) {
 if (dbs.stair_clock) {
   // The ranges are checked by the C loader (src/floor/floor_config.c), which tests/floor_run_headless.c runs on this very table.
   checkFields(dbs.stair_clock, "stair_clock", FLOOR_FIELDS);
+}
+
+if (dbs.swarm) {
+  // The ranges are checked by the C loader (src/swarm/swarm_config.c), which tests/swarm_headless.c runs on this very table.
+  checkFields(dbs.swarm, "swarm", SWARM_FIELDS);
 }
 
 if (dbs.characters) {

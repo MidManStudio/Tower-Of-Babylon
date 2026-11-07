@@ -1,0 +1,62 @@
+// Brought to u by MidManStudio
+// The worm swarm enemy: how many worms, how they crawl, how it wakes, what it bites for, and its health (a single box in the middle of
+// the swarm that takes the damage, for now). What each number does is in docs/swarm.md; notes on writing this file are in docs/config.md.
+@CONFIG(
+  version  -> "1.0.0"
+  author   -> "MidManStudio"
+  features -> "data"
+)
+
+@DATA(
+  config_version<int> = 1
+
+  // The swarm (a swarm is worms; a worm is a chain of dots; every dot is one round point, 1024 dots at most in all):
+  //   worms, dots_per_worm   how many worms, and how many dots in each one (worms x dots_per_worm is at most 1024)
+  //   dot_radius             metres; the dots push one another and the walls apart at this size
+  //   link_length            metres between neighbouring dots of a worm (a little under two radii, so a worm is one unbroken body)
+  //   crawl_speed            metres a second toward the player, once the swarm is hunting (the player walks at 4.5)
+  //   speed_spread           each worm is this much faster or slower than that, as a share (0.25 = a quarter either way)
+  //   weave                  how far, in radians, a worm swings from the straight way as it crawls
+  //   gravity                metres a second squared
+  //   damping                how fast loose motion dies away, per second
+  //   iterations             rounds of fixing links, overlaps and walls each step (more is stiffer and costs more)
+  //   squirm                 how restless a sleeping swarm is
+  // Waking and floors:
+  //   sense_range            the swarm wakes when the player is this far or nearer by the way a walker would go (not through walls)
+  //   spawn_min_dist         it starts at least this far from where the player arrives, in an open place
+  //   first_floor            the first floor that has a swarm; every_n_floors, then one floor in this many
+  // Its health, and how it hurts:
+  //   core_health            the box in the middle of the swarm: how much damage it takes before the swarm dies
+  //   core_half              the box is this many metres from its centre to each face
+  //   show_core              1 draws the box (a thin red frame), 0 hides it
+  //   death_secs             how long the dots lie limp after the swarm dies, before they are gone
+  //   bite_damage            health taken for each dot touching the player, in one bite
+  //   bite_windup, bite_interval   seconds of contact before the first bite, and between bites
+  //   bite_cap               the most one bite takes
+  //   bite_reach             how far, in metres, from the player's body a dot counts as touching
+  swarm:
+    worms           = 24,
+    dots_per_worm   = 10,
+    dot_radius      = 0.09f,
+    link_length     = 0.16f,
+    crawl_speed     = 3.0f,
+    speed_spread    = 0.25f,
+    weave           = 0.35f,
+    gravity         = 14.0f,
+    damping         = 3.0f,
+    iterations      = 3,
+    squirm          = 0.6f,
+    sense_range     = 30.0f,
+    spawn_min_dist  = 26.0f,
+    first_floor     = 1,
+    every_n_floors  = 1,
+    core_health     = 150.0f,
+    core_half       = 0.45f,
+    show_core       = 1,
+    death_secs      = 4.0f,
+    bite_damage     = 1.5f,
+    bite_windup     = 0.3f,
+    bite_interval   = 0.5f,
+    bite_cap        = 18.0f,
+    bite_reach      = 0.3f
+)

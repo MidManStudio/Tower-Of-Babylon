@@ -6,6 +6,8 @@ Cylinder enemies and procedural spiders for Tower of Babylon, plus the hook that
 
 Two kinds of enemy share one entry point, `enemy_manager.h`, which `main.c` calls.
 
+A third kind, the worm swarm, is not a body with one health bar and lives apart from this module: see `swarm.md`. `main.c` offers every shot to the monsters first and then to the swarm's health box.
+
 Cylinder enemies are tall procedural cylinders. For each floor the manager picks spawn tiles on a lattice, shuffles them from the floor seed so the enemies spread over the whole floor, and varies height, radius, colour and health from a hash of the seed. They stay idle until they see the player, chase while they have line of sight and for three seconds after losing it, and stop at attack range. Line of sight uses the same grid ray caster as the dungeon generator. Movement is split by axis so an enemy slides along a wall instead of sticking to it or passing through it.
 
 Spiders are eight-legged crawlers that walk on floors, walls and the ceiling, built from a locomotion memo: anchor on the surface, front legs touch a new surface before the anchor switches, alternating leg groups, three-ray terrain search, body orientation from the plane of the feet, and two-bone leg IK. They find their way through the maze with a path field computed from the player's tile. They stalk along the ceiling while the player is far, and when the player is within 9 m they commit to coming down a wall to the floor.

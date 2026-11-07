@@ -1270,3 +1270,32 @@ static const MdixBakedEntry k_characters[] = {
     { "characters[]", 'i', "4" },
 };
 const MdixBaked g_bakedCharacters = { "characters.mdix", 0xc5cd84c4u, k_characters, (int)(sizeof k_characters / sizeof k_characters[0]) };
+
+// swarm.mdix   FNV-1a 0x3d26a0ff
+static const MdixBakedEntry k_swarm[] = {
+    { "swarm.bite_cap", 'f', "18" },
+    { "swarm.bite_damage", 'f', "1.5" },
+    { "swarm.bite_interval", 'f', "0.5" },
+    { "swarm.bite_reach", 'f', "0.3" },
+    { "swarm.bite_windup", 'f', "0.3" },
+    { "swarm.core_half", 'f', "0.45" },
+    { "swarm.core_health", 'f', "150" },
+    { "swarm.crawl_speed", 'f', "3" },
+    { "swarm.damping", 'f', "3" },
+    { "swarm.death_secs", 'f', "4" },
+    { "swarm.dot_radius", 'f', "0.09" },
+    { "swarm.dots_per_worm", 'i', "10" },
+    { "swarm.every_n_floors", 'i', "1" },
+    { "swarm.first_floor", 'i', "1" },
+    { "swarm.gravity", 'f', "14" },
+    { "swarm.iterations", 'i', "3" },
+    { "swarm.link_length", 'f', "0.16" },
+    { "swarm.sense_range", 'f', "30" },
+    { "swarm.show_core", 'i', "1" },
+    { "swarm.spawn_min_dist", 'f', "26" },
+    { "swarm.speed_spread", 'f', "0.25" },
+    { "swarm.squirm", 'f', "0.6" },
+    { "swarm.weave", 'f', "0.35" },
+    { "swarm.worms", 'i', "24" },
+};
+const MdixBaked g_bakedSwarm = { "swarm.mdix", 0x3d26a0ffu, k_swarm, (int)(sizeof k_swarm / sizeof k_swarm[0]) };

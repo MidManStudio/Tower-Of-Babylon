@@ -47,6 +47,8 @@
 #include "characters/characters.h"
 #include "characters/character_select.h"
 #include "characters/character_select_ui.h"
+#include "swarm/swarm.h"
+#include "swarm/swarm_config.h"
 
 // Three floors live in static storage for WASM performance.
 static FloorWindow g_window;
@@ -142,6 +144,30 @@ static bool floorCleared = false;
 static Vector3 g_prevEye;
 
 // Moves the player through a door to the next or previous floor.
+
+// ---- The worm swarm (swarm/swarm.h): one per floor from first_floor, then every_n_floors, placed from the floor's own seed ----------
+// Its health is a box in the middle of it. The hit and kill totals run on across floors (the marker looks for a change in them).
+static Swarm g_swarm;
+static unsigned g_swarmHitsBase = 0, g_swarmKillsBase = 0;
+static unsigned SwarmHitsTotal(void)  { return g_swarmHitsBase + Swarm_HitsLanded(&g_swarm); }
+static unsigned SwarmKillsTotal(void) { return g_swarmKillsBase + Swarm_KillsLanded(&g_swarm); }
+
+static void SpawnFloorSwarm(const FloorMap *map, int floor)
+{
+    g_swarmHitsBase += Swarm_HitsLanded(&g_swarm);
+    g_swarmKillsBase += Swarm_KillsLanded(&g_swarm);
+    Swarm_Clear(&g_swarm);
+    const SwarmConfig *c = SwarmConfig_Get();
+    if (floor < c->firstFloor || (floor - c->firstFloor) % c->everyNFloors != 0) return;
+    Swarm_Spawn(&g_swarm, c, map, map->seed * 2654435761u + (uint32_t)floor);
+}
+
+// What a shot can hit: a monster, or the swarm's health box.
+static bool HitAnything(Vector3 pos, float radius, float damage)
+{
+    return CheckAndHandleEnemyDamage(pos, radius, damage) || Swarm_Hit(&g_swarm, pos, radius, damage);
+}
+
 static FloorMap *UseDoor(PlayerController *player, DoorId id)
 {
     const bool up = (id == DOOR_UP);
@@ -150,6 +176,7 @@ static FloorMap *UseDoor(PlayerController *player, DoorId id)
     FloorMap *map = FloorWindow_Current(&g_window);
     Projectiles_Clear();                        // nothing flies from one floor into the next
     SpawnEnemiesForFloor(map, g_window.currentFloor);
+    SpawnFloorSwarm(map, g_window.currentFloor);
     SpawnFloorPickups(map, g_window.currentFloor);
     Lighting_BuildForFloor(map, g_window.currentFloor);
     floorCleared = !up;                         // coming down into a floor already climbed: its stairs are open and there is no clock
@@ -209,6 +236,7 @@ static void RespawnPlayer(void)
     g_prevEye = player.camera.position;
     Projectiles_Clear();
     SpawnEnemiesForFloor(currentFloorMap, g_window.currentFloor);
+    SpawnFloorSwarm(currentFloorMap, g_window.currentFloor);
     SpawnFloorPickups(currentFloorMap, g_window.currentFloor);
     FloorGame_NewFloor(currentFloorMap, g_window.currentFloor, floorCleared);       // the clock starts again on a floor that had one
     doorOpen[DOOR_UP] = doorOpen[DOOR_DOWN] = 0.0f;
@@ -355,6 +383,7 @@ static void SimTick(SimCmd cmd)
 {
     const float dt = SIM_STEP_SECS;
     Enemies_BeginTick();                          // remembers where the monsters are, for drawing between steps
+    Swarm_BeginTick(&g_swarm);                    // and every dot of the swarm
     g_prevEye = player.camera.position;
     Pickups_Update(dt);
 
@@ -466,18 +495,20 @@ static void SimTick(SimCmd cmd)
         const float fl = sqrtf(lookDir.x * lookDir.x + lookDir.z * lookDir.z);
         const float fx = fl > 0.001f ? lookDir.x / fl : 0.0f, fz = fl > 0.001f ? lookDir.z / fl : 1.0f;
         const int meleeHits = EnemiesMeleeHit(currentFloorMap, player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg,
-                                              weaponEv.def->damage, weaponEv.def->knockback);
+                                              weaponEv.def->damage, weaponEv.def->knockback)
+                              + Swarm_MeleeHit(&g_swarm, player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg, weaponEv.def->damage);
         AudioEvents_Melee(meleeHits > 0);
     }
 
     // Move projectiles, then let any that touch an active enemy damage it and disappear
     UpdateProjectilesSystem(dt);
-    ResolveProjectileHits(currentFloorMap, CheckAndHandleEnemyDamage);
+    ResolveProjectileHits(currentFloorMap, HitAnything);
 
     // A change in the running totals means a shot landed, or killed, since the last step.
-    const bool hitNow = EnemyHitsLanded() != lastHitCount, killNow = EnemyKillsLanded() != lastKillCount;
-    if (hitNow) { lastHitCount = EnemyHitsLanded(); hitMarker = 1.0f; }
-    if (killNow) { lastKillCount = EnemyKillsLanded(); killMarker = 1.0f; }
+    const unsigned hitsTotal = EnemyHitsLanded() + SwarmHitsTotal(), killsTotal = EnemyKillsLanded() + SwarmKillsTotal();
+    const bool hitNow = hitsTotal != lastHitCount, killNow = killsTotal != lastKillCount;
+    if (hitNow) { lastHitCount = hitsTotal; hitMarker = 1.0f; }
+    if (killNow) { lastKillCount = killsTotal; killMarker = 1.0f; }
     if (killNow) AudioEvents_HitMarker(true); else if (hitNow) AudioEvents_HitMarker(false);
 
     // Update Enemy AI and tracking
@@ -489,6 +520,8 @@ static void SimTick(SimCmd cmd)
         Enemies_SetPlayerNoise(gunNoiseT > 0.0f ? (steps > gunNoiseM ? steps : gunNoiseM) : steps);
     }
     UpdateEnemiesSystem(dt, player.position, currentFloorMap);
+    const SwarmTarget swarmTarget = { player.position, player.radius, player.height, player.health.isAlive };
+    Swarm_Step(&g_swarm, dt, currentFloorMap, &swarmTarget);            // the swarm crawls on, wakes, and is pushed out of walls and the player
 
     // The stair clock: the console, the countdown, the collapse. Whoever is still on a floor that has fallen dies.
     {
@@ -504,6 +537,12 @@ static void SimTick(SimCmd cmd)
         Vector3 blowFrom;
         if (EnemiesAttackPlayer(dt, player.position, player.height, &blow, &blowFrom)) {
             DamagePlayer(&player, blow, blowFrom);
+            AudioEvents_Hurt();
+        }
+        float bite;
+        Vector3 biteFrom;
+        if (Swarm_Bite(&g_swarm, dt, &swarmTarget, &bite, &biteFrom)) {       // the dots touching the player bite, all together
+            DamagePlayer(&player, bite, biteFrom);
             AudioEvents_Hurt();
         }
     } else {
@@ -693,6 +732,7 @@ static void Frame(void)
             DrawObstaclesSystem();
             Pickups_Draw(player.position, (float)GetTime());
             DrawEnemiesSystem(player.position); // Render the enemies, with attack and hit animations
+            Swarm_Draw(&g_swarm, viewCam.position, alpha);     // the worm swarm and, as a thin red frame, its health box
 
             DrawStairs(currentFloorMap, doorOpen, player.position);
             FloorGame_Draw(player.position, (float)GetTime());
@@ -741,7 +781,7 @@ static void Frame(void)
             hv.hasTorch = Inventory_Has(&inv, ITEM_FLASHLIGHT); hv.torchOn = torch.on; hv.torchLow = Flashlight_IsLow(&torch);
             hv.torchFlat = torch.charge <= 0.0f; hv.torchFraction = Flashlight_Fraction(&torch);
             hv.torchSecs = torch.charge; hv.torchLevel = torch.level;
-            hv.floorNumber = g_window.currentFloor; hv.enemies = CountActiveEnemies();
+            hv.floorNumber = g_window.currentFloor; hv.enemies = CountActiveEnemies() + (Swarm_Alive(&g_swarm) ? 1 : 0);
             char floorInfo[112];
             snprintf(floorInfo, sizeof floorInfo, "attempt %d  route %d  walls %d  pillars %d  open %d%%%s", currentFloorMap->attempts, currentFloorMap->pathLength,
                      currentFloorMap->partitions, currentFloorMap->pillars, (int)(currentFloorMap->walkableFraction * 100.0f), currentFloorMap->usedFallback ? "  FALLBACK" : "");
@@ -800,6 +840,7 @@ int main(void)
     Audio_Init();                     // hands sounds.mdix to the config layer, so it must come before GameConfig_Init
     FloorGame_Register();             // and floor.mdix, the stair clock's numbers
     Characters_Register();            // and characters.mdix, the roster
+    Swarm_Register();                 // and swarm.mdix, the worm swarm
     GameConfig_Init();                // weapon and projectile numbers: the baked copy now, the .mdix files once the wasm is up
     g_selecting = Characters_Count() > 0;          // the selection screen runs once, before the game (no roster, no screen)
     CharSelect_Init(&g_charSel, Characters_Count());
@@ -820,6 +861,7 @@ int main(void)
 
     // Spawn initial wave of procedural tall-cylinder enemies for floor 1
     SpawnEnemiesForFloor(currentFloorMap, g_window.currentFloor);
+    SpawnFloorSwarm(currentFloorMap, g_window.currentFloor);
     Arsenal_Init(&arsenal);
     Inventory_Init(&inv);
     SpawnFloorPickups(currentFloorMap, g_window.currentFloor);
