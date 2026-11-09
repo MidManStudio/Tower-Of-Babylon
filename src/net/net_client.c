@@ -184,6 +184,7 @@ void NetClient_Leave(NetClient *c)
     NetMsg m; memset(&m, 0, sizeof m);
     m.kind = NET_MSG_DISCONNECT; m.u.disc.reason = NET_DISC_NORMAL;
     Send(c, &m, true);
+    if (c->tp.close) c->tp.close(c->tp.self);
     c->state = NETC_CLOSED;
 }
 

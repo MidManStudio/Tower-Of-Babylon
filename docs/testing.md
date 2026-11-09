@@ -8,6 +8,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 
 | Test | What it covers | Doc |
 |---|---|---|
+| `server_smoke.sh` (not a C test) | the server and two bots built and run as separate programs over real UDP with 10% of every packet lost on the way out (about 15 s) | `net.md` |
 | `platform_check.sh` (not a C test) | main.c and every source compiled as web, Android and desktop, and `platform.h` checked against the table in `platforms.md` | `platforms.md` |
 | `input_headless.c` | the touch controls (floating stick, sprint at the rim, the fire pad that aims, roles, buttons, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
 | `audio_headless.c` | synthesiser numbers, limiter, voices, pan and distance, footsteps, every shipped sound recipe, the bank and the config registry | `audio.md` |
@@ -25,6 +26,8 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `sim_headless.c` | the input latch, the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |
 | `floor_game_headless.c` | the stair clock in the game: where the console goes, the door lock, the monster calls, the kill, frame rate independence | `floor_run.md` |
+| `net_rel_headless.c` | the reliable-message layer over a path that loses, doubles and reorders: order, once each, wraparound, window, round trip, giving up | `net.md` |
+| `net_udp_headless.c` | the real UDP transport on this machine's loopback, in real time (about 15 s): handshake, play, 15% loss, a full server, strangers' packets | `net.md` |
 | `net_headless.c` | the multiplayer netcode: wire, protocol (and fuzz), pretend network, handshake, prediction and reconciliation over delay and loss, commands not to be trusted, other players, the clock lead | `net.md` |
 | `swarm_headless.c` | the worm swarm: its numbers, spawning, waking, crawling round walls, bodies (links, walls, floor, stairs, player), the health box, melee, the bite, determinism, cost | `swarm.md` |
 | `characters_headless.c` | the roster file and its loader, the choice kept as an id, the selection screen's taps, keys and layout, the word wrap, and that every shipped text fits its room | `characters.md` |

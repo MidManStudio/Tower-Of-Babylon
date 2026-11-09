@@ -81,6 +81,6 @@ NetTransport NetLoopback_End(NetLoopback *l, int side)
 {
     NetTransport t;
     t.self = &l->ep[side ? 1 : 0];
-    t.sendDatagram = SendDatagram; t.recvDatagram = RecvDatagram; t.sendReliable = SendReliable; t.recvReliable = RecvReliable;
+    t.sendDatagram = SendDatagram; t.recvDatagram = RecvDatagram; t.sendReliable = SendReliable; t.recvReliable = RecvReliable; t.close = NULL;
     return t;
 }

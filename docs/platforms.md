@@ -26,6 +26,7 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 | `TOWER_INPUT_TOUCH` | The touch controls (floating stick, fire pad, buttons) are compiled and drawn. | 1 | 1 | 0 |
 | `TOWER_INPUT_KEYBOARD` | The keyboard is read (WASD and the rest). | 1 | 0 | 1 |
 | `TOWER_INPUT_POINTER_LOCK` | The mouse is locked to the window and turns the camera with no button held. | 0 | 0 | 1 |
+| `TOWER_NET_UDP` | UDP sockets exist, for the multiplayer transport. A browser has none. | 0 | 1 | 1 |
 
 ## Where each is used, and what the other side does
 
@@ -39,6 +40,7 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 | `TOWER_INPUT_TOUCH` | `src/input/input.c` (fingers, the mouse as a finger), `src/hud/hud.c` (draws the controls) | the touch logic runs and the controls are drawn while the touch scheme is in use | the touch code is not compiled; the output is the keyboard and mouse only |
 | `TOWER_INPUT_KEYBOARD` | `src/input/input.c` | WASD, Shift, Space, F, E, Q, C, L, I, P are read | not compiled |
 | `TOWER_INPUT_POINTER_LOCK` | `src/input/input.c` | `DisableCursor()`; the mouse delta is the camera, the left button fires. **Desktop only, never run** | the camera comes from a finger or a held mouse button |
+| `TOWER_NET_UDP` | `src/net/net_udp.c` | the real UDP transport (`NetUdpHost`): bind, send, receive, with the reliable layer on top | every function is there and says "no network" (false or 0); the browser will use WebTransport or WebSockets through its own bridge (`net.md`). **The Android build also needs the INTERNET permission in its manifest before a phone can use it; not added yet, because nothing in the app uses the network yet** |
 | `TOWER_MAIN_LOOP_CALLBACK` | `main.c` (include and the end of `main`) | `emscripten_set_main_loop(Frame, 0, 1)` | `SetTargetFPS(60)` and `while (!WindowShouldClose()) Frame();` |
 
 ## What each platform is built with

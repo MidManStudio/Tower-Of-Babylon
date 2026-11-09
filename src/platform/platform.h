@@ -67,6 +67,14 @@
 // The mouse is locked to the window and turns the camera with no button held (a first person shooter on a PC).
 #define TOWER_INPUT_POINTER_LOCK TOWER_PLATFORM_DESKTOP
 
+// UDP sockets (socket, bind, sendto, recvfrom) exist, for the multiplayer transport in src/net/net_udp.c. The Android and desktop
+// builds have them; a browser has no UDP at all (it will reach a server through WebTransport or WebSockets, by its own bridge).
+#if TOWER_PLATFORM_ANDROID || TOWER_PLATFORM_DESKTOP
+    #define TOWER_NET_UDP 1
+#else
+    #define TOWER_NET_UDP 0
+#endif
+
 // The browser drives the frame loop (emscripten_set_main_loop); everywhere else main() runs its own while loop.
 #define TOWER_MAIN_LOOP_CALLBACK TOWER_PLATFORM_WEB
 

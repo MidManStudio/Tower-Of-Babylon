@@ -17,6 +17,7 @@
 #define NET_MAX_LEAD     20      // a command more than this many ticks ahead of the server is refused (a clock far ahead, or a flood)
 #define NET_MAX_REPEAT   5       // a command that did not arrive is replaced by the last one for this many ticks, then by doing nothing
 #define NET_TIMEOUT_MS   5000    // a client not heard from for this long is dropped
+#define NET_HELLO_TIMEOUT_MS 3000  // a connection that has not said Hello by then is dropped (it would hold a place for nothing)
 #define NET_MAX_PACKETS_PER_POLL 64   // per client: the rest wait for the next poll, so a flood cannot hold the server up
 
 typedef struct {
@@ -24,7 +25,7 @@ typedef struct {
     NetTransport tp;
     uint8_t     id;
     char        character[NET_CHARACTER_LEN];
-    double      lastHeardMs;
+    double      lastHeardMs, connectedMs;
     PlayerController player;
     NetCmd      ring[NET_INPUT_RING];
     uint32_t    ringTick[NET_INPUT_RING];

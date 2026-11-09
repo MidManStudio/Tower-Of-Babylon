@@ -31,12 +31,13 @@ int NetServer_AddClient(NetServer *s, NetTransport tp, double nowMs)
     for (int i = 0; i < NET_MAX_PLAYERS; ++i)
         if (!s->c[i].used) {
             memset(&s->c[i], 0, sizeof s->c[i]);
-            s->c[i].used = true; s->c[i].tp = tp; s->c[i].id = (uint8_t)i; s->c[i].lastHeardMs = nowMs;
+            s->c[i].used = true; s->c[i].tp = tp; s->c[i].id = (uint8_t)i; s->c[i].lastHeardMs = nowMs; s->c[i].connectedMs = nowMs;
             return i;
         }
     NetMsg m; memset(&m, 0, sizeof m);
     m.kind = NET_MSG_DISCONNECT; m.u.disc.reason = NET_DISC_FULL;
     Send(&tp, &m, true);
+    if (tp.close) tp.close(tp.self);
     return -1;
 }
 
@@ -46,6 +47,7 @@ void NetServer_Drop(NetServer *s, int slot, uint8_t reason)
     NetMsg m; memset(&m, 0, sizeof m);
     m.kind = NET_MSG_DISCONNECT; m.u.disc.reason = reason;
     Send(&s->c[slot].tp, &m, true);
+    if (s->c[slot].tp.close) s->c[slot].tp.close(s->c[slot].tp.self);
     s->c[slot].used = false;
 }
 
@@ -97,7 +99,7 @@ static void Drain(NetServer *s, int slot, double nowMs)
         if (n < 0 || !NetProto_Decode(buf, (size_t)n, &m)) { ++cl->badPackets; continue; }
         cl->lastHeardMs = nowMs;
         if (m.kind == NET_MSG_HELLO) OnHello(s, cl, &m.u.hello);
-        else if (m.kind == NET_MSG_DISCONNECT) { cl->used = false; }
+        else if (m.kind == NET_MSG_DISCONNECT) { if (cl->tp.close) cl->tp.close(cl->tp.self); cl->used = false; }
         else ++cl->badPackets;                                                                    // a datagram kind on the reliable channel
     }
     for (int k = 0; k < NET_MAX_PACKETS_PER_POLL && cl->used && (n = cl->tp.recvDatagram(cl->tp.self, buf, sizeof buf)) != 0; ++k) {
@@ -115,6 +117,7 @@ void NetServer_Poll(NetServer *s, double nowMs)
         if (!s->c[i].used) continue;
         Drain(s, i, nowMs);
         if (s->c[i].used && nowMs - s->c[i].lastHeardMs > NET_TIMEOUT_MS) NetServer_Drop(s, i, NET_DISC_TIMEOUT);
+        else if (s->c[i].used && !s->c[i].welcomed && nowMs - s->c[i].connectedMs > NET_HELLO_TIMEOUT_MS) NetServer_Drop(s, i, NET_DISC_TIMEOUT);
     }
 }
 

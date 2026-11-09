@@ -13,15 +13,15 @@ cd "${1:-$(dirname "$0")/..}" || exit 1
 fail=0
 sources=(main.c $(find src -name '*.c' | sort))
 
-# name | compiler flags | expected: WEB ANDROID DESKTOP GLES2 AUDIO_GESTURE_UNLOCK MDIX_WASM_BRIDGE MAIN_LOOP_CALLBACK INPUT_TOUCH INPUT_KEYBOARD INPUT_POINTER_LOCK
+# name | compiler flags | expected: WEB ANDROID DESKTOP GLES2 AUDIO_GESTURE_UNLOCK MDIX_WASM_BRIDGE MAIN_LOOP_CALLBACK INPUT_TOUCH INPUT_KEYBOARD INPUT_POINTER_LOCK NET_UDP
 configs=(
-  "web|-D__EMSCRIPTEN__ -Itests/stubs|1 0 0 1 1 1 1 1 1 0"
-  "android|-D__ANDROID__ -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -Itests/stubs|0 1 0 1 0 0 0 1 0 0"
-  "desktop|-DPLATFORM_DESKTOP|0 0 1 0 0 0 0 0 1 1"
+  "web|-D__EMSCRIPTEN__ -Itests/stubs|1 0 0 1 1 1 1 1 1 0 0"
+  "android|-D__ANDROID__ -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -Itests/stubs|0 1 0 1 0 0 0 1 0 0 1"
+  "desktop|-DPLATFORM_DESKTOP|0 0 1 0 0 0 0 0 1 1 1"
 )
 for c in "${configs[@]}"; do
   IFS='|' read -r name flags want <<<"$c"
-  read -r w a d g u m l it ik ip <<<"$want"
+  read -r w a d g u m l it ik ip nu <<<"$want"
   probe=$(mktemp /tmp/platform_probe_XXXX.c)
   cat > "$probe" <<PROBE
 #include "platform/platform.h"
@@ -36,6 +36,7 @@ typedef char main_loop_cb_is_$l[(TOWER_MAIN_LOOP_CALLBACK == $l) ? 1 : -1];
 typedef char input_touch_is_$it[(TOWER_INPUT_TOUCH == $it) ? 1 : -1];
 typedef char input_keyboard_is_$ik[(TOWER_INPUT_KEYBOARD == $ik) ? 1 : -1];
 typedef char input_pointer_lock_is_$ip[(TOWER_INPUT_POINTER_LOCK == $ip) ? 1 : -1];
+typedef char net_udp_is_$nu[(TOWER_NET_UDP == $nu) ? 1 : -1];
 PROBE
   if ! gcc -std=gnu99 -fsyntax-only -Isrc $flags "$probe" 2>/tmp/platform_err.txt; then
     echo "FAIL  platform $name: platform.h does not say what docs/platforms.md says"; head -4 /tmp/platform_err.txt; fail=1; rm -f "$probe"; continue

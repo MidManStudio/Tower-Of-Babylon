@@ -19,6 +19,7 @@ typedef struct {
     int  (*recvDatagram)(void *self, uint8_t *buf, size_t cap);
     bool (*sendReliable)(void *self, const uint8_t *data, size_t len);
     int  (*recvReliable)(void *self, uint8_t *buf, size_t cap);
+    void (*close)(void *self);                                               // optional (may be NULL): the connection is finished with; a real transport lets queued messages (a Disconnect) go out and frees the connection
 } NetTransport;
 
 #endif

@@ -464,6 +464,14 @@ int main(void)
         NetLoopback_Advance(&L, 20.0); NetServer_Poll(&g_srv, 20.0);
         Check(sc->welcomed && NetServer_PlayerCount(&g_srv) == 1, "after Hello it is welcomed (a second Hello changes nothing)");
 
+        // A connection that never says Hello is not left holding a place.
+        static NetLoopback L2; NetLoopback_Init(&L2, 32u); NetLoopback_SetBoth(&L2, Link(5.0f, 0.0f, 0.0f, 0.0f));
+        const int lurker = NetServer_AddClient(&g_srv, NetLoopback_End(&L2, 1), 100.0);
+        NetServer_Poll(&g_srv, 2000.0);
+        const int stillThere = g_srv.c[lurker].used;
+        NetServer_Poll(&g_srv, 3200.0);
+        Check(lurker >= 0 && stillThere && !g_srv.c[lurker].used, "a connection that never says Hello keeps its place for a few seconds, then loses it");
+
         in.u.input.tick = g_srv.tick + 5000;
         n = NetProto_Encode(&in, buf, sizeof buf); cli.sendDatagram(cli.self, buf, n);
         NetLoopback_Advance(&L, 30.0); NetServer_Poll(&g_srv, 30.0);
