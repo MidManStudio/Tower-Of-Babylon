@@ -68,13 +68,13 @@ int main(void)
         InputFrame hold = Frame(0, 0, false, false, true, false);
         SimCmd_Add(&c, &hold); t = SimCmd_Take(&c); SimCmd_Add(&c, &hold); t = SimCmd_Take(&c);
         Check(t.fire && t.fireHeld, "holding fire fires every step");
-        InputFrame useP = Frame(0, 0, false, false, false, true); useP.useHeld = true; useP.swap = true; useP.light = true; useP.slide = true;
+        InputFrame useP = Frame(0, 0, false, false, false, true); useP.useHeld = true; useP.swap = true; useP.light = true; useP.slide = true; useP.reload = true;
         SimCmd_Add(&c, &useP); SimCmd_Add(&c, &none);
         t = SimCmd_Take(&c);
-        Check(t.use && t.swap && t.light && t.slide && !t.useHeld, "use, swap, light and slide presses are all kept, and the hold is only as long as it was");
+        Check(t.use && t.swap && t.light && t.slide && t.reload && !t.useHeld, "use, swap, light, slide and reload presses are all kept, and the hold is only as long as it was");
         SimCmd_Add(&c, &useP); SimCmd_Take(&c); SimCmd_Add(&c, &none);
         t = SimCmd_Take(&c);
-        Check(!t.use && !t.swap && !t.light && !t.slide, "and none is taken twice");
+        Check(!t.use && !t.swap && !t.light && !t.slide && !t.reload, "and none is taken twice");
         SimCmd d; SimCmd_Init(&d); SimCmd e = SimCmd_Take(&d);
         Check(!e.jump && !e.fire && e.move.x == 0.0f, "a fresh command asks for nothing");
     }

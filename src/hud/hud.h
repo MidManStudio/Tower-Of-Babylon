@@ -29,7 +29,11 @@ typedef struct {
     bool  alive, sprinting, sliding, exhausted;
     float hp, maxHp, stamina01, exhaustRecover01;
     bool  tooTiredToSlide;
-    const char *weaponName; bool weaponIsGun, weaponIsMelee; int ammo; bool weaponDry; int weaponsOwned;
+    const char *weaponName; bool weaponIsGun, weaponIsMelee; int ammo; bool weaponDry; int weaponsOwned;   // ammo: the reserve in the bag (the whole count for a gun with no magazine)
+    int   mag, magSize;                 // the gun in hand: rounds loaded, and what the magazine holds (magSize 0: no magazine)
+    bool  reloading; float reloadFrac;  // a reload is running; how far through the current step (0..1)
+    bool  reloadShown, magEmpty;        // the RELOAD button is drawn (a reload can start, or one is running); the magazine is empty
+    bool  weaponWears; float weaponCondition; int durabilityLeft;   // a melee weapon that wears out: 1 new .. 0 breaking; swings left
     bool  hasTorch, torchOn, torchLow, torchFlat; float torchFraction, torchSecs, torchLevel;
     int   floorNumber, enemies;
     const char *floorInfo;              // the generator's numbers for this floor, one line

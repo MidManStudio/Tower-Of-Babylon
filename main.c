@@ -113,6 +113,8 @@ static void ApplySimEvents(void)
                     case SIMSND_UNLOCKED:      AudioEvents_Unlocked(); break;
                     case SIMSND_COUNT_TICK:    AudioEvents_CountTick(ev.arg); break;
                     case SIMSND_COLLAPSE:      AudioEvents_Collapse(); break;
+                    case SIMSND_RELOAD:        AudioEvents_Reload(ev.arg); break;
+                    case SIMSND_BREAK:         AudioEvents_Break(); break;
                 }
                 break;
         }
@@ -220,6 +222,7 @@ static void Frame(void)
     ictx.swapAvailable = Arsenal_OwnedCount(&g_sim.arsenal) > 1;
     ictx.lightAvailable = Inventory_Has(&g_sim.inv, ITEM_FLASHLIGHT);
     ictx.slideAvailable = GameSim_SlideButtonShown(&g_sim);
+    ictx.reloadAvailable = Arsenal_CanReload(&g_sim.arsenal) && g_sim.player.health.isAlive;
     ictx.blockedCount = Hud_BlockedRects(ictx.blocked, TC_MAX_BLOCKED - 1);
     {
         const Rectangle ib = InvUI_OpenButton();
@@ -370,6 +373,14 @@ static void Frame(void)
             const WeaponDef *held = Weapon_Def(g_sim.arsenal.current);
             hv.weaponName = held->name; hv.weaponIsGun = held->kind == WEAPON_KIND_GUN; hv.weaponIsMelee = held->kind == WEAPON_KIND_MELEE;
             hv.ammo = g_sim.arsenal.ammo; hv.weaponDry = g_sim.arsenal.dry > 0.0f; hv.weaponsOwned = Arsenal_OwnedCount(&g_sim.arsenal);
+            hv.magSize = held->kind == WEAPON_KIND_GUN ? held->magSize : 0;
+            hv.mag = hv.magSize > 0 ? g_sim.arsenal.mag[g_sim.arsenal.current] : 0;
+            hv.reloading = g_sim.arsenal.reloading; hv.reloadFrac = Arsenal_ReloadFraction(&g_sim.arsenal);
+            hv.magEmpty = hv.magSize > 0 && hv.mag <= 0;
+            hv.reloadShown = g_sim.player.health.isAlive && !g_sim.invOpen && (Arsenal_CanReload(&g_sim.arsenal) || g_sim.arsenal.reloading);
+            hv.weaponWears = held->kind == WEAPON_KIND_MELEE && held->durability > 0;
+            hv.weaponCondition = Arsenal_Condition(&g_sim.arsenal, g_sim.arsenal.current);
+            hv.durabilityLeft = hv.weaponWears ? held->durability - g_sim.arsenal.wear[g_sim.arsenal.current] : 0;
             hv.hasTorch = Inventory_Has(&g_sim.inv, ITEM_FLASHLIGHT); hv.torchOn = g_sim.torch.on; hv.torchLow = Flashlight_IsLow(&g_sim.torch);
             hv.torchFlat = g_sim.torch.charge <= 0.0f; hv.torchFraction = Flashlight_Fraction(&g_sim.torch);
             hv.torchSecs = g_sim.torch.charge; hv.torchLevel = g_sim.torch.level;

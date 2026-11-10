@@ -20,12 +20,13 @@ void SimCmd_Add(SimCmd *c, const InputFrame *in)
     c->swap  = c->swap  || in->swap;
     c->light = c->light || in->light;
     c->slide = c->slide || in->slide;
+    c->reload = c->reload || in->reload;
 }
 
 SimCmd SimCmd_Take(SimCmd *c)
 {
     SimCmd out = *c;
     out.fire = c->fire || c->fireHeld;                 // a tap that was over before the tick still fires once
-    c->jump = c->fire = c->use = c->swap = c->light = c->slide = false;
+    c->jump = c->fire = c->use = c->swap = c->light = c->slide = c->reload = false;
     return out;
 }

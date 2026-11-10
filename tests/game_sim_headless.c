@@ -58,8 +58,8 @@ static int Near(float a, float b, float eps) { return fabsf(a - b) <= eps; }
 static GameSim sim;
 typedef struct {
     int kind[8];
-    int snd[16];
-    unsigned sndArgs[16];              // bit n set: a sound came with the number n (0..31)
+    int snd[24];
+    unsigned sndArgs[24];              // bit n set: a sound came with the number n (0..31)
     int toasts;
     char last[SIM_EVENT_TEXT];
     char all[16384];
@@ -111,6 +111,8 @@ static unsigned WorldHash(void)
     h = Fnv(h, &sim.player.stamina, sizeof sim.player.stamina);
     h = Fnv(h, &sim.window.currentFloor, sizeof sim.window.currentFloor);
     h = Fnv(h, &sim.arsenal.ammo, sizeof sim.arsenal.ammo);
+    h = Fnv(h, sim.arsenal.mag, sizeof sim.arsenal.mag);
+    h = Fnv(h, sim.arsenal.wear, sizeof sim.arsenal.wear);
     h = Fnv(h, &sim.swarm.core, sizeof sim.swarm.core);
     h = Fnv(h, &sim.swarm.health, sizeof sim.swarm.health);
     for (int i = 0; i < sim.swarm.count; ++i) h = Fnv(h, &sim.swarm.p[i], sizeof sim.swarm.p[i]);
@@ -126,7 +128,7 @@ static SimCmd ScriptCmd(unsigned seed, int step)
     r ^= r >> 13; r *= 1274126177u; r ^= r >> 16;
     SimCmd c = None();
     c.move = (Vector2){ ((float)(r & 255) / 255.0f - 0.5f) * 2.0f, ((float)((r >> 8) & 255) / 255.0f - 0.5f) * 2.0f };
-    c.sprint = ((r >> 16) & 7) == 0; c.jump = ((r >> 19) & 31) == 0; c.fire = ((r >> 3) & 7) == 0; c.use = ((r >> 24) & 15) == 0; c.slide = ((r >> 20) & 63) == 0;
+    c.sprint = ((r >> 16) & 7) == 0; c.jump = ((r >> 19) & 31) == 0; c.fire = ((r >> 3) & 7) == 0; c.use = ((r >> 24) & 15) == 0; c.slide = ((r >> 20) & 63) == 0; c.reload = ((r >> 27) & 7) == 0;
     return c;
 }
 static void LoadoutGuns(void)
@@ -135,7 +137,7 @@ static void LoadoutGuns(void)
     for (int w = WEAPON_HANDS + 1; w < WEAPON_COUNT; ++w) {
         Inventory_Add(&sim.inv, Item_ForWeapon((WeaponId)w), 1);
         const WeaponDef *d = Weapon_Def((WeaponId)w);
-        if (d->kind == WEAPON_KIND_GUN) Inventory_Add(&sim.inv, Item_ForAmmo(d->ammo), 40);
+        if (d->kind == WEAPON_KIND_GUN) { Inventory_Add(&sim.inv, Item_ForAmmo(d->ammo), 40); Arsenal_Fill(&sim.arsenal, (WeaponId)w, d->magSize); }   // a full magazine and 40 in the bag
         if (given < 2) { Arsenal_Give(&sim.arsenal, (WeaponId)w); ++given; }
     }
 }
@@ -264,18 +266,129 @@ int main(void)
         Check(!sim.torch.on, "and the flashlight is off");
     }
 
-    printf("\n-- shots\n");
+    printf("\n-- shots and the magazine\n");
     {
         Boot(1);
         LoadoutGuns();
         const int cur = (int)sim.arsenal.current;
-        Check(Weapon_Def(sim.arsenal.current)->kind == WEAPON_KIND_GUN, "the gun in hand is a gun (the test's own set-up)");
+        const WeaponDef *gd = Weapon_Def(sim.arsenal.current);
+        Check(gd->kind == WEAPON_KIND_GUN && gd->magSize > 0, "the gun in hand is a gun with a magazine (the test's own set-up)");
         SimCmd c = None(); c.fire = true;
         for (int i = 0; i < 40 && T.snd[SIMSND_SHOT] == 0; ++i) Stp(c);
         Check(T.snd[SIMSND_SHOT] >= 1 && T.sndArgs[SIMSND_SHOT] == (1u << (cur & 31)), "pulling the trigger fires, and the shot's sound carries WHICH weapon");
+        Check(Inventory_Count(&sim.inv, Item_ForAmmo(gd->ammo)) == 40, "a shot comes out of the magazine: the bag is untouched");
         for (int i = 0; i < 3000 && T.snd[SIMSND_DRYFIRE] == 0; ++i) Stp(c);
-        Check(T.snd[SIMSND_DRYFIRE] >= 1, "keep firing and the ammunition runs out: the dry click");
-        Check(sim.arsenal.ammo == 0, "and the gun really is empty");
+        Check(T.snd[SIMSND_DRYFIRE] >= 1, "keep firing and the magazine runs out: the dry click");
+        Check(sim.arsenal.mag[cur] == 0, "and the magazine really is empty");
+        Check(sim.arsenal.reloading && (T.sndArgs[SIMSND_RELOAD] & 1u), "the empty gun starts reloading by itself, and says so");
+        for (int i = 0; i < 200 && sim.arsenal.reloading; ++i) Stp(None());
+        Check(!sim.arsenal.reloading && sim.arsenal.mag[cur] == gd->magSize, "the reload finishes with a full magazine");
+        Check(Inventory_Count(&sim.inv, Item_ForAmmo(gd->ammo)) == 40 - gd->magSize, "and the rounds came out of the bag, not out of thin air");
+        Check(T.sndArgs[SIMSND_RELOAD] & ((1u << 2) | (1u << 3)), "with the 'loaded' sound");
+    }
+
+    printf("\n-- the reload button\n");
+    {
+        Boot(1);
+        const ItemId pistolAmmo = Item_ForAmmo(Weapon_Def(WEAPON_PISTOL)->ammo);
+        Inventory_Add(&sim.inv, Item_ForWeapon(WEAPON_PISTOL), 1);
+        Arsenal_Give(&sim.arsenal, WEAPON_PISTOL);
+        const int mag = Weapon_Def(WEAPON_PISTOL)->magSize;
+        Inventory_Add(&sim.inv, pistolAmmo, 20);
+        Arsenal_Fill(&sim.arsenal, WEAPON_PISTOL, mag);
+        Idle(12);                                                    // the gun is up
+        SimCmd r = None(); r.reload = true;
+        TallyClear();
+        Stp(r);
+        Check(!sim.arsenal.reloading && Said("MAGAZINE FULL") && T.snd[SIMSND_RELOAD] == 0, "reload with a full magazine: it says so and does nothing");
+        sim.arsenal.mag[WEAPON_PISTOL] = mag - 3;
+        TallyClear();
+        Stp(r);
+        Check(sim.arsenal.reloading && (T.sndArgs[SIMSND_RELOAD] & 1u), "reload with room in the magazine starts one, with its sound");
+        Check(Inventory_Count(&sim.inv, pistolAmmo) == 20, "the bag is only charged when the magazine is in");
+        for (int i = 0; i < 200 && sim.arsenal.reloading; ++i) Stp(None());
+        Check(sim.arsenal.mag[WEAPON_PISTOL] == mag && Inventory_Count(&sim.inv, pistolAmmo) == 17, "it tops the magazine up and takes just the 3 rounds it needed");
+
+        sim.arsenal.mag[WEAPON_PISTOL] = 2;
+        Inventory_Remove(&sim.inv, pistolAmmo, Inventory_Count(&sim.inv, pistolAmmo));
+        TallyClear();
+        Stp(r);
+        Check(!sim.arsenal.reloading && Said("NO SPARE AMMO"), "reload with an empty bag: it says there is nothing to load");
+
+        Inventory_Add(&sim.inv, pistolAmmo, 5);
+        sim.invOpen = true;
+        TallyClear();
+        Stp(r);
+        Check(!sim.arsenal.reloading, "with the inventory open the button does nothing");
+        sim.invOpen = false;
+        Stp(r);
+        Check(sim.arsenal.reloading, "and with it shut it does");
+        Arsenal_Equip(&sim.arsenal, WEAPON_HANDS);
+        Check(!sim.arsenal.reloading && sim.arsenal.mag[WEAPON_PISTOL] == 2, "putting the gun away stops the reload, and the rounds in it stay in it");
+    }
+
+    printf("\n-- picking a gun up loads it, dropping it gives the rounds back\n");
+    {
+        Boot(1);
+        Vector3 at = { 0 };
+        PickupKind kind = PICKUP_PIPE;
+        bool found = false;
+        for (int k = 0; k < MAX_PICKUPS && !found; ++k) {
+            const Pickup *pk = Pickups_Get(k);
+            if (pk->active && !Pickup_IsAmmo(pk->kind) && Weapon_Def(Pickup_Weapon(pk->kind))->kind == WEAPON_KIND_GUN) { at = pk->pos; kind = pk->kind; found = true; }
+        }
+        Check(found, "floor 1 of seed 1 has a gun on the floor (the test's own set-up)");
+        const WeaponId w = Pickup_Weapon(kind);
+        const WeaponDef *d = Weapon_Def(w);
+        const ItemId ammoItem = Item_ForAmmo(d->ammo);
+        at.x += 0.3f; at.y = 0.0f;
+        GoTo(at);
+        SimCmd use = None(); use.use = true;
+        Stp(use);
+        const int loaded = d->pickupAmmo < d->magSize ? d->pickupAmmo : d->magSize;
+        Check(Arsenal_IsEquipped(&sim.arsenal, w) && sim.arsenal.mag[w] == loaded, "picking a gun up puts its clip into the gun");
+        Check(Inventory_Count(&sim.inv, ammoItem) == d->pickupAmmo - loaded, "and whatever the clip holds beyond the magazine goes into the bag");
+
+        sim.arsenal.mag[w] = 7;
+        const int bagBefore = Inventory_Count(&sim.inv, ammoItem);
+        int slot = -1;
+        for (int i = 0; i < INV_SLOTS; ++i) if (sim.inv.slots[i].item == Item_ForWeapon(w)) slot = i;
+        Check(slot >= 0, "the gun is in the bag (the test's own set-up)");
+        GameSim_DropSlot(&sim, slot);
+        Drain();
+        Check(!Arsenal_IsEquipped(&sim.arsenal, w) && sim.arsenal.mag[w] == 0, "dropping the gun empties its magazine");
+        Check(Inventory_Count(&sim.inv, ammoItem) == bagBefore + 7, "and the 7 rounds that were in it are in the bag");
+    }
+
+    printf("\n-- the pipe wears out\n");
+    {
+        Boot(1);
+        const WeaponDef *pd = Weapon_Def(WEAPON_PIPE);
+        Check(pd->durability > 1, "the pipe wears out after more than one swing (the config's own value)");
+        Inventory_Add(&sim.inv, Item_ForWeapon(WEAPON_PIPE), 1);
+        Arsenal_Give(&sim.arsenal, WEAPON_PIPE);
+        Idle(12);
+        SimCmd swing = None(); swing.fire = true;
+        Stp(swing);
+        Idle(40);
+        Check(sim.arsenal.wear[WEAPON_PIPE] == 0, "a swing at nothing does not wear it");
+        sim.arsenal.wear[WEAPON_PIPE] = pd->durability - 2;
+        TallyClear();
+        // Hold the trigger beside the swarm's core, facing it, and put the player back there every step: the swarm wakes at the first hit
+        // and shoves the player about, and this test is about the pipe, not about where the swarm goes.
+        bool sawOneLeft = false;
+        SimCmd held = None(); held.fire = true;
+        for (int i = 0; i < 900 && Arsenal_IsEquipped(&sim.arsenal, WEAPON_PIPE); ++i) {
+            Vector3 p = sim.swarm.core; p.y = 0.0f; p.x += 0.4f;
+            TeleportPlayer(&sim.player, p, -1.5708f); sim.prevEye = sim.player.camera.position;
+            God();
+            Stp(held);
+            if (sim.arsenal.wear[WEAPON_PIPE] == pd->durability - 1) sawOneLeft = true;
+        }
+        Check(sawOneLeft, "a swing that lands wears it by one");
+        Check(!Arsenal_IsEquipped(&sim.arsenal, WEAPON_PIPE) && sim.arsenal.current == WEAPON_HANDS, "the swing that uses it up breaks it: the hands are back");
+        Check(!Inventory_Has(&sim.inv, Item_ForWeapon(WEAPON_PIPE)), "it is gone from the bag too");
+        Check(Said("BROKE") && T.snd[SIMSND_BREAK] == 1, "with a message and the breaking sound, once");
     }
 
     printf("\n-- hits and kills of the swarm (the markers)\n");

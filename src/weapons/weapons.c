@@ -93,6 +93,9 @@ static void Equip(Arsenal *a, WeaponId id)
     a->cooldown = 0.2f;
     a->heat = 0.0f;
     a->pressBuf = 0.0f;
+    a->reloading = false;                 // switching away (or putting the gun down) stops a reload; the rounds already in stay in
+    a->reloadT = 0.0f;
+    a->reloadPending = false;
 }
 
 bool Arsenal_IsEquipped(const Arsenal *a, WeaponId id) { return id >= 0 && id < WEAPON_COUNT && a->owned[id]; }
@@ -165,12 +168,88 @@ float Arsenal_SpreadDeg(const Arsenal *a)
     return d->spreadDeg + (d->spreadMaxDeg - d->spreadDeg) * a->heat;
 }
 
+// ---- magazines and reloading -------------------------------------------------------------------------------------------
+static bool HasMagazine(const WeaponDef *d) { return d->kind == WEAPON_KIND_GUN && d->magSize > 0; }
+
+bool Arsenal_CanReload(const Arsenal *a)
+{
+    const WeaponDef *d = Weapon_Def(a->current);
+    return HasMagazine(d) && !a->reloading && a->equipT >= 0.6f && a->mag[a->current] < d->magSize && a->ammo > 0;
+}
+
+bool Arsenal_StartReload(Arsenal *a)
+{
+    if (!Arsenal_CanReload(a)) return false;
+    a->reloading = true;
+    a->reloadT = 0.0f;
+    a->reloadPending = true;
+    return true;
+}
+
+int Arsenal_Loaded(const Arsenal *a)
+{
+    return HasMagazine(Weapon_Def(a->current)) ? a->mag[a->current] : a->ammo;
+}
+
+float Arsenal_ReloadFraction(const Arsenal *a)
+{
+    if (!a->reloading) return 0.0f;
+    const float s = Weapon_Def(a->current)->reloadSecs;
+    if (s <= 0.0f) return 1.0f;
+    const float f = a->reloadT / s;
+    return f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+}
+
+int Arsenal_Fill(Arsenal *a, WeaponId id, int rounds)
+{
+    if (id < 0 || id >= WEAPON_COUNT || rounds <= 0 || !HasMagazine(Weapon_Def(id))) return 0;
+    const int room = Weapon_Def(id)->magSize - a->mag[id];
+    const int put = room < rounds ? room : rounds;
+    if (put <= 0) return 0;
+    a->mag[id] += put;
+    return put;
+}
+
+int Arsenal_TakeMag(Arsenal *a, WeaponId id)
+{
+    if (id < 0 || id >= WEAPON_COUNT) return 0;
+    const int n = a->mag[id];
+    a->mag[id] = 0;
+    if (a->reloading && a->current == id) { a->reloading = false; a->reloadT = 0.0f; a->reloadPending = false; }
+    return n;
+}
+
+// ---- melee durability --------------------------------------------------------------------------------------------------
+bool Arsenal_Wear(Arsenal *a, WeaponId id, int hits)
+{
+    if (id <= WEAPON_HANDS || id >= WEAPON_COUNT || hits <= 0) return false;
+    const WeaponDef *d = Weapon_Def(id);
+    if (d->kind != WEAPON_KIND_MELEE || d->durability <= 0) return false;
+    a->wear[id] += hits;
+    if (a->wear[id] < d->durability) return false;
+    a->wear[id] = 0;                       // it broke: the next one is new
+    return true;
+}
+
+float Arsenal_Condition(const Arsenal *a, WeaponId id)
+{
+    if (id < 0 || id >= WEAPON_COUNT) return 1.0f;
+    const WeaponDef *d = Weapon_Def(id);
+    if (d->kind != WEAPON_KIND_MELEE || d->durability <= 0) return 1.0f;
+    const float f = 1.0f - (float)a->wear[id] / (float)d->durability;
+    return f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+}
+
 #define PRESS_BUFFER_SECS 0.15f   // a tap just before the gun is ready still counts
 
 void Arsenal_Update(Arsenal *a, float dt, bool attackHeld, ArsenalEvents *out)
 {
-    ArsenalEvents ev = { false, false, false, Weapon_Def(a->current) };
+    ArsenalEvents ev = { .def = Weapon_Def(a->current) };
     const WeaponDef *def = ev.def;
+    const bool isGun = def->kind == WEAPON_KIND_GUN;
+    const bool mags = HasMagazine(def);
+
+    if (a->reloadPending) { a->reloadPending = false; ev.reloadStart = true; }
 
     const bool pressed = attackHeld && !a->heldPrev;
     a->heldPrev = attackHeld;
@@ -182,6 +261,11 @@ void Arsenal_Update(Arsenal *a, float dt, bool attackHeld, ArsenalEvents *out)
     a->flash  -= dt * 18.0f; if (a->flash < 0.0f) a->flash = 0.0f;
     a->dry    -= dt * 5.0f;  if (a->dry < 0.0f) a->dry = 0.0f;
     a->heat   -= dt * def->heatRecover;  if (a->heat < 0.0f) a->heat = 0.0f;
+    {
+        const float step = dt * 5.0f;                                          // the reload pose eases in and out in about a fifth of a second
+        if (a->reloading) { a->reloadBlend += step; if (a->reloadBlend > 1.0f) a->reloadBlend = 1.0f; }
+        else              { a->reloadBlend -= step; if (a->reloadBlend < 0.0f) a->reloadBlend = 0.0f; }
+    }
 
     if (a->attackT >= 0.0f) {
         a->attackT += dt;
@@ -192,17 +276,53 @@ void Arsenal_Update(Arsenal *a, float dt, bool attackHeld, ArsenalEvents *out)
         if (a->attackT >= def->duration) a->attackT = -1.0f;
     }
 
+    // A reload in progress. A whole-magazine reload moves the rounds when its time is up; a tube-fed gun (reloadPerRound) puts one
+    // round in every reloadSecs until it is full or the bag is empty. Rounds come out of the reserve (a->ammo), which the caller
+    // takes back from the inventory, exactly as it does for a shot.
+    if (a->reloading) {
+        if (!mags) {
+            a->reloading = false;                              // a weapon with no magazine has nothing to reload
+            a->reloadT = 0.0f;
+        } else {
+            int *mag = &a->mag[a->current];
+            a->reloadT += dt;
+            if (def->reloadPerRound) {
+                while (a->reloading && a->reloadT >= def->reloadSecs) {
+                    a->reloadT -= def->reloadSecs;
+                    if (*mag < def->magSize && a->ammo > 0) { ++*mag; --a->ammo; ev.reloadRound = true; }
+                    if (*mag >= def->magSize || a->ammo <= 0) { a->reloading = false; a->reloadT = 0.0f; ev.reloadDone = true; }
+                }
+            } else if (a->reloadT >= def->reloadSecs) {
+                const int need = def->magSize - *mag;
+                const int take = need < a->ammo ? need : a->ammo;
+                *mag += take;
+                a->ammo -= take;
+                a->reloading = false;
+                a->reloadT = 0.0f;
+                ev.reloadDone = true;
+            }
+        }
+    }
+
     // Does the trigger want a shot? A gun on SEMI or PUMP needs a fresh press (or one made just before it was ready);
     // everything else repeats while held.
-    const bool pressGun = def->kind == WEAPON_KIND_GUN && def->fireMode != FIRE_AUTO;
-    const bool want = pressGun ? (pressed || a->pressBuf > 0.0f) : attackHeld;
+    const bool pressGun = isGun && def->fireMode != FIRE_AUTO;
+    bool want = pressGun ? (pressed || a->pressBuf > 0.0f) : attackHeld;
+
+    // The trigger and a reload: a tube-fed gun with a round in it stops loading and fires (and keeps what went in); any other gun
+    // cannot fire until its reload is done, so the trigger is ignored.
+    if (a->reloading && want) {
+        if (def->reloadPerRound && a->mag[a->current] >= def->ammoPerShot) { a->reloading = false; a->reloadT = 0.0f; }
+        else want = false;
+    }
 
     if (want && a->cooldown <= 0.0f && a->equipT >= 0.6f) {
         a->cooldown = def->cooldown;
         a->pressBuf = 0.0f;
-        if (def->kind == WEAPON_KIND_GUN) {
-            if (a->ammo >= def->ammoPerShot) {
-                a->ammo -= def->ammoPerShot;
+        if (isGun) {
+            int *pool = mags ? &a->mag[a->current] : &a->ammo;   // a gun with a magazine fires from it; one without fires from the bag
+            if (*pool >= def->ammoPerShot) {
+                *pool -= def->ammoPerShot;
                 ev.shot = true;
                 a->recoil = 1.0f;
                 a->flash = 1.0f;
@@ -212,6 +332,7 @@ void Arsenal_Update(Arsenal *a, float dt, bool attackHeld, ArsenalEvents *out)
             } else {
                 ev.dryFire = true;
                 a->dry = 1.0f;
+                if (mags && Arsenal_StartReload(a)) { a->reloadPending = false; ev.reloadStart = true; }   // an empty gun reloads by itself
             }
         } else {
             a->attackT = 0.0f;

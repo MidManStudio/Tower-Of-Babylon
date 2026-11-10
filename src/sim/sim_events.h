@@ -24,7 +24,8 @@ typedef enum {
 typedef enum {
     SIMSND_HURT = 0, SIMSND_DOOR, SIMSND_SHOT /* arg: WeaponId */, SIMSND_DRYFIRE, SIMSND_MELEE /* arg: 1 when it hit something */,
     SIMSND_HITMARKER /* arg: 1 for a kill */, SIMSND_PICKUP, SIMSND_USEITEM, SIMSND_BATTERY, SIMSND_FLASHLIGHT /* arg: 1 on, 0 off */,
-    SIMSND_CONSOLE_START, SIMSND_UNLOCKED, SIMSND_COUNT_TICK /* arg: seconds left */, SIMSND_COLLAPSE
+    SIMSND_CONSOLE_START, SIMSND_UNLOCKED, SIMSND_COUNT_TICK /* arg: seconds left */, SIMSND_COLLAPSE,
+    SIMSND_RELOAD /* arg: 0 started, 1 a round went in, 2 magazine done, 3 tube-fed gun done */, SIMSND_BREAK /* a melee weapon wore out */
 } SimSound;
 
 #define SIM_EVENT_TEXT 80          // longest text kept; a longer one is cut

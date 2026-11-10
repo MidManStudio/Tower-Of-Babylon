@@ -69,6 +69,20 @@ void AudioEvents_Shot(int weaponId)
 }
 
 void AudioEvents_DryFire(void)  { Audio_Play(SND_DRY_FIRE, 1.0f); }
+
+// No recipe of its own yet: a reload is the flashlight's click and the shotgun's pump, pitched to sound like a magazine coming out and
+// going in. A real recording or recipe replaces these in one place.
+void AudioEvents_Reload(int stage)
+{
+    switch (stage) {
+        case 0:  Audio_PlayEx(SND_FLASH_CLICK, 1.0f, 0.70f, 0.0f); break;                               // the magazine out (or the first shell)
+        case 1:  Audio_PlayEx(SND_UI_CLICK, 1.0f, 0.85f, 0.0f); break;                                  // a shell in
+        case 2:  Audio_PlayEx(SND_FLASH_CLICK, 1.0f, 1.30f, 0.0f); break;                               // the magazine in
+        default: Audio_PlayEx(SND_UI_CLICK, 1.0f, 0.85f, 0.0f); Audio_PlayIn(SND_SHOTGUN_PUMP, 0.12f, 1.0f); break;   // the last shell, then the pump
+    }
+}
+
+void AudioEvents_Break(void) { Audio_PlayEx(SND_PIPE_HIT, 1.0f, 0.60f, 0.0f); Audio_PlayIn(SND_PIPE_HIT, 0.09f, 0.7f); }
 void AudioEvents_Melee(bool hit) { Audio_Play(SND_PIPE_SWING, 1.0f); if (hit) Audio_PlayIn(SND_PIPE_HIT, 0.06f, 1.0f); }
 void AudioEvents_HitMarker(bool kill) { Audio_Play(kill ? SND_KILL_CONFIRM : SND_HIT_CONFIRM, 1.0f); }
 void AudioEvents_Hurt(void)     { Audio_Play(SND_HURT, 1.0f); }

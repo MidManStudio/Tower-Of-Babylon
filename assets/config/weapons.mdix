@@ -27,6 +27,7 @@
   //   windup          melee: seconds into the swing at which it connects
   //   duration        seconds the attack animation runs
   //   reach, arc_deg, knockback   melee only: metres from the eye, half-angle either side of straight ahead, push in metres
+  //   durability      melee only (and hands, as 0): swings that connect before it breaks and is gone. 0 = never wears
   // Guns only:
   //   fire_mode       SEMI one shot per press, AUTO repeats while held, PUMP one shot per press and a pump before the next
   //   ammo            which kind of rounds it spends, and ammo_per_shot how many a pull costs
@@ -38,8 +39,12 @@
   //                   below heat_per_shot (the rifle: 0.12 s * 0.5 = 0.06, against 0.12)
   //   kick            how hard the gun jumps in the hands, 1.0 is the pistol
   //   noise_metres, noise_secs      how far a shot is heard by enemies, and for how long
-  //   pickup_ammo     rounds that come with the gun when it is picked up
+  //   pickup_ammo     rounds that come with the gun when it is picked up (they fill its magazine first, the rest go in the bag)
   //   ammo_box        rounds in one box of this gun's ammo found on the floor
+  //   mag_size        rounds the gun holds. The bag holds the reserve; a reload moves rounds from the bag into the gun. 0 = no magazine
+  //   reload_secs     seconds to reload a whole magazine, or, with reload_per_round = 1, seconds to load ONE round
+  //   reload_per_round  0 = the whole magazine goes in at once (and cannot be interrupted by the trigger); 1 = one round at a time,
+  //                   and pulling the trigger stops the reload and fires what is in (a pump shotgun's tube)
   weapons::
     {
       id        = "hands",
@@ -51,7 +56,8 @@
       duration  = 0.34f,
       reach     = 1.7f,
       arc_deg   = 50.0f,
-      knockback = 0.4f
+      knockback = 0.4f,
+      durability = 0
     },
     {
       id        = "pipe",
@@ -63,7 +69,8 @@
       duration  = 0.62f,
       reach     = 2.6f,
       arc_deg   = 60.0f,
-      knockback = 1.0f
+      knockback = 1.0f,
+      durability = 30
     },
     {
       id            = "pistol",
@@ -86,7 +93,10 @@
       noise_metres  = 28.0f,
       noise_secs    = 1.5f,
       pickup_ammo   = 12,
-      ammo_box      = 8
+      ammo_box      = 8,
+      mag_size      = 12,
+      reload_secs   = 1.4f,
+      reload_per_round = 0
     },
     {
       id            = "shotgun",
@@ -109,7 +119,10 @@
       noise_metres  = 40.0f,
       noise_secs    = 2.2f,
       pickup_ammo   = 6,
-      ammo_box      = 6
+      ammo_box      = 6,
+      mag_size      = 6,
+      reload_secs   = 0.55f,
+      reload_per_round = 1
     },
     {
       id            = "rifle",
@@ -132,6 +145,9 @@
       noise_metres  = 34.0f,
       noise_secs    = 1.2f,
       pickup_ammo   = 30,
-      ammo_box      = 24
+      ammo_box      = 24,
+      mag_size      = 30,
+      reload_secs   = 2.0f,
+      reload_per_round = 0
     }
 )

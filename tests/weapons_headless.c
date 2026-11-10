@@ -101,11 +101,12 @@ static const float DT = 1.0f / 60.0f;
 
 static ArsenalEvents Run(Arsenal *a, float secs, int held)
 {
-    ArsenalEvents total = { false, false, false, NULL };
+    ArsenalEvents total = { .def = NULL };
     for (float t = 0.0f; t < secs; t += DT) {
         ArsenalEvents e;
         Arsenal_Update(a, DT, held, &e);
         total.shot |= e.shot; total.impact |= e.impact; total.dryFire |= e.dryFire; total.def = e.def;
+        total.reloadStart |= e.reloadStart; total.reloadRound |= e.reloadRound; total.reloadDone |= e.reloadDone;
     }
     return total;
 }
@@ -116,7 +117,7 @@ static int CountEvents(Arsenal *a, float secs, int held, int which)
     for (float t = 0.0f; t < secs; t += DT) {
         ArsenalEvents e;
         Arsenal_Update(a, DT, held, &e);
-        n += which == 0 ? e.shot : (which == 1 ? e.impact : e.dryFire);
+        n += which == 0 ? e.shot : (which == 1 ? e.impact : (which == 2 ? e.dryFire : e.reloadRound));
     }
     return n;
 }
@@ -229,24 +230,142 @@ int main(void)
     Arsenal_Give(&a, WEAPON_PISTOL);
     Run(&a, 0.5f, 0);
     e = Run(&a, 0.5f, 1);
-    Check(e.dryFire && !e.shot, "with no ammo the trigger only clicks");
+    Check(e.dryFire && !e.shot, "with an empty magazine and an empty bag the trigger only clicks");
+    Check(!e.reloadStart && !a.reloading, "and there is nothing to reload from, so no reload starts");
     Arsenal_AddAmmo(&a, Weapon_Def(WEAPON_PISTOL)->pickupAmmo);
-    Check(a.ammo == Weapon_Def(WEAPON_PISTOL)->pickupAmmo, "a pickup adds its ammo");
+    Check(a.ammo == Weapon_Def(WEAPON_PISTOL)->pickupAmmo, "a pickup adds its ammo to the reserve");
+    Arsenal_Init(&a); Arsenal_Give(&a, WEAPON_PISTOL);
+    Check(Arsenal_Fill(&a, WEAPON_PISTOL, 100) == Weapon_Def(WEAPON_PISTOL)->magSize, "a magazine takes only what it holds");
     Run(&a, 0.5f, 0);
     const int shots = CountEvents(&a, 1.0f, 1, 0);
     Check(shots >= 3 && shots <= 4, "holding the trigger fires about 3 shots a second (0.30 s apart: the pistol repeats while held)");
-    Check(a.ammo == Weapon_Def(WEAPON_PISTOL)->pickupAmmo - shots, "each shot uses one round");
-    Arsenal_Init(&a); Arsenal_Give(&a, WEAPON_PISTOL); Arsenal_AddAmmo(&a, 2); Run(&a, 0.5f, 0);
+    Check(a.mag[WEAPON_PISTOL] == Weapon_Def(WEAPON_PISTOL)->magSize - shots && a.ammo == 0, "each shot uses one round of the magazine and none of the bag");
+    Arsenal_Init(&a); Arsenal_Give(&a, WEAPON_PISTOL); Arsenal_Fill(&a, WEAPON_PISTOL, 2); Run(&a, 0.5f, 0);
     const int fired = CountEvents(&a, 3.0f, 1, 0);
-    Check(fired == 2 && a.ammo == 0, "it fires exactly as many shots as it has rounds");
+    Check(fired == 2 && a.mag[WEAPON_PISTOL] == 0, "with an empty bag it fires exactly as many shots as the magazine has rounds");
     Arsenal_AddAmmo(&a, 500);
-    Check(a.ammo == AMMO_MAX, "ammo is capped");
-    Arsenal_Init(&a); Arsenal_Give(&a, WEAPON_PISTOL); Arsenal_AddAmmo(&a, 5); Run(&a, 0.5f, 0);
+    Check(a.ammo == AMMO_MAX, "the reserve is capped");
+    Arsenal_Init(&a); Arsenal_Give(&a, WEAPON_PISTOL); Arsenal_Fill(&a, WEAPON_PISTOL, 5); Run(&a, 0.5f, 0);
     Run(&a, DT, 1);
     Check(a.recoil > 0.9f && a.flash > 0.9f, "a shot kicks the gun and flashes the muzzle");
     Run(&a, 0.4f, 0);
     Check(a.recoil == 0.0f && a.flash == 0.0f, "both settle");
     Check(Weapon_Def(WEAPON_PISTOL)->damage == 25.0f, "a pistol shot does 25 damage (as the old shots did)");
+
+    printf("Magazines and reloading\n");
+    {
+        Arsenal r;
+        const WeaponDef *pd = Weapon_Def(WEAPON_PISTOL), *sd = Weapon_Def(WEAPON_SHOTGUN), *rd = Weapon_Def(WEAPON_RIFLE);
+        Check(pd->magSize == 12 && sd->magSize == 6 && rd->magSize == 30, "the guns hold 12, 6 and 30 rounds (the clip each used to come with)");
+        Check(pd->magSize == pd->pickupAmmo && sd->magSize == sd->pickupAmmo && rd->magSize == rd->pickupAmmo, "so a gun picked up arrives with exactly a full magazine");
+        Check(sd->reloadPerRound == 1 && pd->reloadPerRound == 0 && rd->reloadPerRound == 0, "only the shotgun loads one round at a time");
+        Check(Arsenal_Fill(&r, WEAPON_PIPE, 5) == 0 && Arsenal_Fill(&r, WEAPON_HANDS, 5) == 0, "only a gun has a magazine to fill");
+
+        // A whole-magazine reload.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_PISTOL] = 3; r.ammo = 20;
+        Check(Arsenal_CanReload(&r) && Arsenal_StartReload(&r) && r.reloading, "a part-empty gun with rounds in the bag starts a reload");
+        Check(!Arsenal_StartReload(&r) && !Arsenal_CanReload(&r), "and cannot start a second one while it runs");
+        e = Run(&r, 0.05f, 0);
+        Check(e.reloadStart, "the start is reported once");
+        e = Run(&r, 0.5f, 0);
+        Check(!e.reloadStart && r.mag[WEAPON_PISTOL] == 3 && r.ammo == 20, "nothing moves until the reload time is up");
+        const float half = Arsenal_ReloadFraction(&r);
+        Check(half > 0.3f && half < 0.6f, "the HUD fraction is part of the way through");
+        e = Run(&r, 1.2f, 0);
+        Check(e.reloadDone && !r.reloading && r.mag[WEAPON_PISTOL] == 12 && r.ammo == 11, "then the magazine is full and 9 rounds left the bag");
+        Check(Arsenal_ReloadFraction(&r) == 0.0f, "and the fraction is 0 again");
+        Check(!Arsenal_CanReload(&r) && !Arsenal_StartReload(&r), "a full magazine cannot be reloaded");
+
+        // A short bag: the magazine gets what there is.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_PISTOL] = 0; r.ammo = 5;
+        Arsenal_StartReload(&r); Run(&r, 2.0f, 0);
+        Check(r.mag[WEAPON_PISTOL] == 5 && r.ammo == 0, "a reload from a short bag loads what is there");
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_PISTOL] = 3; r.ammo = 0;
+        Check(!Arsenal_CanReload(&r) && !Arsenal_StartReload(&r), "with an empty bag there is nothing to reload from");
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PIPE); r.ammo = 9;
+        Check(!Arsenal_CanReload(&r) && !Arsenal_StartReload(&r), "a melee weapon has nothing to reload");
+
+        // The trigger.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_PISTOL] = 4; r.ammo = 20;
+        Arsenal_StartReload(&r);
+        e = Run(&r, 0.8f, 1);
+        Check(!e.shot && !e.dryFire && r.mag[WEAPON_PISTOL] == 4, "the trigger is ignored while a magazine reloads (no shot, no click)");
+        e = Run(&r, 1.0f, 0);
+        Check(r.mag[WEAPON_PISTOL] == 12, "and the reload still finishes");
+
+        // An empty gun reloads by itself when the trigger is pulled.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_PISTOL] = 1; r.ammo = 30;
+        e = Run(&r, 0.8f, 1);
+        Check(e.shot && e.dryFire && e.reloadStart && r.reloading && r.mag[WEAPON_PISTOL] == 0, "the last round fires; the next pull clicks and starts the reload on its own");
+        e = Run(&r, 1.6f, 0);
+        Check(e.reloadDone && r.mag[WEAPON_PISTOL] == 12 && r.ammo == 18, "which then completes: 12 in the gun, 12 fewer in the bag (30 - 12 = 18)");
+        Check(Arsenal_Loaded(&r) == 12, "the HUD asks for what is loaded");
+
+        // Switching weapons stops it; the rounds in stay put.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_PISTOL] = 7; r.ammo = 20;
+        Arsenal_StartReload(&r); Run(&r, 0.4f, 0);
+        Arsenal_Give(&r, WEAPON_PIPE);
+        Check(!r.reloading && r.mag[WEAPON_PISTOL] == 7 && r.ammo == 20, "switching away stops the reload and takes nothing from the bag");
+        Arsenal_Give(&r, WEAPON_PISTOL); Run(&r, 0.5f, 0);
+        Check(r.mag[WEAPON_PISTOL] == 7, "and the gun is as it was when it comes back");
+
+        // The shotgun: one round at a time, the trigger interrupts.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_SHOTGUN); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_SHOTGUN] = 0; r.ammo = 10;
+        Arsenal_StartReload(&r);
+        const int shells = CountEvents(&r, sd->reloadSecs * 3.0f + 0.1f, 0, 3);
+        Check(shells == 3 && r.mag[WEAPON_SHOTGUN] == 3 && r.ammo == 7 && r.reloading, "the shotgun loads a shell every 0.55 s (3 in, 7 left in the bag) and keeps going");
+        e = Run(&r, DT, 1);
+        Check(e.shot && !r.reloading && r.mag[WEAPON_SHOTGUN] == 2, "pulling the trigger stops the reload and fires a loaded shell");
+        Run(&r, 1.5f, 0);
+        Check(r.mag[WEAPON_SHOTGUN] == 2 && r.ammo == 7, "the reload does not resume by itself");
+        Arsenal_StartReload(&r);
+        e = Run(&r, sd->reloadSecs * 6.0f, 0);
+        Check(e.reloadDone && r.mag[WEAPON_SHOTGUN] == 6 && r.ammo == 3, "it stops when the tube is full (6 shells, 3 left in the bag)");
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_SHOTGUN); Run(&r, 0.5f, 0);
+        r.mag[WEAPON_SHOTGUN] = 4; r.ammo = 1;
+        Arsenal_StartReload(&r);
+        e = Run(&r, 2.0f, 0);
+        Check(e.reloadDone && r.mag[WEAPON_SHOTGUN] == 5 && r.ammo == 0 && !r.reloading, "or when the bag runs out");
+
+        // A gun with no magazine behaves as before reloading existed.
+        WeaponDef defs[WEAPON_COUNT];
+        for (int i = 0; i < WEAPON_COUNT; ++i) defs[i] = *Weapon_Def((WeaponId)i);
+        defs[WEAPON_PISTOL].magSize = 0;
+        Weapons_SetDefs(defs);
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_PISTOL); Arsenal_AddAmmo(&r, 3); Run(&r, 0.5f, 0);
+        Check(!Arsenal_CanReload(&r) && Arsenal_Loaded(&r) == 3, "a gun with magSize 0 has no reload and reports the bag as what is loaded");
+        Check(CountEvents(&r, 3.0f, 1, 0) == 3 && r.ammo == 0, "and fires straight from the bag");
+        GameConfig_LoadBaked();
+
+        // Dropping a gun gives its magazine back.
+        Arsenal_Init(&r); Arsenal_Give(&r, WEAPON_RIFLE);
+        Check(Arsenal_Fill(&r, WEAPON_RIFLE, 30) == 30 && Arsenal_TakeMag(&r, WEAPON_RIFLE) == 30 && r.mag[WEAPON_RIFLE] == 0, "taking a magazine out returns what was in it");
+    }
+
+    printf("Melee durability\n");
+    {
+        Arsenal w;
+        const WeaponDef *pipe = Weapon_Def(WEAPON_PIPE);
+        Check(pipe->durability == 30 && Weapon_Def(WEAPON_HANDS)->durability == 0, "the pipe lasts 30 connecting swings and the hands never wear");
+        Arsenal_Init(&w);
+        Check(Arsenal_Condition(&w, WEAPON_PIPE) == 1.0f, "a new pipe is at full condition");
+        Check(!Arsenal_Wear(&w, WEAPON_PIPE, 1) && w.wear[WEAPON_PIPE] == 1, "one swing wears it by one");
+        Check(Arsenal_Condition(&w, WEAPON_PIPE) < 1.0f && Arsenal_Condition(&w, WEAPON_PIPE) > 0.9f, "and the condition falls a little");
+        for (int i = 0; i < 28; ++i) Arsenal_Wear(&w, WEAPON_PIPE, 1);
+        Check(w.wear[WEAPON_PIPE] == 29 && Arsenal_Condition(&w, WEAPON_PIPE) < 0.04f, "29 swings in it is nearly gone");
+        Check(Arsenal_Wear(&w, WEAPON_PIPE, 1), "the 30th breaks it");
+        Check(w.wear[WEAPON_PIPE] == 0 && Arsenal_Condition(&w, WEAPON_PIPE) == 1.0f, "and the next pipe is new");
+        Check(!Arsenal_Wear(&w, WEAPON_HANDS, 1000) && !Arsenal_Wear(&w, WEAPON_PISTOL, 1000) && w.wear[WEAPON_HANDS] == 0 && w.wear[WEAPON_PISTOL] == 0, "hands and guns do not wear");
+        Check(!Arsenal_Wear(&w, WEAPON_PIPE, 0) && !Arsenal_Wear(&w, WEAPON_PIPE, -3), "no swings, no wear");
+        Check(Arsenal_Condition(&w, WEAPON_PISTOL) == 1.0f && Arsenal_Condition(&w, WEAPON_COUNT) == 1.0f, "anything that does not wear reads as full condition");
+    }
 
     printf("Aim frame\n");
     const AimFrame aim = TestAim();
@@ -524,22 +643,22 @@ int main(void)
     {
         Arsenal g;
         // PUMP: the shotgun fires once per press and needs the pump between shots.
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); Arsenal_AddAmmo(&g, 10); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); g.mag[WEAPON_SHOTGUN] = 6; Run(&g, 0.5f, 0);
         Check(CountEvents(&g, 2.0f, 1, 0) == 1, "the shotgun fires once however long the trigger is held (pump action)");
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); Arsenal_AddAmmo(&g, 10); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); g.mag[WEAPON_SHOTGUN] = 6; Run(&g, 0.5f, 0);
         int shotsA = CountEvents(&g, DT * 2.0f, 1, 0);                    // press: fires
         Run(&g, 0.5f, 0);
         shotsA += CountEvents(&g, DT * 2.0f, 1, 0);                       // 0.5 s later: 0.45 s of pump left, too early to be remembered
         Run(&g, 0.3f, 0);
-        Check(shotsA == 1 && g.ammo == 9, "a press while the pump is still going is ignored");
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); Arsenal_AddAmmo(&g, 10); Run(&g, 0.5f, 0);
+        Check(shotsA == 1 && g.mag[WEAPON_SHOTGUN] == 5, "a press while the pump is still going is ignored");
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); g.mag[WEAPON_SHOTGUN] = 6; Run(&g, 0.5f, 0);
         int shotsB = CountEvents(&g, DT, 1, 0);                           // first shot
         Run(&g, 0.80f, 0);                                                // cooldown 0.95: about 0.14 s left
         shotsB += CountEvents(&g, DT, 1, 0);                              // a tap just before it is ready...
         shotsB += CountEvents(&g, 0.4f, 0, 0);
         Check(shotsB == 2, "a tap just before the pump is done is kept and fires when it is (0.15 s of buffer)");
         const float cd = Weapon_Def(WEAPON_SHOTGUN)->cooldown;
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); Arsenal_AddAmmo(&g, 10); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); g.mag[WEAPON_SHOTGUN] = 6; Run(&g, 0.5f, 0);
         int total = 0;
         for (float t = 0.0f; t < 4.0f; t += DT) { ArsenalEvents ev; Arsenal_Update(&g, DT, ((int)(t / 0.1f)) % 2 == 0, &ev); total += ev.shot; }
         Check(total >= 3 && total <= 5 && cd > 0.9f, "tapping as fast as possible for 4 s gives about one blast a second");
@@ -549,14 +668,14 @@ int main(void)
         for (int i = 0; i < WEAPON_COUNT; ++i) defs[i] = *Weapon_Def((WeaponId)i);
         defs[WEAPON_PISTOL].fireMode = FIRE_SEMI;
         Weapons_SetDefs(defs);
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_PISTOL); Arsenal_AddAmmo(&g, 10); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_PISTOL); g.mag[WEAPON_PISTOL] = 10; Run(&g, 0.5f, 0);
         Check(CountEvents(&g, 2.0f, 1, 0) == 1, "a SEMI gun fires once however long the trigger is held");
         Run(&g, 0.4f, 0);
         Check(CountEvents(&g, DT * 3.0f, 1, 0) == 1, "and again on the next press");
         GameConfig_LoadBaked();
 
         // AUTO: the rifle repeats while held, and sustained fire opens its spread.
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_RIFLE); Arsenal_AddAmmo(&g, 99); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_RIFLE); g.mag[WEAPON_RIFLE] = 99; Run(&g, 0.5f, 0);
         const float cold = Arsenal_SpreadDeg(&g);
         Check(fabsf(cold - 0.6f) < 1e-4f, "a cold rifle has its 0.6 degree spread");
         const int rifleShots = CountEvents(&g, 1.0f, 1, 0);
@@ -566,15 +685,15 @@ int main(void)
         Check(g.heat > 0.9f && Arsenal_SpreadDeg(&g) > 4.5f, "three seconds of fire has it nearly at the full 5 degrees");
         Run(&g, 3.0f, 0);
         Check(g.heat < 0.1f && Arsenal_SpreadDeg(&g) < 1.0f, "and it settles again after the trigger is let go");
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_PISTOL); Arsenal_AddAmmo(&g, 99); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_PISTOL); g.mag[WEAPON_PISTOL] = 99; Run(&g, 0.5f, 0);
         CountEvents(&g, 4.0f, 1, 0);
         Check(g.heat > 0.5f && Arsenal_SpreadDeg(&g) > 0.5f, "a pistol held down for a few seconds heats a little too");
 
         // Ammo and the weapon in hand.
-        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); Arsenal_AddAmmo(&g, 2); Run(&g, 0.5f, 0);
+        Arsenal_Init(&g); Arsenal_Give(&g, WEAPON_SHOTGUN); g.mag[WEAPON_SHOTGUN] = 2; Run(&g, 0.5f, 0);
         int blasts = 0;
         for (int i = 0; i < 4; ++i) { blasts += CountEvents(&g, DT, 1, 0); Run(&g, 1.2f, 0); }
-        Check(blasts == 2 && g.ammo == 0, "a shotgun with 2 shells fires 2 blasts and then only clicks");
+        Check(blasts == 2 && g.mag[WEAPON_SHOTGUN] == 0, "a shotgun with 2 shells fires 2 blasts and then only clicks");
         Arsenal_Give(&g, WEAPON_RIFLE);
         Check(g.current == WEAPON_RIFLE && g.heat == 0.0f, "switching to another gun starts it cold");
     }

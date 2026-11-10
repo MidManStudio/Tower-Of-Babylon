@@ -15,7 +15,8 @@
 //               out, ahead, is a sprint (the sprint icon above the stick lights up).
 //   right side  a FIRE pad that also aims: the finger that holds it fires, and moving that finger turns the camera, so you
 //               can shoot and aim with one thumb. A finger anywhere else on the right half that is not on a button is the
-//               LOOK finger. JUMP, USE (PICKUP), SWAP, LIGHT and SLIDE are round buttons: JUMP and PICKUP above the pad, SLIDE beside it.
+//               LOOK finger. JUMP, USE (PICKUP), SWAP, LIGHT, SLIDE and RELOAD are round buttons: JUMP and PICKUP above the pad,
+//               SLIDE beside it, RELOAD under SLIDE at the bottom edge (a placeholder spot, like the rest of the layout).
 // A finger keeps the job it had when it went down until it lifts: a look finger that slides over JUMP does not jump, and a
 // stick finger that wanders into the right half is still the stick.
 
@@ -41,7 +42,7 @@ typedef struct {
     float    idleX, idleY;                  // where the faint "stick goes here" ring is drawn when no finger is down
     UiCircle firePad;                       // the outer ring: where a finger counts as being on the pad
     float    fireInnerRadius;               // 42: the button disc inside it (drawing)
-    UiCircle jump, use, swap, light, slide;
+    UiCircle jump, use, swap, light, slide, reload;
 } TcLayout;
 const TcLayout *Tc_Layout(void);
 
@@ -53,6 +54,7 @@ typedef struct {
     bool   swapAvailable;     // more than one weapon owned: the SWAP button exists
     bool   lightAvailable;    // a flashlight is carried: the LIGHT button exists
     bool   slideAvailable;    // the player is sprinting or sliding: the SLIDE button exists
+    bool   reloadAvailable;   // the gun in hand has room in its magazine and rounds in the bag: the RELOAD button exists
     UiRect blocked[TC_MAX_BLOCKED];    // regions that only take taps (STATS, INV, the popup, the diagnostic rows): no finger there
     int    blockedCount;               // becomes a stick, a look finger, or a press
 } TcContext;
@@ -62,7 +64,7 @@ typedef struct {
     float lookDX, lookDY;                   // canvas pixels moved by the look finger (and the fire finger) this frame
     bool  sprint;                           // the stick is out at the rim, ahead
     bool  fireHeld, jumpHeld, useHeld, swapHeld;
-    bool  lightPressed, slidePressed;       // once, on the frame the finger lands
+    bool  lightPressed, slidePressed, reloadPressed;   // once, on the frame the finger lands
     // for drawing
     bool  stickActive;
     float anchorX, anchorY, knobX, knobY;
@@ -71,7 +73,7 @@ typedef struct {
 } TcOut;
 
 typedef enum { TC_ROLE_NONE = 0, TC_ROLE_IGNORE, TC_ROLE_STICK, TC_ROLE_LOOK, TC_ROLE_FIRE, TC_ROLE_JUMP, TC_ROLE_USE, TC_ROLE_SWAP,
-               TC_ROLE_LIGHT, TC_ROLE_SLIDE } TcRole;
+               TC_ROLE_LIGHT, TC_ROLE_SLIDE, TC_ROLE_RELOAD } TcRole;
 typedef struct { bool used, fresh; int id, role; float lastX, lastY; } TcSlot;
 typedef struct { TcSlot slot[TC_MAX_TOUCHES]; float anchorX, anchorY; bool sprinting, prevWalkOnly; } TcState;
 

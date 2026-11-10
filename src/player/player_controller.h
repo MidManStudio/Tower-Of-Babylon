@@ -21,14 +21,16 @@
 #define PLAYER_AIR_CONTROL     0.35f   // share of the acceleration available in the air
 #define PLAYER_JUMP_SPEED      6.0f
 
-#define PLAYER_STAMINA_MAX     100.0f
-#define STAMINA_SPRINT_DRAIN   17.0f   // per second while sprinting: a full bar is about six seconds
-#define STAMINA_REGEN          15.0f   // per second once resting
+#define PLAYER_STAMINA_MAX     200.0f  // twice the old 100. Drain and costs below are unchanged, so everything the bar pays for lasts twice as long
+#define STAMINA_SCALE          (PLAYER_STAMINA_MAX / 100.0f)   // the thresholds below were set for a bar of 100: they grow with it so the bar keeps its shape
+#define STAMINA_SPRINT_DRAIN   17.0f   // per second while sprinting: a full bar is about twelve seconds
+#define STAMINA_REGEN          15.0f   // per second once resting (unchanged: a bigger tank takes longer to fill)
 #define STAMINA_REGEN_DELAY    1.0f    // seconds after the last effort before it starts coming back
 #define STAMINA_JUMP_COST      12.0f
-#define STAMINA_SPRINT_MIN     15.0f   // a sprint can only be started with more than this; one that is going carries on to zero
-#define STAMINA_FRESH          60.0f   // at or above this stamina there is no fatigue; below it the player slows smoothly, the lower the slower
-#define STAMINA_EXHAUST_RECOVER 30.0f  // an exhausted player stays slow until stamina is back to this
+#define STAMINA_SPRINT_MIN     (15.0f * STAMINA_SCALE)   // a sprint can only be started with more than this; one that is going carries on to zero
+#define STAMINA_FRESH          (60.0f * STAMINA_SCALE)   // at or above this stamina there is no fatigue; below it the player slows smoothly, the lower the slower
+#define STAMINA_EXHAUST_RECOVER (30.0f * STAMINA_SCALE)  // an exhausted player stays slow until stamina is back to this
+#define STAMINA_LOW            (25.0f * STAMINA_SCALE)   // below this the player breathes hard (the view bobs, enemies hear it)
 #define FATIGUE_MIN_MUL        0.45f   // speed and acceleration at zero stamina, as a share of fresh (eased in from STAMINA_FRESH)
 #define EXHAUSTED_EXTRA_MUL    0.90f   // exhausted: a little slower again on top
 #define EXHAUSTED_REGEN_MUL    0.70f

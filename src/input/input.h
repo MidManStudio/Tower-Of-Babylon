@@ -29,7 +29,7 @@ typedef struct {
     bool    sprint;                   // wanted: the stick pushed out ahead, or Shift
     bool    jump;                     // try to jump this frame
     bool    fire;                     // held
-    bool    use, swap, light, slide;  // once per press
+    bool    use, swap, light, slide, reload;  // once per press (reload: the R key or the RELOAD button)
     bool    useHeld;                  // USE is down right now (the unlock console is worked by holding it)
     bool    inventoryToggle;          // the I or Tab key (the INV button is a tap: Input_NewTap)
     bool    statsToggle;              // the P key (the STATS button is a tap)

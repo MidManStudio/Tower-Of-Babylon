@@ -53,6 +53,42 @@ int Hud_BlockedRects(UiRect *out, int cap)
     return n;
 }
 
+// The weapon in hand, always on the screen (the numbers matter in a fight, so they are not behind the STATS button): a gun shows what is
+// loaded and the reserve in the bag, "12 / 36"; a reload shows its progress under it; a melee weapon that wears out shows a bar that
+// empties. The hands show nothing. Right-aligned at x = 620, bottom centre, clear of the RELOAD, SLIDE and fire-pad circles.
+static void WeaponReadout(const HudView *v)
+{
+    const int right = 620, top = 450 - 52;
+    const Color dim = (Color){ 170, 170, 180, 255 };
+    if (v->weaponIsGun) {
+        const int loaded = v->magSize > 0 ? v->mag : v->ammo;
+        const bool low = v->magSize > 0 ? loaded <= v->magSize / 4 : loaded <= 5;
+        const Color c = loaded <= 0 ? RED : (low ? ORANGE : WHITE);
+        const char *big = TextFormat("%d", loaded);
+        const char *small = v->magSize > 0 ? TextFormat(" / %d", v->ammo) : "";
+        const int bw = MeasureText(big, 28), sw = MeasureText(small, 16);
+        DrawText(v->weaponName, right - MeasureText(v->weaponName, 12), top, 12, dim);
+        DrawText(big, right - sw - bw, top + 14, 28, c);
+        if (small[0]) DrawText(small, right - sw, top + 26, 16, v->ammo <= 0 ? RED : dim);
+        if (v->reloading) {
+            DrawText("RELOADING", right - MeasureText("RELOADING", 12), top - 14, 12, YELLOW);
+            DrawRectangle(right - 100, top + 46, 100, 4, Fade(BLACK, 0.6f));
+            DrawRectangle(right - 100, top + 46, (int)(100.0f * v->reloadFrac), 4, YELLOW);
+        } else if (v->magSize > 0 && v->magEmpty) {
+            const char *hint = v->ammo > 0 ? "RELOAD" : "NO AMMO";
+            if ((int)(GetTime() * 3.0) & 1) DrawText(hint, right - MeasureText(hint, 12), top - 14, 12, RED);
+        }
+    } else if (v->weaponWears) {
+        const float f = v->weaponCondition < 0.0f ? 0.0f : (v->weaponCondition > 1.0f ? 1.0f : v->weaponCondition);
+        const Color c = f > 0.5f ? (Color){ 90, 220, 110, 255 } : (f > 0.25f ? ORANGE : RED);
+        DrawText(v->weaponName, right - MeasureText(v->weaponName, 12), top + 14, 12, dim);
+        DrawRectangle(right - 100, top + 30, 100, 6, Fade(BLACK, 0.6f));
+        DrawRectangle(right - 100, top + 30, (int)(100.0f * f), 6, c);
+        DrawRectangleLines(right - 100, top + 30, 100, 6, Fade(WHITE, 0.6f));
+        if (f <= 0.25f && ((int)(GetTime() * 3.0) & 1)) DrawText("FALLING APART", right - MeasureText("FALLING APART", 12), top + 40, 12, RED);
+    }
+}
+
 void Hud_Draw(const HudView *v)
 {
 #if TOWER_INPUT_TOUCH
@@ -66,9 +102,9 @@ void Hud_Draw(const HudView *v)
     }
 
     if (!v->invOpen) HudRun_Draw(v);
+    if (!v->invOpen && v->alive) WeaponReadout(v);
 
 #if HUD_VITALS_ALWAYS_ON
-    DrawText(v->weaponIsGun ? TextFormat("%s  %d", v->weaponName, v->ammo) : v->weaponName, 800 / 2 + 108, 450 - 24, 16, v->weaponDry ? RED : WHITE);
     ScreenFx_DrawHealthBar(800 / 2 - 100, 450 - 22, 200, 14, v->hp, v->maxHp);
     ScreenFx_DrawStaminaBar(800 / 2 - 100, 450 - 6, 200, 5, v->stamina01, v->exhausted, v->exhaustRecover01, (float)GetTime());
 #endif

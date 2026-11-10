@@ -20,6 +20,8 @@ void AudioEvents_Movement(float dt, float speed, bool grounded, float velocityY,
 
 void AudioEvents_Shot(int weaponId);                                            // a gun fired (WeaponId)
 void AudioEvents_DryFire(void);
+void AudioEvents_Reload(int stage);                                             // 0 started, 1 a round went in, 2 magazine in, 3 tube-fed gun loaded (built from the existing click and pump recipes)
+void AudioEvents_Break(void);                                                   // a melee weapon wore out
 void AudioEvents_Melee(bool hitSomething);                                      // a swing connected with the air or with an enemy
 void AudioEvents_HitMarker(bool kill);                                          // the player's shot or blow landed on an enemy
 void AudioEvents_Hurt(void);                                                    // the player took a blow

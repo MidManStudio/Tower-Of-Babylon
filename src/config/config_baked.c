@@ -4,11 +4,12 @@
 // See docs/config.md.
 #include "mdix_doc.h"
 
-// weapons.mdix   FNV-1a 0xb90f60ef
+// weapons.mdix   FNV-1a 0xadc902d1
 static const MdixBakedEntry k_weapons[] = {
     { "weapons[0].arc_deg", 'f', "50" },
     { "weapons[0].cooldown", 'f', "0.45" },
     { "weapons[0].damage", 'f', "10" },
+    { "weapons[0].durability", 'i', "0" },
     { "weapons[0].duration", 'f', "0.34" },
     { "weapons[0].id", 's', "hands" },
     { "weapons[0].kind", 'i', "0" },
@@ -19,6 +20,7 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[1].arc_deg", 'f', "60" },
     { "weapons[1].cooldown", 'f', "0.8" },
     { "weapons[1].damage", 'f', "35" },
+    { "weapons[1].durability", 'i', "30" },
     { "weapons[1].duration", 'f', "0.62" },
     { "weapons[1].id", 's', "pipe" },
     { "weapons[1].kind", 'i', "1" },
@@ -38,6 +40,7 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[2].id", 's', "pistol" },
     { "weapons[2].kick", 'f', "1" },
     { "weapons[2].kind", 'i', "2" },
+    { "weapons[2].mag_size", 'i', "12" },
     { "weapons[2].name", 's', "PISTOL" },
     { "weapons[2].noise_metres", 'f', "28" },
     { "weapons[2].noise_secs", 'f', "1.5" },
@@ -45,6 +48,8 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[2].pellets", 'i', "1" },
     { "weapons[2].pickup_ammo", 'i', "12" },
     { "weapons[2].projectile", 's', "pistol_round" },
+    { "weapons[2].reload_per_round", 'i', "0" },
+    { "weapons[2].reload_secs", 'f', "1.4" },
     { "weapons[2].spread_deg", 'f', "0" },
     { "weapons[2].spread_max_deg", 'f', "1.5" },
     { "weapons[3].ammo", 'i', "2" },
@@ -59,6 +64,7 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[3].id", 's', "shotgun" },
     { "weapons[3].kick", 'f', "2.2" },
     { "weapons[3].kind", 'i', "2" },
+    { "weapons[3].mag_size", 'i', "6" },
     { "weapons[3].name", 's', "SHOTGUN" },
     { "weapons[3].noise_metres", 'f', "40" },
     { "weapons[3].noise_secs", 'f', "2.2" },
@@ -66,6 +72,8 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[3].pellets", 'i', "8" },
     { "weapons[3].pickup_ammo", 'i', "6" },
     { "weapons[3].projectile", 's', "buckshot" },
+    { "weapons[3].reload_per_round", 'i', "1" },
+    { "weapons[3].reload_secs", 'f', "0.55" },
     { "weapons[3].spread_deg", 'f', "4.5" },
     { "weapons[3].spread_max_deg", 'f', "4.5" },
     { "weapons[4].ammo", 'i', "3" },
@@ -80,6 +88,7 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[4].id", 's', "rifle" },
     { "weapons[4].kick", 'f', "0.55" },
     { "weapons[4].kind", 'i', "2" },
+    { "weapons[4].mag_size", 'i', "30" },
     { "weapons[4].name", 's', "RIFLE" },
     { "weapons[4].noise_metres", 'f', "34" },
     { "weapons[4].noise_secs", 'f', "1.2" },
@@ -87,11 +96,13 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[4].pellets", 'i', "1" },
     { "weapons[4].pickup_ammo", 'i', "30" },
     { "weapons[4].projectile", 's', "rifle_round" },
+    { "weapons[4].reload_per_round", 'i', "0" },
+    { "weapons[4].reload_secs", 'f', "2" },
     { "weapons[4].spread_deg", 'f', "0.6" },
     { "weapons[4].spread_max_deg", 'f', "5" },
     { "weapons[]", 'i', "5" },
 };
-const MdixBaked g_bakedWeapons = { "weapons.mdix", 0xb90f60efu, k_weapons, (int)(sizeof k_weapons / sizeof k_weapons[0]) };
+const MdixBaked g_bakedWeapons = { "weapons.mdix", 0xadc902d1u, k_weapons, (int)(sizeof k_weapons / sizeof k_weapons[0]) };
 
 // projectiles.mdix   FNV-1a 0xb1c65ff6
 static const MdixBakedEntry k_projectiles[] = {

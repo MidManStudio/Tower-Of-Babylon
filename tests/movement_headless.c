@@ -127,7 +127,7 @@ int main(void)
         float t = 0.0f;
         while (!p.exhausted && t < 20.0f) { Run(&p, FWD, true, DT); t += DT; }
         printf("    a full bar lasts %.1f s of sprinting\n", t);
-        Check(t > 5.0f && t < 6.5f, "a full stamina bar is about six seconds of sprinting");
+        Check(t > 10.5f && t < 13.0f, "a full stamina bar (200: twice the old one) is about twelve seconds of sprinting");
         Check(p.exhausted && p.stamina == 0.0f && !p.sprinting, "then the player is exhausted, with none left, and stops sprinting");
         Run(&p, FWD, true, 1.2f);
         Check(PlayerSpeed(&p) <= PLAYER_WALK_SPEED * 0.5f + 0.05f, "an exhausted player moves at half walking speed or less, though still pushing and holding sprint");
@@ -148,7 +148,7 @@ int main(void)
         float rt = STAMINA_REGEN_DELAY * 0.8f;
         while (q.exhausted && rt < 20.0f) { Run(&q, (Vector2){ 0, 0 }, false, DT); rt += DT; }
         printf("    exhaustion lasts %.1f s of resting\n", rt);
-        Check(rt > 3.0f && rt < 5.5f, "an exhausted player is back on their feet after a few seconds' rest");
+        Check(rt > 5.5f && rt < 8.0f, "an exhausted player is back on their feet after about seven seconds' rest (a bar twice the size refills at the same rate)");
         Check(q.stamina >= STAMINA_EXHAUST_RECOVER - 0.5f && q.stamina < STAMINA_EXHAUST_RECOVER + 1.0f, "when stamina is back to the recovery level, not before");
         Run(&q, FWD, true, 0.6f);
         Check(q.sprinting, "after which it can sprint again");
@@ -170,7 +170,7 @@ int main(void)
             float at100 = 0, at60 = 0, at30 = 0, at1 = 0;
             for (int st = 100; st >= 0; st -= 5) {
                 PlayerController tr = Place(20.0f, 4.0f, 0.0f);
-                tr.stamina = (float)st;
+                tr.stamina = (float)st * STAMINA_SCALE;   // st is a percentage of the bar
                 tr.staminaDelay = 99.0f;                 // hold regeneration off for the test
                 Run(&tr, FWD, false, 1.0f);
                 const float v = PlayerSpeed(&tr);
@@ -181,15 +181,15 @@ int main(void)
                 if (prev < 1e8f) { if (v > prev + 0.02f) worstStep = 99.0f; if (prev - v > worstStep && worstStep < 90.0f) worstStep = prev - v; }
                 prev = v;
             }
-            printf("    walking speed by stamina: 100 -> %.2f, 60 -> %.2f, 30 -> %.2f, 0 -> %.2f m/s (largest step per 5 stamina %.2f)\n", at100, at60, at30, at1, worstStep);
-            Check(fabsf(at100 - PLAYER_WALK_SPEED) < 0.02f && fabsf(at60 - PLAYER_WALK_SPEED) < 0.02f, "with 60 stamina or more there is no fatigue");
+            printf("    walking speed by stamina (as %% of the bar): 100 -> %.2f, 60 -> %.2f, 30 -> %.2f, 0 -> %.2f m/s (largest step per 5%% of the bar %.2f)\n", at100, at60, at30, at1, worstStep);
+            Check(fabsf(at100 - PLAYER_WALK_SPEED) < 0.02f && fabsf(at60 - PLAYER_WALK_SPEED) < 0.02f, "with 60% of the bar or more (STAMINA_FRESH) there is no fatigue");
             Check(at30 < at60 - 0.3f && at30 > at1 + 0.3f, "below that the player slows more and more as stamina falls");
             Check(fabsf(at1 - PLAYER_WALK_SPEED * FATIGUE_MIN_MUL * EXHAUSTED_EXTRA_MUL) < 0.05f || fabsf(at1 - PLAYER_WALK_SPEED * FATIGUE_MIN_MUL) < 0.05f, "and at zero is down to the floor of the fatigue curve");
-            Check(worstStep < 0.5f, "the slowdown is gradual: no step of 5 stamina changes the speed by half a metre a second or more, and it never speeds up as stamina falls");
+            Check(worstStep < 0.5f, "the slowdown is gradual: no step of 5% of the bar changes the speed by half a metre a second or more, and it never speeds up as stamina falls");
         }
         {
             PlayerController tr = Place(20.0f, 4.0f, 0.0f);
-            tr.stamina = 40.0f; tr.staminaDelay = 99.0f;
+            tr.stamina = 40.0f * STAMINA_SCALE; tr.staminaDelay = 99.0f;
             Run(&tr, FWD, true, 1.5f);
             Check(tr.sprinting && PlayerSpeed(&tr) < PLAYER_SPRINT_SPEED - 0.5f, "a sprint slows as stamina is spent: a tired sprint is slower than a fresh one");
         }
@@ -225,20 +225,25 @@ int main(void)
         Check(PLAYER_SPRINT_SPEED > fastest * 1.4f, "a fresh sprint is well quicker than any enemy: it buys a lead");
         // An exhausted player is slower than every enemy. Simulate holding sprint straight ahead with an enemy 8 m behind.
         PlayerController p = Place(20.0f, 6.0f, 0.0f);
-        float enemyZ = -2.0f, caughtAt = -1.0f, minGap = 1e9f, maxGap = 0.0f;
+        // The player is put back where they started after every step and the distance they covered is added up instead (a treadmill):
+        // a full bar now lasts longer than any corridor on the map.
+        float playerZ = p.position.z, enemyZ = -2.0f, caughtAt = -1.0f, minGap = 1e9f, maxGap = 0.0f;
         const float enemySpeed = fastest;
-        for (float t = 0.0f; t < 40.0f && p.position.z < 80.0f; t += DT) {
+        for (float t = 0.0f; t < 90.0f; t += DT) {
             p.wantSprint = true;
+            const float z0 = p.position.z;
             UpdatePlayerController(&p, FWD, (Vector2){ 0, 0 }, DT, &g_floor);
+            playerZ += p.position.z - z0;
+            p.position.z = z0;
             enemyZ += enemySpeed * DT;
-            const float gap = p.position.z - enemyZ;
+            const float gap = playerZ - enemyZ;
             if (gap > maxGap) maxGap = gap;
             if (gap < minGap) minGap = gap;
             if (gap <= 0.5f && caughtAt < 0.0f) { caughtAt = t; break; }
         }
-        printf("    holding sprint with the fastest cylinder enemy 8 m behind: the lead peaks at %.1f m; caught %s%.1f s\n", maxGap, caughtAt < 0.0f ? "not before the map ends (" : "at ", caughtAt);
+        printf("    holding sprint with the fastest cylinder enemy 8 m behind: the lead peaks at %.1f m; caught %s%.1f s\n", maxGap, caughtAt < 0.0f ? "not within 90 s (" : "at ", caughtAt);
         Check(maxGap > 8.0f + 8.0f, "the sprint opens a real lead on the fastest cylinder enemy: at least 8 m more than the 8 m it started with");
-        Check(caughtAt > 8.0f && caughtAt < 25.0f, "but a player who keeps pushing on after the stamina runs out is caught, within about 15 to 25 seconds, by an enemy that is no faster than a walk");
+        Check(caughtAt > 15.0f && caughtAt < 40.0f, "but a player who keeps pushing on after the stamina runs out is still caught, after about 27 seconds (about 15 with the old bar), by an enemy that is no faster than a walk");
     }
 
     printf("Jumping\n");
@@ -387,7 +392,7 @@ int main(void)
         Check(!PlayerTrySlide(&d), "nor a dead one");
         PlayerController tired = Place(20.0f, 4.0f, 0.0f);
         Run(&tired, FWD, true, 0.7f);
-        tired.stamina = 40.0f;                              // tired: fatigue slows everything
+        tired.stamina = 40.0f * STAMINA_SCALE;                              // tired: fatigue slows everything
         PlayerTrySlide(&tired);
         Run(&tired, FWD, true, DT);
         Check(PlayerSpeed(&tired) < PLAYER_SPRINT_SPEED * PLAYER_SLIDE_SPEED_MUL * 0.95f, "a tired player's slide starts slower than a fresh one's");

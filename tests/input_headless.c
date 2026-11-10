@@ -160,6 +160,17 @@ int main(void)
     Reset();
     Step1(9, L->slide.x, L->slide.y);
     Check(!O.slidePressed, "no SLIDE button when not sprinting");
+    Reset(); C.reloadAvailable = true;
+    Step1(10, L->reload.x, L->reload.y);
+    Check(O.reloadPressed && !O.fireHeld && !O.jumpHeld, "RELOAD with a gun that can reload, on the frame the finger lands, and it is not a fire or a jump");
+    Step1(10, L->reload.x, L->reload.y);
+    Check(!O.reloadPressed, "and only on that frame (a tap, not a hold)");
+    Reset();
+    Step1(10, L->reload.x, L->reload.y);
+    Check(!O.reloadPressed, "no RELOAD button when there is nothing to load (the touch falls through to the look finger)");
+    Reset(); C.reloadAvailable = true; C.walkOnly = true;
+    Step1(10, L->reload.x, L->reload.y);
+    Check(!O.reloadPressed, "and none while only walking is allowed");
 
     printf("Tap-only regions\n");
     Reset(); C.blocked[0] = HudLayout_StatsButton() ; C.blockedCount = 1;
@@ -211,8 +222,8 @@ int main(void)
     printf("Layout\n");
     {
         const UiRect inv = { 698, 8, 92, 36 };             // the INV button (src/inventory/inventory_ui.c), top right
-        const UiCircle round[] = { L->jump, L->use, L->swap, L->light, L->slide, L->firePad };
-        const char *rnames[] = { "jump", "use", "swap", "light", "slide", "fire pad" };
+        const UiCircle round[] = { L->jump, L->use, L->swap, L->light, L->slide, L->reload, L->firePad };
+        const char *rnames[] = { "jump", "use", "swap", "light", "slide", "reload", "fire pad" };
         const int nr = (int)(sizeof round / sizeof round[0]);
         const UiRect flat[] = { inv, HudLayout_StatsButton() };
         const char *fnames[] = { "inv", "stats" };
@@ -226,7 +237,7 @@ int main(void)
         Check(outside == 0, "every control is inside the 800 x 450 screen");
         Check(overlaps == 0, "no two controls overlap (each is a place a thumb can land)");
         Check(UiRect_Overlaps(HudLayout_StatsButton(), L->stickZone) == 0, "the STATS button is outside the stick zone");
-        Check(L->firePad.r >= 40.0f && L->jump.r >= 30.0f && L->use.r >= 30.0f && L->slide.r >= 30.0f && L->swap.r >= 24.0f && L->light.r >= 24.0f, "the controls are thumb-sized (a 60 px disc is about 9 mm on the phone)");
+        Check(L->firePad.r >= 40.0f && L->jump.r >= 30.0f && L->use.r >= 30.0f && L->slide.r >= 30.0f && L->reload.r >= 28.0f && L->swap.r >= 24.0f && L->light.r >= 24.0f, "the controls are thumb-sized (a 60 px disc is about 9 mm on the phone)");
         Check(L->stickMinX - R >= 0.0f && L->stickMaxX + R <= 400.0f + 0.01f + 50.0f, "the stick's range keeps its ring on screen (and mostly in the left half)");
         const float iconTop = L->stickMinY - R - L->sprintIconGap - 2.0f * L->sprintIconRadius;
         Check(iconTop >= 0.0f && L->stickMaxY + R <= TC_SCREEN_H + 0.01f, "with room above it for the sprint icon and below for the ring");

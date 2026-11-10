@@ -74,7 +74,7 @@ static void SyncPlayerCamera(PlayerController *player) {
     const float speed = sqrtf(player->moveVel.x * player->moveVel.x + player->moveVel.z * player->moveVel.z);
     float bob = player->isGrounded ? sinf(player->bobPhase) * 0.020f * fminf(speed / PLAYER_WALK_SPEED, 1.6f) : 0.0f;
     if (player->exhausted) bob += sinf(player->breathClock * 7.0f) * 0.018f;
-    else if (player->stamina < 25.0f) bob += sinf(player->breathClock * 6.0f) * 0.009f;
+    else if (player->stamina < STAMINA_LOW) bob += sinf(player->breathClock * 6.0f) * 0.009f;
     bob *= 1.0f - player->slideBlend;                                  // a slide is smooth
     player->camera.position = (Vector3){ player->position.x, player->eyeY + (player->height * 0.35f) + bob - PLAYER_SLIDE_DROP * player->slideBlend, player->position.z };
     // The shake is only in the view; the player's real yaw and pitch are untouched.
@@ -145,7 +145,7 @@ float PlayerNoise(const PlayerController *player)
     float n = 3.0f + 5.0f * fminf(speed / PLAYER_WALK_SPEED, 1.0f);                // standing 3 m, walking 8 m
     if (player->sprinting) n = 20.0f;
     if (player->sliding) n = PLAYER_SLIDE_NOISE;                       // scraping along the floor: loud, but not a sprint's pounding
-    const float gasp = player->exhausted ? 6.0f : (player->stamina < 25.0f ? 3.0f : 0.0f);
+    const float gasp = player->exhausted ? 6.0f : (player->stamina < STAMINA_LOW ? 3.0f : 0.0f);
     return n + gasp;
 }
 

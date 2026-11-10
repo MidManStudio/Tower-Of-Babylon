@@ -31,7 +31,9 @@ void HudStats_Draw(const HudView *v)
     ScreenFx_DrawStaminaBar(vx, y + 3, 120, 8, v->stamina01, v->exhausted, v->exhaustRecover01, (float)GetTime());
     DrawText(v->exhausted ? "TIRED" : TextFormat("%d%%", (int)(v->stamina01 * 100.0f + 0.5f)), vx + 130, y, 15, v->exhausted ? ORANGE : WHITE); y += 22;
     DrawText("WEAPON", lx, y, 15, label);
-    DrawText(v->weaponIsGun ? TextFormat("%s  %d rounds", v->weaponName, v->ammo) : v->weaponName, vx, y, 15, v->weaponDry ? RED : WHITE); y += 22;
+    DrawText(v->weaponIsGun ? (v->magSize > 0 ? TextFormat("%s  %d / %d", v->weaponName, v->mag, v->ammo) : TextFormat("%s  %d rounds", v->weaponName, v->ammo))
+                            : (v->weaponWears ? TextFormat("%s  %d swings left", v->weaponName, v->durabilityLeft) : v->weaponName),
+             vx, y, 15, v->weaponDry ? RED : WHITE); y += 22;
     DrawText("ENEMIES", lx, y, 15, label); DrawText(TextFormat("%d", v->enemies), vx, y, 15, WHITE);                  y += 22;
     if (v->hasTorch) {
         DrawText("LIGHT", lx, y, 15, label);

@@ -11,6 +11,8 @@ Your mechanics list, with where each one stands, then a specification for what i
 | [x] | Run | **done**: a tap toggle on the phone, Shift on a keyboard |
 | [x] | Stamina gauge | **done**, and your list's checkbox is out of date: running and jumping drain it, regenerate after a pause, and as it falls the player gets slower and starts making more noise, with a worse state when exhausted (`player.md`, "Stamina and fatigue") |
 | [x] | Slide | **done** in this update (`player.md`, "Sliding") |
+| [x] | Magazines and reloading | **done** (`weapons.md`, "Magazines and reloading"): a magazine per gun, the R key and a RELOAD button, an empty gun reloads itself, the shotgun loads one shell at a time and can be interrupted |
+| [x] | Melee durability | **done** (`weapons.md`, "Durability"): the pipe breaks after 30 swings that connect and is gone |
 | [ ] | Crouching | to do |
 | [ ] | Wall peeking | to do |
 | [ ] | Dive | to do |
@@ -19,7 +21,7 @@ Your mechanics list, with where each one stands, then a specification for what i
 
 ## Stamina, as you described it
 
-Your description: a gauge that depletes when running and jumping; when it gets too low the player gets sluggish and breathes heavily, which makes more noise and attracts more monsters. Built that way: see `player.md`. The numbers are 100 stamina, 17 a second to sprint (about six seconds), 12 to jump, regeneration of 15 a second after a one second pause, speed and acceleration falling smoothly to 45% at zero, and noise of walking 8 m, sprinting 20 m, plus 3 m when low and 6 m when exhausted. What is *not* in your description but is now true: a slide costs 18 stamina.
+Your description: a gauge that depletes when running and jumping; when it gets too low the player gets sluggish and breathes heavily, which makes more noise and attracts more monsters. Built that way: see `player.md`. The numbers are 200 stamina (doubled from 100 when you asked for twice as much), 17 a second to sprint (about twelve seconds), 12 to jump, regeneration of 15 a second after a one second pause, speed and acceleration falling smoothly to 45% at zero, and noise of walking 8 m, sprinting 20 m, plus 3 m when low and 6 m when exhausted. What is *not* in your description but is now true: a slide costs 18 stamina.
 
 ## Slide, as you described it
 

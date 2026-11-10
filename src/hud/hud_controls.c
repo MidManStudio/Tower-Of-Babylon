@@ -93,6 +93,13 @@ void HudControls_Draw(const HudView *v)
     if (v->useShown) RoundButton(L->use, v->useLocked ? MAROON : DARKGREEN, v->useLabel, t->useHeld);
     if (v->weaponsOwned > 1) RoundButton(L->swap, DARKGRAY, "SWAP", t->swapHeld);
     if (v->slideShown) RoundButton(L->slide, v->sliding ? SKYBLUE : (v->tooTiredToSlide ? ORANGE : (Color){ 40, 120, 170, 255 }), v->sliding ? "SLIDING" : "SLIDE", false);
+    if (v->reloadShown) {
+        // Grey while a reload can start, maroon when the magazine is empty, amber (and not pressable) while one runs, with a ring filling round it.
+        const Color rc = v->reloading ? (Color){ 170, 125, 25, 255 } : (v->magEmpty ? MAROON : DARKGRAY);
+        RoundButton(L->reload, rc, v->reloading ? "LOADING" : "RELOAD", v->reloading);
+        const float f = v->reloadFrac < 0.0f ? 0.0f : (v->reloadFrac > 1.0f ? 1.0f : v->reloadFrac);
+        if (v->reloading && f > 0.0f) DrawRing((Vector2){ L->reload.x, L->reload.y }, L->reload.r + 3.0f, L->reload.r + 7.0f, -90.0f, -90.0f + 360.0f * f, 48, YELLOW);
+    }
     if (v->hasTorch) {
         const bool blink = v->torchOn && v->torchLow && ((int)(GetTime() * 4.0) & 1);
         const Color lc = v->torchOn ? (blink ? RED : (v->torchLow ? ORANGE : (Color){ 190, 160, 30, 255 })) : (v->torchFlat ? MAROON : DARKGRAY);

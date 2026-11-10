@@ -293,6 +293,19 @@ void Viewmodel_Build(PartList *out, const Arsenal *a, const AimFrame *cam, float
         right.t.y += 0.015f * k * a->recoil;
         right.pitch = tilt * k * a->recoil;
         left.t.z -= 0.035f * k * a->recoil;
+
+        // A reload: the gun drops and tips up toward the eye, and the off hand goes down and back for the magazine (a tube-fed gun holds
+        // the pose and the hand bobs once per shell). reloadBlend eases it in and out, so the pose never pops.
+        if (a->reloadBlend > 0.0f) {
+            const float b = EaseInOut(a->reloadBlend);
+            const float f = Arsenal_ReloadFraction(a);
+            const float hand = def->reloadPerRound ? 0.5f - 0.5f * cosf(6.2831853f * f) : sinf(3.14159265f * Clamp01((f - 0.2f) / 0.6f));
+            right.t.y -= 0.07f * b;
+            right.t.z -= 0.03f * b;
+            right.pitch += 0.30f * b;
+            left.t.y -= (0.06f + 0.08f * hand) * b;
+            left.t.z -= (twoHanded ? 0.10f : 0.04f) * b;
+        }
     }
 
     AddHand(&ctx, -1, &left);

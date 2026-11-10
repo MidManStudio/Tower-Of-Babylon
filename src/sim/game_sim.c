@@ -165,6 +165,36 @@ void GameSim_FlatForward(const GameSim *s, float *fx, float *fz)
     *fz = l > 0.001f ? z / l : 1.0f;
 }
 
+// Rounds of a gun's own kind go into the bag; whatever does not fit is left on the floor beside the player.
+static void GiveRounds(GameSim *s, const WeaponDef *gun, int rounds)
+{
+    if (rounds <= 0 || gun->ammo == AMMO_NONE) return;
+    const int added = Inventory_Add(&s->inv, Item_ForAmmo(gun->ammo), rounds);
+    if (added >= rounds) return;
+    float fx, fz;
+    GameSim_FlatForward(s, &fx, &fz);
+    Pickups_Drop(s->map, s->player.position, fx, fz, Pickup_ForAmmo(gun->ammo), rounds - added);
+}
+
+// A melee weapon that wore out is gone: out of the hand and out of the bag.
+static void BreakWeapon(GameSim *s, WeaponId id)
+{
+    const ItemId item = Item_ForWeapon(id);
+    Arsenal_Remove(&s->arsenal, id);
+    Inventory_Remove(&s->inv, item, 1);
+    SayF(s, "%s BROKE", Item_Name(item));
+    Snd(s, SIMSND_BREAK, 0);
+}
+
+// Why the reload button did nothing, for the player. Silent for what is not a reload at all (hands, pipe, a reload already running).
+static void SayWhyNoReload(GameSim *s)
+{
+    const WeaponDef *d = Weapon_Def(s->arsenal.current);
+    if (d->kind != WEAPON_KIND_GUN || d->magSize <= 0 || s->arsenal.reloading) return;
+    if (s->arsenal.mag[s->arsenal.current] >= d->magSize) Say(s, "MAGAZINE FULL");
+    else if (s->arsenal.ammo <= 0) Say(s, "NO SPARE AMMO");
+}
+
 static void DropSlotImpl(GameSim *s, int slot)
 {
     if (slot < 0 || slot >= INV_SLOTS || s->inv.slots[slot].item == ITEM_NONE) return;
@@ -177,7 +207,11 @@ static void DropSlotImpl(GameSim *s, int slot)
     if (!Pickups_Drop(s->map, s->player.position, fx, fz, PickupForItem(item), dropCount)) { Say(s, "NO ROOM TO DROP"); return; }
     Inventory_RemoveAt(&s->inv, slot, count);
     if (item == ITEM_FLASHLIGHT) Flashlight_Init(&s->torch);
-    if (Item_Equippable(item)) Arsenal_Remove(&s->arsenal, Item_Weapon(item));
+    if (Item_Equippable(item)) {
+        const WeaponDef *gone = Weapon_Def(Item_Weapon(item));
+        Arsenal_Remove(&s->arsenal, gone->id);
+        GiveRounds(s, gone, Arsenal_TakeMag(&s->arsenal, gone->id));      // the rounds that were in the gun go back to the bag
+    }
     SayF(s, "DROPPED %s", Item_Name(item));
 }
 
@@ -292,7 +326,7 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
 
     // Nothing is live while a door opens or the player is dead, and with the inventory open only walking is.
     if (s->seq != SEQ_NONE || !s->player.health.isAlive || s->invOpen) {
-        cmd.jump = cmd.fire = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.useHeld = false;
+        cmd.jump = cmd.fire = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.reload = cmd.useHeld = false;
         if (s->seq != SEQ_NONE || !s->player.health.isAlive) cmd.move = (Vector2){ 0 };
     }
     if (cmd.light && Inventory_Has(&s->inv, ITEM_FLASHLIGHT)) ToggleTorch(s);
@@ -320,13 +354,10 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
                 Say(s, "IN THE BAG. SWAP IT IN FROM THE INVENTORY");
             const WeaponDef *gun = Item_Equippable(item) ? Weapon_Def(Item_Weapon(item)) : NULL;
             if (gun && gun->kind == WEAPON_KIND_GUN) {
-                // A gun comes with a clip of its own kind of ammo. Anything that does not fit is left on the floor beside the player.
-                const int added = Inventory_Add(&s->inv, Item_ForAmmo(gun->ammo), gun->pickupAmmo);
-                if (added < gun->pickupAmmo) {
-                    float fx, fz;
-                    GameSim_FlatForward(s, &fx, &fz);
-                    Pickups_Drop(s->map, s->player.position, fx, fz, Pickup_ForAmmo(gun->ammo), gun->pickupAmmo - added);
-                }
+                // A gun comes with a clip of its own kind of ammo: the first rounds go into the gun's magazine, the rest into the bag
+                // (all of it into the bag for a gun with no magazine). Anything that does not fit is left on the floor beside the player.
+                const int loaded = Arsenal_Fill(&s->arsenal, gun->id, gun->pickupAmmo);
+                GiveRounds(s, gun, gun->pickupAmmo - loaded);
             }
         } else {
             Inventory_Post(&s->inv, INV_EV_FULL, item, count);
@@ -369,10 +400,14 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
     s->arsenal.ammo = ammoItem != ITEM_NONE ? Inventory_Count(&s->inv, ammoItem) : 0;
     const int ammoBefore = s->arsenal.ammo;
     const float spreadBefore = Arsenal_SpreadDeg(&s->arsenal);                      // a shot uses the spread from before it heated the gun
+    if (cmd.reload && !Arsenal_StartReload(&s->arsenal)) SayWhyNoReload(s);         // (the reserve is set just above: a reload draws on it)
     Arsenal_Update(&s->arsenal, dt, cmd.fire, &weaponEv);
     if (ammoItem != ITEM_NONE && s->arsenal.ammo < ammoBefore) Inventory_Remove(&s->inv, ammoItem, ammoBefore - s->arsenal.ammo);
     if (weaponEv.shot) { Gunfire_Shoot(weaponEv.def, &aim, s->map, spreadBefore, &s->shotRng); Snd(s, SIMSND_SHOT, weaponEv.def->id); }
     if (weaponEv.dryFire) Snd(s, SIMSND_DRYFIRE, 0);
+    if (weaponEv.reloadStart) Snd(s, SIMSND_RELOAD, 0);
+    if (weaponEv.reloadRound) Snd(s, SIMSND_RELOAD, 1);
+    if (weaponEv.reloadDone) Snd(s, SIMSND_RELOAD, weaponEv.def->reloadPerRound ? 3 : 2);
     if (weaponEv.impact) {
         // Aim along the floor plane: a swing hits what is in front of the player, level with the eye.
         const float fl = sqrtf(lookDir.x * lookDir.x + lookDir.z * lookDir.z);
@@ -381,6 +416,7 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
                                               weaponEv.def->damage, weaponEv.def->knockback)
                               + Swarm_MeleeHit(&s->swarm, s->player.camera.position, fx, fz, weaponEv.def->reach, weaponEv.def->arcDeg, weaponEv.def->damage);
         Snd(s, SIMSND_MELEE, meleeHits > 0);
+        if (meleeHits > 0 && Arsenal_Wear(&s->arsenal, weaponEv.def->id, 1)) BreakWeapon(s, weaponEv.def->id);   // a swing that lands wears it
     }
 
     // Move projectiles, then let any that touch an active enemy damage it and disappear

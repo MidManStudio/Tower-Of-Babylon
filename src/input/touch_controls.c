@@ -23,6 +23,7 @@ static const TcLayout g_layout = {
     .swap = { 632.0f, 258.0f, 30.0f },
     .light = { 700.0f, 88.0f, 32.0f },
     .slide = { 606.0f, 357.0f, 37.0f },
+    .reload = { 668.0f, 408.0f, 30.0f },       // not in the sketch: the one free spot big enough, clear of SLIDE and the fire pad by 13 and 7 px
 };
 
 const TcLayout *Tc_Layout(void) { return &g_layout; }
@@ -60,6 +61,7 @@ static int AssignRole(TcState *s, float x, float y, const TcContext *ctx)
     if (ctx->swapAvailable && UiCircle_Contains(L->swap, x, y)) return TC_ROLE_SWAP;
     if (ctx->lightAvailable && UiCircle_Contains(L->light, x, y)) return TC_ROLE_LIGHT;
     if (ctx->slideAvailable && UiCircle_Contains(L->slide, x, y)) return TC_ROLE_SLIDE;
+    if (ctx->reloadAvailable && UiCircle_Contains(L->reload, x, y)) return TC_ROLE_RELOAD;
     if (UiCircle_Contains(L->jump, x, y)) return TC_ROLE_JUMP;
     if (UiCircle_Contains(L->firePad, x, y)) return HasRole(s, TC_ROLE_FIRE) ? TC_ROLE_IGNORE : TC_ROLE_FIRE;
     return HasRole(s, TC_ROLE_LOOK) ? TC_ROLE_IGNORE : TC_ROLE_LOOK;                          // a free spot on the right: the camera finger
@@ -133,6 +135,7 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
             case TC_ROLE_SWAP: out->swapHeld = true; break;
             case TC_ROLE_LIGHT: if (sl->fresh) out->lightPressed = true; break;
             case TC_ROLE_SLIDE: if (sl->fresh) out->slidePressed = true; break;
+            case TC_ROLE_RELOAD: if (sl->fresh) out->reloadPressed = true; break;
             default: break;
         }
         sl->lastX = px; sl->lastY = py; sl->fresh = false;
@@ -152,9 +155,9 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
     // 6. What the game allows right now.
     if (ctx->locked) {
         out->moveX = out->moveY = out->lookDX = out->lookDY = 0.0f;
-        out->sprint = out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = false;
+        out->sprint = out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = out->reloadPressed = false;
     } else if (ctx->walkOnly) {
         out->lookDX = out->lookDY = 0.0f;
-        out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = false;
+        out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = out->reloadPressed = false;
     }
 }

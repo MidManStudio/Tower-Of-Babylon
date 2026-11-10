@@ -10,7 +10,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 |---|---|---|
 | `server_smoke.sh` (not a C test) | the server and two bots built and run as separate programs over real UDP with 10% of every packet lost on the way out (about 15 s) | `net.md` |
 | `platform_check.sh` (not a C test) | main.c and every source compiled as web, Android and desktop, and `platform.h` checked against the table in `platforms.md` | `platforms.md` |
-| `input_headless.c` | the touch controls (floating stick, sprint at the rim, the fire pad that aims, roles, buttons, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
+| `input_headless.c` | the touch controls (floating stick, sprint at the rim, the fire pad that aims, roles, buttons including RELOAD, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
 | `audio_headless.c` | synthesiser numbers, limiter, voices, pan and distance, footsteps, every shipped sound recipe, the bank and the config registry | `audio.md` |
 | `dungeon_headless.c` | generator, floor window, probes | `dungeon.md` |
 | `stairs_headless.c` | staircase geometry and collision | `dungeon.md` |
@@ -20,7 +20,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `health_headless.c` | health and damage | `player.md` |
 | `movement_headless.c` | velocity, sprint, stamina, noise, sliding | `player.md` |
 | `enemies_headless.c`, `spider_headless.c` | enemy AI and spiders | `enemies.md` |
-| `weapons_headless.c` | arsenal, fire modes, pickups, models, shots at real enemies | `weapons.md` |
+| `weapons_headless.c` | arsenal, fire modes, magazines and reloading, melee durability, pickups, models, shots at real enemies | `weapons.md` |
 | `projectiles_headless.c` | patterns, falloff, swept hits, piercing, tracers, `Gunfire_Shoot` | `projectiles.md` |
 | `inventory_headless.c` | items, stacks, the inventory and its touch screen | `inventory.md` |
 | `sim_headless.c` | the input latch, the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
