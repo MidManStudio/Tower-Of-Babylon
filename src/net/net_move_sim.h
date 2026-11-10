@@ -11,7 +11,7 @@
 // The part of the game the netcode runs so far: a player moving on a floor. Server and client both step a player with exactly this
 // function from the same NetCmd, which is what makes prediction work: the client's guess is the server's answer unless something the
 // client could not know got in the way. It is the same movement the single-player game uses (PlayerStep and the jump and slide rules).
-// When the rest of the rules (SimTick) move out of main.c, they replace this.
+// The rules now live in GameSim (src/sim/game_sim.h, docs/sim.md), for one player; when it takes several players it replaces this.
 void NetSim_Spawn(PlayerController *p, float x, float z);
 void NetSim_Step(PlayerController *p, const NetCmd *cmd, const FloorMap *map);      // one fixed step of NET_TICK_SECS
 

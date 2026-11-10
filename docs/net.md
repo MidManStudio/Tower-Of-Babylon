@@ -95,7 +95,7 @@ The real network: `NetUdpHost`. A **server** listens on a UDP port (0 picks a fr
 A pretend link between two ends with time that only moves when the test says so. Per direction: latency, jitter (which reorders), loss, doubling. The reliable channel never loses and keeps order (a late message holds up the ones behind). A blackout loses datagrams and holds reliable messages until it ends. Datagrams over the limit are refused.
 
 ### `net_move_sim.h` and `net_move_sim.c`
-`NetSim_Step` is the movement of `SimTick` in `main.c` (slide, sprint, `PlayerStep`, jump, in that order) from a `NetCmd`; `NetSim_Capture` and `NetSim_Apply` take and put back the movement state; `NetSim_Error` says how far apart two are (position, plus anything that would make the sprint differ a second later). **When `SimTick` moves out of `main.c`, this is what it replaces.**
+`NetSim_Step` is the movement of `GameSim_Step` (`src/sim/game_sim.c`, which was `SimTick` in `main.c`: slide, sprint, `PlayerStep`, jump, in that order) from a `NetCmd`; `NetSim_Capture` and `NetSim_Apply` take and put back the movement state; `NetSim_Error` says how far apart two are (position, plus anything that would make the sprint differ a second later). **It is what `GameSim_Step` replaces once the simulation handles several players** (`sim.md`, "For multiplayer"): the single-player `GameSim` now exists and is proved equal to the old `SimTick`, but it is not on the wire yet.
 
 ### `net_server.h` and `net_server.c`, `net_client.h` and `net_client.c`
 As above.
@@ -129,8 +129,8 @@ The whole suite, with the real-time tests, takes about 90 seconds. Under Address
 
 ## Known limits (what this slice is not)
 
-- **Movement only.** Shots, hits, enemies, the swarm, doors, stairs, the stair clock, pickups, the inventory, the flashlight and health are all still `main.c`'s. They need `SimTick` and its state out of `main.c` into a simulation that has no window, with the monsters, projectiles and pickups (module-global today, so one simulation per process) as parts of it. That is the next step and the owner's earlier choice.
-- **Props.** The player's movement collides with the floor's props (`CheckObstacleCollision`, a module-global list). The tests have no props. A real server and client must build the same props from the floor seed; if they do not, prediction will be wrong near them.
+- **Movement only.** Shots, hits, enemies, the swarm, doors, stairs, the stair clock, pickups, the inventory, the flashlight and health are in `GameSim` now (`sim.md`) but not in the netcode: the netcode still runs `NetSim_Step`, the movement alone. Putting them on the wire needs `GameSim` to take several players (`sim.md`, "For multiplayer") and the monsters, projectiles and pickups, which are module-global (so one simulation per process), in the snapshots.
+- **Props.** The player's movement collides with the floor's props (`CheckObstacleCollision`, a module-global list). The tests have no props. Today the props are one fixed crate that `InitObstaclesSystem()` places the same way on every floor (`sim.md`), so a real server and client only both have to call it; when props depend on the floor they will need its seed, and until then prediction is wrong within reach of that crate if one side lacks it.
 - One floor per server; changing floors is not handled. Players do not collide with one another and all start at the same place. No health or death in the netcode yet.
 - Snapshots are whole every tick: no deltas, no interest management, 4 players at most.
 - The client's aim is trusted as sent (fine for co-op, not for a competitive mode).
@@ -142,7 +142,7 @@ The whole suite, with the real-time tests, takes about 90 seconds. Under Address
 
 ## What comes next
 
-1. **Move `SimTick` and its state out of `main.c`** into a simulation with no window (commands in, events out), with a replay test at two frame rates; this makes the whole game runnable by the server and replaces `net_move_sim`. It also brings the props with it, so server and client collide with the same ones.
+1. **Several players in `GameSim`.** The single-player simulation has been moved out of `main.c` (commands in, events out, replay test at several frame rates, proved identical to the old code: `sim.md`). Next: an array of players (nearest-target selection for monsters and the swarm, per-player arsenal, inventory, flashlight, health, events), yaw and pitch in the command, then `NetSim_Step` is replaced by `GameSim_Step` and the snapshots grow. `SimCmd`'s fire press maps to `NetCmd`'s FIRE bit as it is (`sim.md`).
 2. **The client in the game**: a menu to host or join (the host runs the server program, or the game starts the server loop itself), `NetClient_Update` in the frame loop, the other players drawn, the INTERNET permission in the manifest.
 3. **A real-network trial**: the server on one device, the game or the bot on another, over the owner's Wi-Fi; the first time the numbers in "Not verified" get tested (cross-device determinism, reordering, the phone).
 4. **The Rust transports behind the same seam** (QUIC for encryption and reach; WebTransport for the browser): the C interface in `mid_net.h` (connect, send, poll), a `NetTransport` over it, built by CI. The owner has not chosen between WebTransport and a WebSocket dev transport for the browser.

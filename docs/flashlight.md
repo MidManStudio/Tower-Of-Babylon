@@ -43,7 +43,7 @@ A second shader program, `HIGHP_FLASH_VS_ES2` and `HIGHP_FLASH_FS_ES2`, kept apa
 
 - Items: `ITEM_FLASHLIGHT` (a new kind, `KIND_TOOL`: one to a slot, USE button, no equip) and `ITEM_BATTERY` (a consumable, stack 6). Icons in `inventory_ui.c`.
 - Pickups: `PICKUP_FLASHLIGHT` (its count is the seconds of charge it holds) and `PICKUP_BATTERY`, with models. Floor 1 holds a flashlight and two batteries. Later floors hold one battery, and four times in ten a second, plus a flashlight if the player has none (so it is never lost for good).
-- `main.c`: the LIGHT button (`lightButtonRec`) and the `L` key call `ToggleTorch`; USE on the item does too; `LoadBattery` is shared by the battery's USE and a flat light's button. `Flashlight_Update` runs once a frame after the camera. The beam starts a little to the right of and below the eye, along the lagged direction; the LIGHT button, its charge bar and the failing blink are drawn with the other buttons. Respawning switches the light off but keeps its charge.
+- `GameSim` (`src/sim/game_sim.c`): the LIGHT button (`lightButtonRec`) and the `L` key, as `cmd.light`, call `ToggleTorch`; USE on the item does too; `LoadBattery` is shared by the battery's USE and a flat light's button. `GameSim_TorchFrame` (`Flashlight_Update` plus the failing and flat-battery messages, as events) runs once a frame after the camera, called from `main.c`. The beam starts a little to the right of and below the eye, along the lagged direction; the LIGHT button, its charge bar and the failing blink are drawn with the other buttons. Respawning switches the light off but keeps its charge.
 
 ## Tests
 

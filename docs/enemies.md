@@ -4,9 +4,9 @@ Cylinder enemies and procedural spiders for Tower of Babylon, plus the hook that
 
 ## Overview
 
-Two kinds of enemy share one entry point, `enemy_manager.h`, which `main.c` calls.
+Two kinds of enemy share one entry point, `enemy_manager.h`, which the simulation (`src/sim/game_sim.c`) calls.
 
-A third kind, the worm swarm, is not a body with one health bar and lives apart from this module: see `swarm.md`. `main.c` offers every shot to the monsters first and then to the swarm's health box.
+A third kind, the worm swarm, is not a body with one health bar and lives apart from this module: see `swarm.md`. `GameSim` offers every shot to the monsters first and then to the swarm's health box.
 
 Cylinder enemies are tall procedural cylinders. For each floor the manager picks spawn tiles on a lattice, shuffles them from the floor seed so the enemies spread over the whole floor, and varies height, radius, colour and health from a hash of the seed. They stay idle until they see the player, chase while they have line of sight and for three seconds after losing it, and stop at attack range. Line of sight uses the same grid ray caster as the dungeon generator. Movement is split by axis so an enemy slides along a wall instead of sticking to it or passing through it.
 
@@ -98,7 +98,7 @@ Before a blow a cylinder crouches (10% shorter), swells (22% wider) and turns wa
 
 ### `projectiles.h` and `projectiles.c`
 
-The existing projectile system with one addition, `ResolveProjectileHits(hit, radius, damage)`. It offers every live projectile to a callback and removes the ones that hit, so the projectile module never includes the enemy module. `main.c` passes `CheckAndHandleEnemyDamage`.
+The existing projectile system with one addition, `ResolveProjectileHits(hit, radius, damage)`. It offers every live projectile to a callback and removes the ones that hit, so the projectile module never includes the enemy module. `GameSim` passes `HitAnything` (`CheckAndHandleEnemyDamage`, then the swarm).
 
 ### `enemies_headless.c` and `spider_headless.c`
 

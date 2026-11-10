@@ -29,7 +29,7 @@ Everything is numbers in `assets/config/swarm.mdix`, read like the other config 
 
 **Determinism.** The layout, the squirm and everything else random come from one small generator seeded at spawn, in a fixed order, and positions are plain floats stepped at the fixed rate: the same game gives the same swarm bit for bit (tested), which a server and its clients will need.
 
-**A struct, not module globals.** The swarm is a `Swarm` struct that `main.c` owns (`g_swarm`); nothing in `swarm.c` is static state, so a server can run one swarm per room, and `swarm.c` calls no raylib function (it uses raylib's `Vector3` type only).
+**A struct, not module globals.** The swarm is a `Swarm` struct that the simulation owns (`GameSim.swarm`, `sim.md`); nothing in `swarm.c` is static state, so a server can run one swarm per room, and `swarm.c` calls no raylib function (it uses raylib's `Vector3` type only).
 
 ## Modules
 
@@ -45,8 +45,8 @@ Everything is numbers in `assets/config/swarm.mdix`, read like the other config 
 ### `swarm_draw.c`
 **What it does:** draws the dots (near ones as small low-poly spheres, far ones as cubes), pale and thinning toward the tail with a darker red head, dimmed by how dark the place is, blended between the last two steps by the render alpha; the dead sink out of sight as they go; the box as described. No test can run it (it needs a window).
 
-### In `main.c`
-`g_swarm`; `SpawnFloorSwarm` beside every `SpawnEnemiesForFloor`; `HitAnything` (the monsters, then the swarm) as the shot test; `Swarm_MeleeHit` added to the melee count; `Swarm_Step` after the monsters' step and `Swarm_Bite` beside their blow; `Swarm_Draw` after the monsters. The hit and kill totals the hit marker watches are the monsters' plus the swarm's, with the swarm's carried over from floor to floor so that leaving a floor does not fire a false hit marker. The stats popup counts a living swarm as one enemy.
+### In the simulation (`src/sim/game_sim.c`; `Swarm_Draw` is in `main.c`)
+`GameSim.swarm`; `SpawnFloorSwarm` beside every `SpawnEnemiesForFloor`; `HitAnything` (the monsters, then the swarm) as the shot test; `Swarm_MeleeHit` added to the melee count; `Swarm_Step` after the monsters' step and `Swarm_Bite` beside their blow; `Swarm_Draw` after the monsters. The hit and kill totals the hit marker watches are the monsters' plus the swarm's, with the swarm's carried over from floor to floor so that leaving a floor does not fire a false hit marker. The stats popup counts a living swarm as one enemy.
 
 ## `assets/config/swarm.mdix`
 
@@ -67,7 +67,7 @@ Measured on the build machine (so a phone is several times slower; the A13 has n
 - **Nothing here has been seen on a screen or felt on the phone.** Whether 24 worms of 10 dots read as a swarm and not as noodles; whether the pale colour reads in the flashlight's beam and in the dark; the size of the dots; whether 3 m/s is frightening (the player walks at 4.5 and the fastest monster is 3.6+); whether `sense_range` 30 wakes it too soon or too late; whether the frame rate holds with the swarm in view on the A13 (turn `worms` down first if it does not).
 - The bite's pacing and size (1.5 a dot, at most 18, every half second with a 0.3 s windup) are a first guess against the player's 100 health and the 0.9 s grace after any hit.
 - The health box's size (0.9 m a side) and health (150) are guesses against the guns' damage in `weapons.mdix`; the stair, console and floor-collapse interplay (the swarm during the stair clock) has not been played.
-- `Swarm_Draw` and the glue in `main.c` compile for web, Android and desktop (`tests/platform_check.sh`) but have not run.
+- `Swarm_Draw` and `main.c` compile for web, Android and desktop (`tests/platform_check.sh`) but have not run. The glue that moved into `src/sim/game_sim.c` runs headless: `tests/game_sim_headless.c` covers it, and the differential test in `sim.md` showed it identical to the old `main.c` (a swarm fight until death among its scenarios).
 
 ## Known limits
 

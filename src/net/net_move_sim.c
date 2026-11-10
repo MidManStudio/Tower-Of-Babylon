@@ -13,7 +13,7 @@ void NetSim_Step(PlayerController *p, const NetCmd *cmd, const FloorMap *map)
     p->yaw = NetCmd_Yaw(cmd);
     p->pitch = NetCmd_Pitch(cmd);
     PlayerSyncCamera(p);
-    if (cmd->buttons & NET_BTN_SLIDE) PlayerTrySlide(p);                  // the order of SimTick in main.c: slide, sprint, step, jump
+    if (cmd->buttons & NET_BTN_SLIDE) PlayerTrySlide(p);                  // the order of GameSim_Step (src/sim/game_sim.c): slide, sprint, step, jump
     p->wantSprint = (cmd->buttons & NET_BTN_SPRINT) != 0;
     float mx, my;
     NetCmd_Move(cmd, &mx, &my);

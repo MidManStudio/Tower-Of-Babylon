@@ -1,6 +1,6 @@
 // Headless test of the stair clock inside the game (src/floor/floor_game.c): where the console is put, the lock on the top door through
-// the whole unlock, countdown and collapse, the monsters the console calls, and who the collapse kills. Audio, the HUD, the enemies and
-// the renderer are stand-ins that record what they were asked. Run from the project root:
+// the whole unlock, countdown and collapse, the monsters the console calls, and who the collapse kills. The sound and message sinks, the enemies and
+// the staircase are stand-ins that record what they were asked (the renderer is not touched at all: the wave is read back). Run from the project root:
 //   cc -O2 -std=c99 -DFLOOR_GAME_HEADLESS_TEST -Isrc -Iraylib/src tests/floor_game_headless.c src/floor/floor_game.c src/floor/floor_run.c src/floor/floor_config.c src/core/timers.c src/core/fixed_step.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c -lm -o floor_game_headless
 #ifdef FLOOR_GAME_HEADLESS_TEST
 
@@ -13,25 +13,28 @@
 #include "dungeon/staircase.h"
 #include "enemies/enemy_manager.h"
 #include "floor/floor_game.h"
+#include "sim/sim_events.h"
 
 // ---- stand-ins ------------------------------------------------------------------------------------------------
 static int g_sndStart, g_sndUnlocked, g_sndCount, g_sndCollapse, g_toasts;
-void AudioEvents_ConsoleStart(void) { ++g_sndStart; }
-void AudioEvents_Unlocked(void) { ++g_sndUnlocked; }
-void AudioEvents_CountTick(int s) { (void)s; ++g_sndCount; }
-void AudioEvents_Collapse(void) { ++g_sndCollapse; }
-void Hud_Toast(const char *t) { (void)t; ++g_toasts; }
+void SimOut_Sound(SimSound s, int arg)      // the clock's sounds and messages go out through these (sim/sim_events.h)
+{
+    (void)arg;
+    if (s == SIMSND_CONSOLE_START) ++g_sndStart; else if (s == SIMSND_UNLOCKED) ++g_sndUnlocked; else if (s == SIMSND_COUNT_TICK) ++g_sndCount; else if (s == SIMSND_COLLAPSE) ++g_sndCollapse;
+}
+void SimOut_Toast(const char *t) { (void)t; ++g_toasts; }
 bool GameConfig_RegisterExtra(const char *path, const MdixBaked *baked, ConfigBuildFn build) { (void)path; (void)baked; (void)build; return true; }
 void DrawCube(Vector3 p, float w, float h, float l, Color c) { (void)p; (void)w; (void)h; (void)l; (void)c; }
 Color Fade(Color c, float a) { (void)a; return c; }
 
-static bool g_upLocked; static float g_collapseR = -1.0f, g_rage = 1.0f;
+static bool g_upLocked; static float g_rage = 1.0f;
 void Staircase_SetUpDoorLocked(bool l) { g_upLocked = l; }
 void Staircase_DoorPosition(DoorId id, float *x, float *z) { (void)id; *x = 73.0f; *z = 13.5f; }
-void DrawFloorMapCollapse(float cx, float cz, float r) { (void)cx; (void)cz; g_collapseR = r; }
 void Enemies_SetRage(float m) { g_rage = m; }
 static int g_spawned, g_spawnedAlerted; static Vector3 g_spawnAt[16]; static int g_spawnTier;
 int Enemies_SpawnAt(Vector3 p, int tier, bool alerted) { if (g_spawned < 16) g_spawnAt[g_spawned] = p; ++g_spawned; g_spawnedAlerted += alerted; g_spawnTier = tier; return 0; }
+
+static float WaveR(void) { float x, z, r; FloorGame_CollapseWave(&x, &z, &r); return r; }      // the collapse wave as the renderer would be given it
 
 static FloorMap g_floor;
 static int g_failures = 0;
@@ -92,7 +95,7 @@ int main(void)
         GenerateFloorMap(&g_floor, 3, 424242u);
         FloorGame_NewFloor(&g_floor, 3, false);
         Vector3 c; FindConsole(&c);
-        Check(g_upLocked && FloorGame_Phase() == 1 && g_rage == 1.0f && g_collapseR < 0.0f, "a new floor: the top door is locked, the clock is waiting for the console, nothing has fallen");
+        Check(g_upLocked && FloorGame_Phase() == 1 && g_rage == 1.0f && WaveR() < 0.0f, "a new floor: the top door is locked, the clock is waiting for the console, nothing has fallen");
         Check(g_toasts >= 1, "and the player is told to find it");
         FloorGameOut out = { 0 };
         Frames(3.0f, 60.0f, c, false, 3, &out);
@@ -120,7 +123,7 @@ int main(void)
         Check(FloorGame_Phase() == 2 && FloorGame_CountdownLeft() < 1.5f && g_sndCount >= 8 && g_sndCount <= 11, "29 s on: about a second left, and the last ten seconds have ticked about ten times");
         Frames(2.5f, 60.0f, far, false, 3, &out);
         Check(FloorGame_Phase() == 3 && !g_upLocked && g_rage > 1.0f && g_sndCollapse == 1, "the countdown ends: the door unlocks, the monsters speed up, the collapse sound plays once");
-        Check(g_collapseR > 0.0f && FloorGame_CollapseLeft01() < 1.0f && FloorGame_CollapseLeft01() > 0.9f, "the floor has started to go: the front is moving in from the far edge");
+        Check(WaveR() > 0.0f && FloorGame_CollapseLeft01() < 1.0f && FloorGame_CollapseLeft01() > 0.9f, "the floor has started to go: the front is moving in from the far edge");
         Check(!out.killPlayer, "the player at the far edge is not killed on the first frames: the front starts beyond the farthest floor");
         int killedAt = -1;
         for (float t = 0.0f; t < 45.0f; t += 1.0f / 60.0f) { FloorGameIn in = { 1.0f / 60.0f, &g_floor, far, true, false, 3 }; FloorGame_Frame(&in, &out); if (out.killPlayer) { killedAt = (int)t; break; } }
@@ -170,7 +173,7 @@ int main(void)
         FloorGameOut out = { 0 }; FloorGameIn in = { 1.0f, &g_floor, (Vector3){ 5, 0, 5 }, true, true, 2 };
         for (int i = 0; i < 100; ++i) FloorGame_Frame(&in, &out);
         Vector3 c;
-        Check(FloorGame_Phase() == 0 && !g_upLocked && !FindConsole(&c) && !out.killPlayer && g_collapseR < 0.0f, "a floor the player came down into: no clock, no console, the top door open, nothing falls");
+        Check(FloorGame_Phase() == 0 && !g_upLocked && !FindConsole(&c) && !out.killPlayer && WaveR() < 0.0f, "a floor the player came down into: no clock, no console, the top door open, nothing falls");
         g_spawned = 0;
         FloorGame_NewFloor(&g_floor, 2, false);
         Check(FloorGame_Phase() == 1 && g_upLocked && FloorGame_ConsoleProgress() == 0.0f && g_rage == 1.0f, "a new life on a floor that had a clock starts it afresh: locked, no progress, monsters at their normal speed");

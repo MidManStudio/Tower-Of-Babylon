@@ -7,14 +7,12 @@
 #include <math.h>
 #include <stdint.h>
 
-#include "../audio/audio_events.h"
 #include "../config/game_config.h"
 #include "../core/fixed_step.h"
 #include "../dungeon/dungeon_probes.h"
-#include "../dungeon/dungeon_renderer.h"
 #include "../dungeon/staircase.h"
 #include "../enemies/enemy_manager.h"
-#include "../hud/hud.h"
+#include "../sim/sim_events.h"
 #include "floor_config.h"
 #include "floor_run.h"
 
@@ -28,6 +26,7 @@ static FixedStep g_step;
 static bool      g_cleared = true;
 static uint32_t  g_calls = 1;
 static float     g_doorX = 73.0f, g_doorZ = 13.5f;
+static float     g_waveX = 73.0f, g_waveZ = 13.5f, g_waveR = -1.0f;      // the collapse wave, for whoever draws the floor (FloorGame_CollapseWave)
 
 void FloorGame_Register(void) { GameConfig_RegisterExtra("assets/config/floor.mdix", &g_bakedFloor, FloorConfig_LoadFrom); }
 
@@ -75,7 +74,7 @@ void FloorGame_NewFloor(const FloorMap *map, int floorNumber, bool cleared)
     FixedStep_Init(&g_step, RUN_TICK_SECS, RUN_MAX_STEPS_PER_FRAME);
     Staircase_DoorPosition(DOOR_UP, &g_doorX, &g_doorZ);
     Enemies_SetRage(1.0f);
-    DrawFloorMapCollapse(0.0f, 0.0f, -1.0f);
+    g_waveX = g_waveZ = 0.0f; g_waveR = -1.0f;
     if (cleared) { Staircase_SetUpDoorLocked(false); return; }
 
     float cx, cz;
@@ -89,7 +88,7 @@ void FloorGame_NewFloor(const FloorMap *map, int floorNumber, bool cleared)
         }
     FloorRun_Begin(&g_run, FloorConfig_Get(), cx, cz, g_doorX, g_doorZ, far + 2.0f);
     Staircase_SetUpDoorLocked(true);
-    Hud_Toast("FIND THE CONSOLE. HOLD USE THERE TO UNLOCK THE STAIRS");
+    SimOut_Toast("FIND THE CONSOLE. HOLD USE THERE TO UNLOCK THE STAIRS");
 }
 
 bool FloorGame_NearConsole(Vector3 p)
@@ -125,18 +124,18 @@ static void Settle(const FloorGameIn *in, FloorGameOut *out)
     RunEvent ev;
     while (FloorRun_PopEvent(&g_run, &ev)) {
         switch (ev.kind) {
-            case RUN_EV_CONSOLE_START: AudioEvents_ConsoleStart(); break;
+            case RUN_EV_CONSOLE_START: SimOut_Sound(SIMSND_CONSOLE_START, 0); break;
             case RUN_EV_MONSTER:       CallMonster(in->map, in->floorNumber); break;
-            case RUN_EV_UNLOCKED:      AudioEvents_Unlocked(); Hud_Toast("STAIRS UNLOCKED. THE TOP DOOR OPENS WHEN THE CLOCK ENDS"); break;
-            case RUN_EV_COUNT:         AudioEvents_CountTick((int)ev.value); break;
-            case RUN_EV_DOOR_OPEN:     Enemies_SetRage(g_run.cfg.rageSpeed); Hud_Toast("THE DOOR IS OPEN. GET OUT"); break;
-            case RUN_EV_COLLAPSE_BEGIN: AudioEvents_Collapse(); break;
+            case RUN_EV_UNLOCKED:      SimOut_Sound(SIMSND_UNLOCKED, 0); SimOut_Toast("STAIRS UNLOCKED. THE TOP DOOR OPENS WHEN THE CLOCK ENDS"); break;
+            case RUN_EV_COUNT:         SimOut_Sound(SIMSND_COUNT_TICK, (int)ev.value); break;
+            case RUN_EV_DOOR_OPEN:     Enemies_SetRage(g_run.cfg.rageSpeed); SimOut_Toast("THE DOOR IS OPEN. GET OUT"); break;
+            case RUN_EV_COLLAPSE_BEGIN: SimOut_Sound(SIMSND_COLLAPSE, 0); break;
             default: break;
         }
     }
 
     Staircase_SetUpDoorLocked(!FloorRun_DoorOpen(&g_run));
-    DrawFloorMapCollapse(g_doorX, g_doorZ, g_run.phase == RUN_COLLAPSING ? g_run.waveRadius : -1.0f);
+    g_waveX = g_doorX; g_waveZ = g_doorZ; g_waveR = g_run.phase == RUN_COLLAPSING ? g_run.waveRadius : -1.0f;
     if (in->alive && FloorRun_Gone(&g_run, in->player.x, in->player.z)) out->killPlayer = true;
 }
 
@@ -161,6 +160,9 @@ void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out)
     for (int i = 0; i < steps; ++i) FloorRun_Step(&g_run, g_step.step, reach, in->useHeld && reach);
     Settle(in, out);
 }
+
+// The collapse wave as the last step left it: centre and radius (a negative radius is no wave). The caller hands it to the renderer.
+void FloorGame_CollapseWave(float *cx, float *cz, float *radius) { *cx = g_waveX; *cz = g_waveZ; *radius = g_waveR; }
 
 // ---- drawing the console ------------------------------------------------------------------------------------
 void FloorGame_Draw(Vector3 viewer, float time)

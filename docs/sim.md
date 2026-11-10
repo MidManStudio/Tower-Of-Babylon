@@ -1,14 +1,37 @@
-# The fixed-step simulation (`main.c`, `src/input/input_latch.*`, `src/core/fixed_step.*`)
+# The simulation (`src/sim`, `main.c`, `src/input/input_latch.*`, `src/core/fixed_step.*`)
 
 ## Overview
 
-The rules of the game run **30 times a second**, whatever the screen does. The screen is drawn at its own pace (60 or 144 frames a second); each frame the game asks `FixedStep_Advance` how many whole 1/30 s steps the elapsed time is worth, runs that many `SimTick`s, and draws the picture blended between the last two steps. This makes the game play the same at any frame rate, and it is the groundwork for multiplayer: a server stepping the same rules at the same rate agrees with the phone tick for tick (`design/06-multiplayer.md`). Before this the rules ran once per frame with a capped frame time.
+The rules of the game run **30 times a second**, whatever the screen does, and they live in a module with no window: `src/sim` (`GameSim`). The screen is drawn at its own pace (60 or 144 frames a second); each frame `main.c` asks `FixedStep_Advance` how many whole 1/30 s steps the elapsed time is worth, runs that many `GameSim_Step`s, plays what the steps reported, and draws the picture blended between the last two steps. This makes the game play the same at any frame rate, and it is the groundwork for multiplayer: a server stepping the same rules at the same rate agrees with the phone tick for tick (`design/06-multiplayer.md`).
+
+`GameSim` was `SimTick` and its state in `main.c`. It was moved, not rewritten (see "How it was moved and proved"). It **draws nothing, plays nothing and reads no clock**: commands go in (`SimCmd`, plus where the player is looking, which the host sets on the player before the step) and events come out (`SimEvent`: a message, a sound, a hit marker, a new floor). `main.c` went from 897 to 472 lines; what is left in it is input, aim, the screen effects, sound, the HUD and drawing.
 
 ## What runs where
 
-**Every frame (`Frame()` in `main.c`):** reading input, UI taps (STATS, INV, the inventory screen, which change the inventory at once), **turning the camera** (`PlayerApplyLook` + `PlayerSyncCamera`: aim never waits for a step, a step later would feel like lag), the flashlight (its beam must follow the view, and its charge drains by time so the frame rate does not change it), sound, the screen effects that fade by the clock (the fade after a door, hit and kill markers, the heal flash), drawing.
+**Every frame (`Frame()` in `main.c`):** reading input, UI taps (STATS, INV, the inventory screen), **turning the camera** (`PlayerApplyLook` + `PlayerSyncCamera`: aim never waits for a step, a step later would feel like lag), the flashlight (`GameSim_TorchFrame`: its beam must follow the view, and its charge drains by time so the frame rate does not change it), sound, the screen effects that fade by the clock (the fade after a door, hit and kill markers, the heal flash), drawing. The inventory actions of the screen (`GameSim_UseSlot`, `_EquipSlot`, `_DropSlot`) act on the simulation at once, in the frame.
 
-**Every step (`SimTick()`):** the ammo pickups, door and pickup use, swapping, the light and slide buttons, `PlayerStep` (movement, stamina, sliding, falling, the camera's position), jumping, the doors' opening and the floor change, attacks (`Arsenal_Update`, shots, melee), projectiles, the monsters and their noise, the stair clock (`FloorGame_Tick`), blows on the player, death and respawn.
+**Every step (`GameSim_Step`):** the ammo pickups, door and pickup use, swapping, the light and slide buttons, `PlayerStep` (movement, stamina, sliding, falling, the camera's position), jumping, the doors' opening and the floor change, attacks (`Arsenal_Update`, shots, melee), projectiles, the monsters and their noise, the worm swarm and its bite, the stair clock (`FloorGame_Tick`), blows on the player, death and respawn.
+
+**After the steps of a frame:** `ApplySimEvents()` in `main.c` takes the events out of the queue and plays them (in the place in the frame where the sounds used to be called, so the order of sound and effects is the old one).
+
+## `game_sim.h` and `game_sim.c`
+
+**What it does:** `GameSim` is one struct holding everything the rules own for one player: the three-floor window and the floor the player is on, the `PlayerController`, the `Inventory` and `Arsenal`, the flashlight, the worm swarm and its carried hit totals, the door sequence (`seq`, `seqDoor`, `doorOpen[]`, `fadeOut`), `deathT`, the shot random state, the gun-noise timers, the "FULL" message limiter, `prevEye` (where the camera was at the start of the last step, for the blend), a step counter and the event queue. It is a plain struct of about 109 KB (the swarm is 54 KB and the floor window 49 KB of it), so it is kept in static storage, as `main.c` does, and a test can have its own.
+
+- `GameSim_Init(s, seed)` zeroes it, starts the flashlight, seeds the shot random state, builds the floor window. `GameSim_Begin(s)` spawns floor 1: monsters, swarm, pickups, the clock, the player at the foot of the stairs; call it after `InitObstaclesSystem`, `InitProjectilesSystem`, `InitEnemiesSystem` and `GameConfig_Init`, which is the order the game always had.
+- `GameSim_Step(s, cmd)` is `SimTick`. `GameSim_DropSlot/UseSlot/EquipSlot(s, slot)` are the inventory screen's actions. `GameSim_TorchFrame(s, dt)` is the flashlight's per-frame work. `GameSim_FindNear`, `GameSim_SlideButtonShown`, `GameSim_FlatForward` are questions the HUD and the sound ask. `GameSim_PopEvent` takes the oldest event.
+- Inside the step, `SimOut_Bind(&s->events)` points the stair clock's sinks at this queue and `SimOut_Bind(NULL)` ends it.
+- `ResolveProjectileHits` takes a callback with no user pointer, so `game_sim.c` keeps one file-scope `GameSim *` (`g_hitSim`) and sets it before the call. It is one of the places where "one simulation per process" is written into the code; the monsters, shots, pickups, props and the clock are the others (below).
+
+**What is deliberately not here:** drawing (`DrawEnemiesSystem`, `Swarm_Draw`, ...), sound (`AudioEvents_*`), the HUD (`Hud_Toast`), the lights (`Lighting_*`), input. `tests/game_sim_headless.c` scans `game_sim.c` and `sim_events.c` for those names and fails if one appears in code.
+
+## `sim_events.h` and `sim_events.c`
+
+**What it does:** the way the rules tell the outside world. `SimEvent` is a kind plus a sound id, a number and up to 79 characters of text; `SimEventQueue` is a ring of 64. The kinds: `SIMEV_TOAST` (a message), `SIMEV_SOUND` (with a `SimSound` and, where it has one, a number: the weapon of a shot, whether a melee blow hit, whether a hit marker was a kill, whether the flashlight is now on, the seconds of a countdown tick), `SIMEV_HIT`, `SIMEV_KILL` (the markers), `SIMEV_FLOOR` (the floor number: the picture builds its lights), `SIMEV_FADE_IN`, `SIMEV_RESET_AUDIO` (a new life), `SIMEV_HEAL_FLASH`.
+
+- A full queue **drops the newest** and counts them in `dropped`, so nothing already queued is overwritten and the queue never grows. A host that never pops (a server) simply ignores them.
+- `SimOut_Bind/Toast/Sound` are for code that runs inside a step but knows nothing of `GameSim`: the stair clock (`floor/floor_game.c`) used to call `AudioEvents_*`, `Hud_Toast` and `DrawFloorMapCollapse` itself; it now posts through these and the simulation binds its own queue for the length of a step. With nothing bound they do nothing. One queue is bound at a time (module-global, like the monsters).
+- The sound ids are `SIMSND_*`: the audio module already owns `SND_*` (found when `main.c` first failed to compile with both).
 
 ## Input between steps: `input_latch.h`
 
@@ -17,26 +40,72 @@ A press that comes and goes between two steps (a one-frame jump or fire tap at 1
 ## Drawing between steps
 
 The picture is blended `alpha` (0 to 1, how far the next step has got) of the way from the start of the last step to its end:
-- **The camera:** position blended from `g_prevEye` (set at the start of each step, and reset at every teleport so it never sweeps across the floor) to now; direction is always the latest, because aim is per frame. The picture is up to one step (33 ms) behind the rules for movement; extrapolating instead would put the camera into walls at sprint speed (0.25 m a step).
+- **The camera:** position blended from `sim.prevEye` (set at the start of each step, and reset at every teleport so it never sweeps across the floor) to now; direction is always the latest, because aim is per frame. The picture is up to one step (33 ms) behind the rules for movement; extrapolating instead would put the camera into walls at sprint speed (0.25 m a step).
 - **The monsters** (`Enemies_BeginTick`, `Enemies_SetRenderAlpha`): `prevPosition` per monster; for spiders the body and the hips blend, a planted foot stays on the floor (`prevPos`).
-- **The shots** (`Projectiles_SetRenderLag`): a round is drawn that much of its flight behind where the step left it, never behind its muzzle.
+- **The swarm** (`Swarm_BeginTick`, `Swarm_Draw(..., alpha)`) and **the shots** (`Projectiles_SetRenderLag`): a round is drawn that much of its flight behind where the step left it, never behind its muzzle.
+- **The collapse of the floor:** `main.c` reads the wave with `FloorGame_CollapseWave` each frame and gives it to `DrawFloorMapCollapse`.
+
+## How it was moved and proved
+
+`main.c` cannot run in the sandbox (no window, no GPU), so "it behaves as before" had to be shown some other way.
+
+1. **Moved verbatim.** The functions (`SimTick`, `UseDoor`, `RespawnPlayer`, `DropSlot`, `UseSlot`, `EquipSlot`, `LoadBattery`, `ToggleTorch`, `TrySlide`, `FindNear`, the pickup and swarm spawning) were extracted from the old `main.c` by a script that renames only the state (`player` to `s->player` and so on, never inside comments or strings) and turns each `Toast(...)` and `AudioEvents_*(...)` call into an event post. The result was read against the original.
+2. **Compiled everywhere.** `tests/platform_check.sh` compiles `main.c` and every source for web, Android and desktop (76 files); `main.c` also compiles with `-Wall -Wextra` and no warning. That check caught one thing a test could not: `SND_HURT` and the rest already existed in the audio module.
+3. **A differential test, run once.** The *old* `main.c` (everything up to the character screen, taken verbatim from commit `0171209`, with the old `floor_game.c`) was compiled into one headless program, and the new `GameSim` into another. Eight scripted scenarios (random play with random looks, actions and inventory use; working the console through the whole clock, countdown and collapse; through the up door and down again; fighting the swarm until dead and back; the full-ammunition message at a box; mixes of these) were run on both with five tower seeds each: 40 runs, about 117,000 steps. After every step each program printed the player (position, eye, velocity, health, stamina, flags), the weapon, ammunition, inventory, flashlight, door sequence, fades, death clock, the stair clock (phase, countdown, console progress, collapse radius), a hash of every monster, pickup, shot and every dot of the swarm, and the events of that step. **All 40 traces are identical byte for byte.** Every kind of event was seen, among them hurt, shots, dry fire, melee, hit markers, pickups, floors 1 and 2, door fades, deaths and respawns, the heal flash and every stair-clock sound.
+   - The first real run found a bug in the move: the flashlight sound said "on" when the light was switched off (the script that rewrote the call had turned the argument into a constant). It was fixed, and the shipped test now checks it.
+   - A comparison that cannot fail proves nothing, so the new code was broken on purpose ten ways (a sound argument, the death time, the door time, a missing fade, hit and kill markers, the bites of the monsters and of the swarm, the "FULL" limiter, the floor event); each was caught. The first sweep "survived" everything because the script ran from the wrong folder and compared two empty outputs; it now counts an empty or failed run as an error. One mutation (the "FULL" limiter) survived until a scenario was added for the message it guards.
+   - This harness needs the old `main.c`, so it is **not** in the repo; the method is described here so it can be rebuilt from git history.
+4. **A test that stays** (`tests/game_sim_headless.c`, below).
+
+**Differences from the old behaviour, all deliberate or unavoidable:**
+- The "FULL" limiter (`blockToastT`) counts down in the step (30 Hz) instead of the frame; still two seconds.
+- Inventory messages are made at the end of each step and after each action instead of once at the end of the frame. The same messages, the same frame.
+- Sounds, messages and effects are played after the steps of the frame instead of inside each step; with two steps in a frame they come out in the same order, up to a frame later than before.
+- The lights of a new floor are built after the steps, not inside the step that changed the floor. Nothing in the rules reads them (only the renderer, the swarm's colour, the hands and the debug overlay do: checked with a search).
+- The collapse wave reaches the renderer once a frame from a getter instead of from every step: the same values.
 
 ## Decisions
 
 - Aim per frame, rules per step: the standard split for a first-person game; the cost is that a tap waits up to a step (33 ms) for its effect.
 - 30 Hz and at most 5 steps a frame (`SIM_MAX_STEPS_PER_FRAME`): a stall of more than 167 ms makes the game slow down for a moment instead of racing to catch up (the dropped steps are counted in `FixedStep.dropped`).
-- The flashlight is deliberately *not* stepped: it is presentation (flicker, beam) with a charge that drains by time. It will need to be server state when the inventory is.
+- The flashlight is deliberately *not* stepped: it is presentation (flicker, beam) with a charge that drains by time. Its state is in `GameSim` (so it will be server state with the inventory) but it runs per frame, as `GameSim_TorchFrame`.
+- **The move changes no behaviour and adds no multiplayer.** One player, the same `SimCmd`, the same module globals. Generalising to several players is the next, separate step.
+- **`SimCmd` already fits the net command.** `SimCmd` has a fire *press* and a `fireHeld`, and `NetCmd` has one FIRE bit; the step uses only `cmd.fire` (a press, or held at any time since the last step) and never `fireHeld`, so the net's FIRE bit maps to `cmd.fire` and `NetCmd` needs no widening.
+- **The props are one fixed crate.** `InitObstaclesSystem()` places a single test crate at a fixed spot on every floor; there is nothing to derive from the floor seed. Client and server only both have to call `InitObstaclesSystem()` (the net tests stubbed it as "no props", which is what would have made prediction wrong near that crate). When real props come they will need a seed.
 
 ## Not verified
 
-- Not run on a phone. Feel is the risk: input latency (a press waits up to one step), the blend (a step behind), the viewmodel (the arsenal's recoil and muzzle flash fade in steps of 1/30 s, so they tick at 30 Hz), doors animating in steps, the spiders' blend. Everything is compiled for web, Android and desktop, and each piece is tested, but main.c itself cannot be run here.
-- `main.c`'s `SimTick` was moved from the old `Frame()` as it was, with the per-frame effects split out; there is no test that runs `main.c`. A replay of a recorded input through `SimTick` at two frame rates should be the next test, which needs `SimTick` to move out of `main.c` (see below).
-- Inventory actions from the screen (drop, use, equip, load a battery) still act on the game at once, in the frame, not as commands in a step. Fine for one player; they become commands for the server.
+- **Not run on a phone, and `main.c` itself is not run anywhere here.** Everything the move touched in `main.c` is glue (the call order, `ApplySimEvents`, the collapse wave push, the fade-in): it compiles for all three platforms and its pieces are tested, but the order of calls in a frame and the sound on a real device are not. The differential test drives `GameSim` the way `main.c` does, with the same calls in the same order, but through harness code, not through `main.c`.
+- Feel is the risk it always was: input latency (a press waits up to one step), the blend (a step behind), the viewmodel (the arsenal's recoil and muzzle flash fade in steps of 1/30 s), doors animating in steps, the spiders' blend. Nobody has tried the 30 Hz change on the phone yet.
+- Linking `GameSim` needs stand-ins for the drawing calls inside `projectiles.c`, `enemy_manager.c`/`spider_draw.c`, `obstacles.c`, `pickups.c`/`parts.c` and `floor_game.c` (`DrawCube`, `rlBegin`, `Fade` and the like: see the link line and the top of `tests/game_sim_headless.c`), because those files still hold their own drawing. A server program that links `GameSim` must provide the same no-op stand-ins until that drawing is split into separate files (the swarm already is: `swarm_draw.c`).
+- The monsters, projectiles, pickups, props and the stair clock keep their state at file scope in their own modules: **one `GameSim` per process**. Two in one process would share them. The test boots the same `GameSim` again between runs, which works because `GameSim_Begin` re-initialises them all.
+- Inventory actions from the screen act on the game at once, in the frame, not as commands in a step. Fine for one player; they become commands for the server.
 
-## For multiplayer (the next stage)
+## For multiplayer (the next step)
 
-The rules still live in `main.c` and in module globals (the enemies, the projectiles, the pickups): one simulation per process. To run on a server, `SimTick` and its state (player, arsenal, inventory, torch, doors) must move into a `src/sim` module with a `GameSim` struct and no raylib, and the commands must carry yaw and pitch (today the camera's yaw is read from the player, since it is turned in the frame). `SimCmd` is the shape of that command.
+1. **N players in `GameSim`.** The simulation has one player: `UpdateEnemiesSystem` takes a single position, `EnemiesAttackPlayer` and the swarm one target. Make the player part an array: nearest-target selection for the monsters and the swarm, a per-player arsenal, inventory, flashlight and health, and per-player events. Keep one-player behaviour identical (the differential method above, or a recorded replay, is how to know).
+2. **Aim in the command.** Yaw and pitch go in the command (`NetCmd` has them); `GameSim` then sets the player's look before the step instead of the host doing it.
+3. **Replace `net_move_sim`** (`NetSim_Step`) with `GameSim_Step`, and extend `NetOwnerState` and `NetRemote` (health, weapon, flags, and later monsters, shots, pickups, doors, the swarm) in the snapshots; bump `NET_PROTOCOL_VERSION` when the wire changes.
+4. Make the module-global parts (monsters, shots, pickups, props, the clock) parts of the struct, or accept one simulation per process (one server process per game).
 
 ## Tests
 
-`tests/sim_headless.c` (21 checks): the latch (every press kept, taken once, a fire tap kept as a press, a hold fires every step, a fresh command asks for nothing), the same 90 steps at 30, 60 and 144 frames a second (exactly the same place with the same input; one jump per jump press whatever the rate), look-per-frame plus step-per-tick equal to the old one-call update, the camera direction following at once while its position does not move, and the monsters' blend hooks. Five deliberate breakages (a press not latched, not cleared, a fire tap lost, look applied only in the step, BeginTick not remembering) were each caught; one needed a stronger test.
+`tests/sim_headless.c` (21 checks): the latch (every press kept, taken once, a fire tap kept as a press, a hold fires every step, a fresh command asks for nothing), the same 90 steps at 30, 60 and 144 frames a second (exactly the same place with the same input; one jump per jump press whatever the rate), look-per-frame plus step-per-tick equal to the old one-call update, the camera direction following at once while its position does not move, and the monsters' blend hooks. Five deliberate breakages were each caught; one needed a stronger test.
+
+`tests/game_sim_headless.c` (62 checks), the whole simulation with no window:
+- **The event queue:** empty, order, many wraps of the ring, a full queue drops the newest and counts them, text cut to fit, no queue bound means the sinks do nothing, bound they post in order.
+- **The start:** floor 1 announced once, the clock's first message through the same queue, nothing else said, the player alive on the right floor.
+- **The rules as events:** the flashlight says on and says off (the bug the differential test found), a flat battery says so; a shot carries its weapon, an empty gun clicks; a hit gives one marker once, a kill gives the kill marker and sound; the swarm hurts and the health really drops; a medkit heals, flashes, says so and is used up; a box is taken with its sound, and with a full stack the "FULL" message comes about once in two seconds, not every step.
+- **The clock, the door and a new floor:** the console starts and finishes with their sounds and messages, the countdown is counted out loud with all ten numbers, the collapse starts once with its sound and the wave is read back from the clock, the open door is used (one door sound, floor 2 announced once, one fade-in, the sequence finished), the new floor has no wave and a clock waiting for its console.
+- **Death:** back after 2.6 s (78 steps), the sound system reset once and the screen faded in once, full health, same floor.
+- **Bounded:** 400 steps with nobody listening never overfill the queue and every step runs.
+- **The same every time, at any frame rate:** the same seed and commands give the same world twice; another seed gives another; 60, 144, 37 (uneven) and 20 frames a second give the same world as 30; each run took exactly the steps asked for.
+- **No window:** the whole run never asked the clock for the time (the stand-in for `GetTime` counts); `game_sim.c` and `sim_events.c` name no window, clock, drawing, sound, HUD, lighting or input call in their code; the stair clock names no sound, HUD or renderer call.
+
+Thirty-one deliberate breakages were each caught: a wrong sound argument (flashlight, shot, kill), a sound or event removed (dry fire, hit, kill, door, fade after a door, fade after death, audio reset, heal flash, floor, console, unlock, collapse, the dead-flashlight message), the wrong floor number, the "FULL" limiter never set or never counting down, inventory messages not collected, a lost count-tick number, a collapse wave that never updates, the sinks not bound in a step, the step counter, death taking 2.0 s, a step that asks the clock, **hidden state surviving between runs** (a `static` counter), a queue that gives the newest first, does not count drops or overwrites when full, and an unbound sink that dereferences nothing. One mutation (an unbound sink that posts to a hidden queue) survived because it cannot be seen from outside; it was replaced by the real defect it stood for.
+
+## Fixes and Problems
+
+- A first draft of the console test never got the stair clock to start: the swarm and the monsters the console calls pushed the player off the console during the 10-second hold. The test now pins the player there; the game itself is unchanged (a player who is pushed away stops the hold, as designed).
+- The first mutation sweep of the differential test reported every mutation as surviving, because the script was run from another folder and two empty outputs compared equal. A failed or short run is now an error.
+- The sandbox cannot keep a background job alive between tool calls, so a long mutation sweep must be cut into chunks inside single calls, with a timeout on each test.

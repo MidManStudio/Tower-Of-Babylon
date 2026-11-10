@@ -60,14 +60,14 @@ I could not see the game running, so the poses were checked by drawing the same 
 
 ### Melee against enemies
 
-`EnemiesMeleeHit` and `Spiders_MeleeHit` are described in `docs/enemies.md`. `main.c` calls them when the arsenal reports an `impact`, aiming along the floor-plane part of the look direction from the camera.
+`EnemiesMeleeHit` and `Spiders_MeleeHit` are described in `docs/enemies.md`. `GameSim_Step` calls them when the arsenal reports an `impact`, aiming along the floor-plane part of the look direction from the camera.
 
-### `main.c` wiring
+### Wiring (`GameSim_Step` in `src/sim/game_sim.c`; the buttons and the HUD in `main.c`)
 
 - The attack button (`F` on a keyboard) is held to attack. Its label is PUNCH, SWING or FIRE for the weapon in hand. A gun that needs a fresh press per shot (the shotgun) must be tapped.
 - SWAP (`Q` on a keyboard) appears when more than one thing can be held. USE (`E`) now also picks up a weapon within reach; it shows "PICK UP" and the name (PIPE, PISTOL, SHOTGUN, RIFLE, MEDKIT). USE and SWAP act once per press, not on every frame they are held.
 - The weapon in hand and, for the gun, the ammo are shown next to the health bar, in red for a moment after an empty click. A message ("PICKED UP: PIPE", "+8 AMMO") shows above the health bar for about 1.8 s.
-- A shot calls `Gunfire_Shoot` with the spread the gun had before the shot heated it. Projectiles are moved and tested against the walls and enemies each frame (`ResolveProjectileHits(currentFloorMap, CheckAndHandleEnemyDamage)`), and drawn after everything else in the 3D pass. Hits show the same hit marker as before.
+- A shot calls `Gunfire_Shoot` with the spread the gun had before the shot heated it. Projectiles are moved and tested against the walls and enemies each frame (`ResolveProjectileHits(map, HitAnything)`: the monsters first, then the swarm), and drawn after everything else in the 3D pass. Hits show the same hit marker as before.
 - Noise: a shot is heard by enemies out to the gun's `noise_metres` for its `noise_secs` (pistol 28 m for 1.5 s as before, shotgun 40 m for 2.2 s, rifle 34 m for 1.2 s, which a rifle at full auto keeps renewing).
 - A gun comes with a clip of its own ammo (pistol 12, shotgun 6, rifle 30); what does not fit in the inventory is dropped as a box beside the player.
 - The diagnostics overlay has a `config:` line (see `config.md`).

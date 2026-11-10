@@ -24,6 +24,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `projectiles_headless.c` | patterns, falloff, swept hits, piercing, tracers, `Gunfire_Shoot` | `projectiles.md` |
 | `inventory_headless.c` | items, stacks, the inventory and its touch screen | `inventory.md` |
 | `sim_headless.c` | the input latch, the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
+| `game_sim_headless.c` | the simulation with no window: the event queue, the rules reported as events (flashlight, shots, hits, medkit, pickups, the stair clock, doors, death), the same world at any frame rate and on every run, and a scan that it reaches for no window, clock, sound or screen | `sim.md` |
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |
 | `floor_game_headless.c` | the stair clock in the game: where the console goes, the door lock, the monster calls, the kill, frame rate independence | `floor_run.md` |
 | `net_rel_headless.c` | the reliable-message layer over a path that loses, doubles and reorders: order, once each, wraparound, window, round trip, giving up | `net.md` |

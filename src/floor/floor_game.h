@@ -12,7 +12,9 @@
 
 // The stair clock in the game (floor_run.c has the rules): where the console stands, drawing it, the fixed-step ticking, and
 // doing what the rules ask for (call a monster, play a sound, lock or open the top door, make the floor fall, kill whoever is
-// still on it). main.c calls these; it knows nothing else about the clock.
+// still on it). The simulation (src/sim) calls these; it knows nothing else about the clock. The clock never plays a sound, shows text
+// or touches the renderer: its sounds and messages go out through SimOut_Sound and SimOut_Toast (sim/sim_events.h), and the collapse
+// wave is read back with FloorGame_CollapseWave.
 
 typedef struct { float dt; const FloorMap *map; Vector3 player; bool alive; bool useHeld; int floorNumber; } FloorGameIn;
 typedef struct { bool killPlayer; } FloorGameOut;
@@ -32,6 +34,7 @@ bool FloorGame_ConsolePosition(float *x, float *z);
 void FloorGame_Tick(const FloorGameIn *in, FloorGameOut *out);    // once per simulation step (30 a second): the game's own fixed step
 void FloorGame_Frame(const FloorGameIn *in, FloorGameOut *out);   // or once per frame, when the caller has no steps: it keeps its own accumulator
 void FloorGame_Draw(Vector3 viewer, float time);                  // in the 3D view
+void FloorGame_CollapseWave(float *cx, float *cz, float *radius); // where the collapse has got to (radius < 0: no wave); the caller gives it to DrawFloorMapCollapse
 
 // For the HUD.
 int   FloorGame_Phase(void);              // 0 no clock on this floor, 1 find the console, 2 countdown, 3 collapsing
