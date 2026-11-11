@@ -84,7 +84,7 @@ The picture is blended `alpha` (0 to 1, how far the next step has got) of the wa
 ## For multiplayer (the next step)
 
 1. **N players in `GameSim`.** The simulation has one player: `UpdateEnemiesSystem` takes a single position, `EnemiesAttackPlayer` and the swarm one target. Make the player part an array: nearest-target selection for the monsters and the swarm, a per-player arsenal, inventory, flashlight and health, and per-player events. Keep one-player behaviour identical (the differential method above, or a recorded replay, is how to know).
-2. **Aim in the command.** Yaw and pitch go in the command (`NetCmd` has them); `GameSim` then sets the player's look before the step instead of the host doing it.
+2. **Aim in the command.** Yaw and pitch go in the command (`NetCmd` has them); `GameSim` then sets the player's look before the step instead of the host doing it. **Reload needs a bit too:** `SimCmd` now has a `reload` press, but `NetCmd.buttons` is one byte with all eight bits used (`net.md`, Known limits), so the field has to be widened (and `NET_PROTOCOL_VERSION` bumped) before the simulation goes on the wire.
 3. **Replace `net_move_sim`** (`NetSim_Step`) with `GameSim_Step`, and extend `NetOwnerState` and `NetRemote` (health, weapon, flags, and later monsters, shots, pickups, doors, the swarm) in the snapshots; bump `NET_PROTOCOL_VERSION` when the wire changes.
 4. Make the module-global parts (monsters, shots, pickups, props, the clock) parts of the struct, or accept one simulation per process (one server process per game).
 

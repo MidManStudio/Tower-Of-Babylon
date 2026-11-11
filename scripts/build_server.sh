@@ -11,7 +11,7 @@
 cd "$(dirname "$0")/.." || exit 1
 out="${1:-build}"
 mkdir -p "$out" || exit 1
-common=(src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c
+common=(src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_discovery.c src/net/net_move_sim.c
         src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c)
 cc=${CC:-cc}
 set -e

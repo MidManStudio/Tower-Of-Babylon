@@ -5,7 +5,10 @@
 // A player with no screen: connects to a server, walks a fixed course for a while, says how it went. For trying a server by hand and as the
 // other half of tests/server_smoke.sh. Built only on purpose (scripts/build_server.sh defines TOWER_BOT_MAIN).
 //   ./tower_bot [host] [port] [--seconds 10] [--name steve] [--loss 0] [--quiet]
-// Exit code: 0 it was playing at the end and ran about the right number of ticks without once being put back from scratch; 1 it was not; 2 bad use.
+//   ./tower_bot --find [--wait 5] [--discovery-port 7778] [--probe IP]     look for a game on this network and join the first one that can be joined
+//   ./tower_bot --list [--wait 5] [--discovery-port 7778] [--probe IP]     only list what answers (net/net_discovery.h), then stop
+// --probe asks one address directly, for a host on another subnet or where broadcasts are filtered.
+// Exit code: 0 it was playing at the end and ran about the right number of ticks without once being put back from scratch (with --list: something answered); 1 it was not; 2 bad use; 3 nothing found to join.
 #ifdef TOWER_BOT_MAIN
 
 #define _POSIX_C_SOURCE 200809L
@@ -16,6 +19,7 @@
 #include <time.h>
 
 #include "../net/net_client.h"
+#include "../net/net_discovery.h"
 #include "../net/net_udp.h"
 
 void DrawCube(Vector3 p, float w, float h, float l, Color c) { (void)p; (void)w; (void)h; (void)l; (void)c; }
@@ -26,6 +30,26 @@ static NetClient g_cl;
 static NetUdpHost g_host;
 
 static void SleepMs(double ms) { struct timespec ts; ts.tv_sec = 0; ts.tv_nsec = (long)(ms * 1e6); nanosleep(&ts, NULL); }
+
+// Asks the network for games for up to waitSeconds (or until one that can be joined has answered, with stopAtFirst). Returns how many were heard.
+static int Search(NetDiscClient *cl, unsigned discPort, double waitSeconds, const char *probeIp, int stopAtFirst)
+{
+    if (!NetDiscClient_Open(cl, (uint16_t)discPort)) { fprintf(stderr, "tower_bot: cannot open a UDP socket to search with\n"); return -1; }
+    const double start = NetUdp_NowMs();
+    double nextProbe = start;
+    while (NetUdp_NowMs() - start < waitSeconds * 1000.0) {
+        const double now = NetUdp_NowMs();
+        NetDiscClient_Search(cl, now);
+        if (probeIp && now >= nextProbe) {
+            if (!NetDiscClient_Probe(cl, probeIp, (uint16_t)discPort) && nextProbe == start) fprintf(stderr, "tower_bot: cannot send a question to %s\n", probeIp);
+            nextProbe = now + NET_DISC_INTERVAL_MS;
+        }
+        NetDiscClient_Poll(cl, now);
+        if (stopAtFirst && NetLobbies_FirstJoinable(&cl->lobbies)) break;
+        SleepMs(5.0);
+    }
+    return NetLobbies_Count(&cl->lobbies);
+}
 
 static NetCmd Course(void *user, uint32_t t)                         // walk, sprint, strafe, jump, turning all the while
 {
@@ -40,20 +64,47 @@ static NetCmd Course(void *user, uint32_t t)                         // walk, sp
 
 int main(int argc, char **argv)
 {
-    const char *host = "127.0.0.1", *name = "steve";
-    unsigned port = 7777;
-    double seconds = 10.0, lossPercent = 0.0;
-    int quiet = 0, positional = 0;
+    const char *host = "127.0.0.1", *name = "steve", *probeIp = NULL;
+    unsigned port = 7777, discPort = NET_DISC_PORT;
+    double seconds = 10.0, lossPercent = 0.0, waitSeconds = 5.0;
+    int quiet = 0, positional = 0, find = 0, list = 0;
+    char foundHost[16];
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = atof(argv[++i]);
         else if (!strcmp(argv[i], "--name") && i + 1 < argc) name = argv[++i];
         else if (!strcmp(argv[i], "--loss") && i + 1 < argc) lossPercent = atof(argv[++i]);
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
+        else if (!strcmp(argv[i], "--find")) find = 1;
+        else if (!strcmp(argv[i], "--list")) list = 1;
+        else if (!strcmp(argv[i], "--wait") && i + 1 < argc) waitSeconds = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--discovery-port") && i + 1 < argc) discPort = (unsigned)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--probe") && i + 1 < argc) probeIp = argv[++i];
         else if (argv[i][0] != '-' && positional == 0) { host = argv[i]; ++positional; }
         else if (argv[i][0] != '-' && positional == 1) { port = (unsigned)atoi(argv[i]); ++positional; }
-        else { fprintf(stderr, "usage: %s [host] [port] [--seconds N] [--name steve] [--loss PERCENT] [--quiet]\n", argv[0]); return 2; }
+        else { fprintf(stderr, "usage: %s [host] [port] [--seconds N] [--name steve] [--loss PERCENT] [--quiet]\n       %s --find|--list [--wait N] [--discovery-port N] [--probe IP]\n", argv[0], argv[0]); return 2; }
     }
-    if (port == 0 || port > 65535) { fprintf(stderr, "bad port\n"); return 2; }
+    if (port == 0 || port > 65535 || discPort == 0 || discPort > 65535 || waitSeconds <= 0.0) { fprintf(stderr, "bad port or wait\n"); return 2; }
+    if ((find || list) && positional) { fprintf(stderr, "give a host and port, or --find/--list, not both\n"); return 2; }
+    if (probeIp) { uint32_t pip; if (!NetDisc_ParseIp(probeIp, &pip)) { fprintf(stderr, "--probe wants an address like 192.168.1.5\n"); return 2; } }
+    if (find || list) {
+        static NetDiscClient cl;
+        const int heard = Search(&cl, discPort, waitSeconds, probeIp, find);
+        if (heard < 0) return 2;
+        for (int i = 0; i < heard; ++i) {
+            const NetLobby *l = NetLobbies_Nth(&cl.lobbies, i);
+            char s[16];
+            NetDisc_FormatIp(l->addr, s);
+            printf("  %d. \"%s\" at %s:%u, %d of %d players%s\n", i + 1, l->info.name, s, (unsigned)l->info.port, l->info.players, l->info.maxPlayers, l->compatible ? "" : " (another version of the game)");
+        }
+        if (list) { NetDiscClient_Close(&cl); if (heard == 0) { printf("tower_bot: no game found\n"); return 3; } return 0; }
+        const NetLobby *pick = NetLobbies_FirstJoinable(&cl.lobbies);
+        if (!pick) { printf(heard ? "tower_bot: found %d game%s but none can be joined (full, or another version)\n" : "tower_bot: no game found\n", heard, heard == 1 ? "" : "s"); NetDiscClient_Close(&cl); return 3; }
+        NetDisc_FormatIp(pick->addr, foundHost);
+        host = foundHost;
+        port = pick->info.port;
+        printf("tower_bot: found \"%s\" at %s:%u, joining\n", pick->info.name, host, port);
+        NetDiscClient_Close(&cl);
+    }
     if (lossPercent > 0.0) NetUdp_SetDebug((float)(lossPercent / 100.0), 0.0f);
     NetTransport tp;
     if (!NetUdpHost_Connect(&g_host, host, (uint16_t)port, &tp)) { fprintf(stderr, "tower_bot: cannot reach %s:%u\n", host, port); return 2; }

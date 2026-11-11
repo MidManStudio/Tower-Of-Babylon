@@ -56,7 +56,7 @@ A copy of the mray script is kept in `tools/mray.py`; it lives at `~/mray.py` on
 **Trap:** the commit the apply makes ends in `[skip ci]`, so GitHub starts no push-triggered workflow for it, `tests.yml` included. Run **Tests** by hand after an apply.
 
 ### `.github/workflows/tests.yml`
-**What it does:** `bash tools/run_tests.sh` on a push that touches `main.c`, `src/`, `tests/`, `tools/` or `assets/config/`, and on demand. It installs gcc, numpy and Mesa's software OpenGL ES for the shader test. A clean run prints 30 `PASS` lines (see `docs/testing.md`).
+**What it does:** `bash tools/run_tests.sh` on a push that touches `main.c`, `src/`, `tests/`, `tools/` or `assets/config/`, and on demand. It installs gcc, numpy and Mesa's software OpenGL ES for the shader test. A clean run prints 31 `PASS` lines (see `docs/testing.md`).
 
 ### `.gitignore`, `LICENSE`
 `.gitignore` keeps out the web build mray writes into the project folder (`index.html`, `index.js`, `index.wasm`, `index.data`), `build/` (the Android build's raylib checkout, objects and keystore), compiled test programs and editor files. `LICENSE` is the same MidManStudio notice the Terminal Viscosity repository carries.
