@@ -3,7 +3,7 @@
 // live in docs/input.md, section "tests/input_headless.c"
 // ============================================================================
 // The touch controls and the HUD layout without a screen: the floating stick (quick to respond), the sprint at the rim in any
-// direction, the fixed fire pad that also aims (as a joystick, or as a drag), the look finger, the buttons that exist only when they have something to act on, the tap-only regions, the locked
+// direction, the fixed fire pad that also aims (by dragging, the default, or as a joystick), the look finger, the DIVE button, the buttons that exist only when they have something to act on, the tap-only regions, the locked
 // and walk-only states, and that no two controls sit on top of each other.
 // Inside a macro so mray's build, which compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
@@ -27,6 +27,7 @@ static TcState S;
 static TcOut O;
 static TcContext C;
 static void Reset(void) { Tc_Init(&S); memset(&C, 0, sizeof C); memset(&O, 0, sizeof O); }
+static void ResetJoy(float dt) { Reset(); C.dt = dt; C.aimMode = TC_AIM_JOYSTICK; }      // the pad as a stick, for its own tests
 static void Step(const TcTouch *t, int n) { Tc_Update(&S, t, n, &C, &O); }
 static void Step1(int id, float x, float y) { const TcTouch t = { id, x, y }; Step(&t, 1); }
 static void Step2(int a, float ax, float ay, int b, float bx, float by) { const TcTouch t[2] = { { a, ax, ay }, { b, bx, by } }; Step(t, 2); }
@@ -134,12 +135,42 @@ int main(void)
     Step1(1, 600, 300);
     Check(O.stickActive, "a stick finger that wanders into the right half is still the stick");
 
-    printf("The fire pad: fixed, with a knob, aims like a joystick\n");
+    printf("The fire pad: fixed, and it aims by dragging (the default, the original feel)\n");
+    {
+        const float PR = L->firePad.r;
+        Reset();
+        Check(C.aimMode == TC_AIM_DRAG && TC_DEFAULT_AIM_MODE == TC_AIM_DRAG, "a context that says nothing about it gets the drag, and so does the game's default");
+        Check(Near(L->fireLookGain, 1.0f, 0.0001f), "the fire finger turns the camera one to one with the finger, as before (the look finger has its own, higher gain)");
+        Step1(3, L->firePad.x, L->firePad.y);
+        Check(O.fireHeld && !O.lookActive && O.lookDX == 0.0f && O.lookDY == 0.0f, "a finger on the pad fires and turns nothing on the first frame");
+        Step1(3, L->firePad.x + 14, L->firePad.y - 12);
+        Check(O.fireHeld && Near(O.lookDX, 14 * L->fireLookGain, 0.01f) && Near(O.lookDY, -12 * L->fireLookGain, 0.01f), "moving that finger turns the camera by how far it moved, while it fires");
+        Check(!O.aimActive && O.aimX == 0.0f && O.aimY == 0.0f, "and nothing is a joystick: the disc stays where it is, it does not follow the finger");
+        Step1(3, L->firePad.x + 14, L->firePad.y - 12);
+        Check(O.lookDX == 0.0f && O.fireHeld, "held still it turns nothing (a drag, not a stick: the camera does not keep turning)");
+        Step1(3, 560, 120);
+        Check(O.fireHeld && Near(O.lookDX, (560 - (L->firePad.x + 14)) * L->fireLookGain, 0.01f), "dragged far off the pad it keeps firing and keeps turning");
+        Step(NULL, 0);
+        Check(!O.fireHeld && O.lookDX == 0.0f, "lifted: it stops");
+        Reset();
+        Step1(4, 450, 200);
+        Step1(4, L->firePad.x, L->firePad.y);
+        Check(!O.fireHeld, "a camera finger that slides onto the pad does not fire");
+        Reset();
+        Step1(3, L->firePad.x, L->firePad.y);
+        Step2(3, L->firePad.x, L->firePad.y, 4, L->firePad.x + 5, L->firePad.y + 5);
+        Check(O.fireHeld && O.lookDX == 0.0f, "a second finger on an occupied pad is ignored");
+        Reset(); C.locked = true;
+        Step1(3, L->firePad.x + PR, L->firePad.y);
+        Check(!O.fireHeld && O.lookDX == 0.0f, "locked (a door, or dead): no fire and no turn");
+    }
+
+    printf("The fire pad as a joystick (the other aim mode, for a settings screen)\n");
     {
         const float PR = L->firePad.r;
         const float dt = 1.0f / 60.0f;
         const float tHalf = powf((0.5f - L->aimDeadzone) / (L->aimFullAt - L->aimDeadzone), L->aimCurve);     // the response at half the throw
-        Reset(); C.dt = dt;
+        ResetJoy(dt);
         Step1(3, L->firePad.x, L->firePad.y);
         Check(O.fireHeld && !O.lookActive && O.aimActive, "a finger on the pad fires");
         Check(Near(O.aimKnobX, L->firePad.x, 0.01f) && Near(O.aimKnobY, L->firePad.y, 0.01f) && O.aimX == 0.0f && O.aimY == 0.0f && O.lookDX == 0.0f, "at the centre: the knob is in the middle and nothing turns");
@@ -161,36 +192,25 @@ int main(void)
         Check(O.fireHeld, "dragged far off the pad it keeps firing");
         Step(NULL, 0);
         Check(!O.fireHeld && !O.aimActive && O.lookDX == 0.0f, "lifted: it stops, and the camera with it");
-        Reset();
+        ResetJoy(dt);
         Step1(3, L->firePad.x + 0.9f * PR, L->firePad.y);
         Check(O.aimX > 0.8f, "the pad does not float: a finger landing near its edge is already a hard turn (the centre stays put)");
-        Reset();                                           // no frame time, no turn
+        ResetJoy(0.0f);                                    // no frame time, no turn
         Step1(3, L->firePad.x + 0.8f * PR, L->firePad.y);
         Check(O.fireHeld && O.aimX > 0.0f && O.lookDX == 0.0f, "(with no frame time given nothing turns: the rate needs it)");
-        Reset(); C.dt = dt;
+        ResetJoy(dt);
         Step1(4, 450, 200);
         Step1(4, L->firePad.x, L->firePad.y);
         Check(!O.fireHeld, "a camera finger that slides onto the pad does not fire");
-        Reset(); C.dt = dt;
+        ResetJoy(dt);
         Step1(3, L->firePad.x, L->firePad.y);
         Step2(3, L->firePad.x, L->firePad.y, 4, L->firePad.x + 5, L->firePad.y + 5);
         Check(O.fireHeld && O.lookDX == 0.0f, "a second finger on an occupied pad is ignored");
-        Reset(); C.dt = dt; C.locked = true;
+        ResetJoy(dt); C.locked = true;
         Step1(3, L->firePad.x + PR, L->firePad.y);
         Check(!O.fireHeld && O.aimX == 0.0f && O.lookDX == 0.0f, "locked (a door, or dead): no fire and no turn");
     }
 
-    printf("The fire pad as a drag (the other aim mode)\n");
-    Reset(); C.dt = 1.0f / 60.0f; C.aimMode = TC_AIM_DRAG;
-    Step1(3, L->firePad.x, L->firePad.y);
-    Check(O.fireHeld && O.aimActive && !O.lookActive && O.lookDX == 0.0f, "a finger on the pad fires and turns nothing on the first frame");
-    Step1(3, L->firePad.x + 14, L->firePad.y - 12);
-    Check(O.fireHeld && Near(O.lookDX, 14 * L->lookGain, 0.01f) && Near(O.lookDY, -12 * L->lookGain, 0.01f) && O.aimX == 0.0f, "moving that finger turns the camera by how far it moved, times the gain, while it fires");
-    Check(Near(O.aimKnobX, L->firePad.x + 14, 0.01f) && Near(O.aimKnobY, L->firePad.y - 12, 0.01f), "the knob follows the finger in this mode too");
-    Step1(3, L->firePad.x + 14, L->firePad.y - 12);
-    Check(O.lookDX == 0.0f && O.fireHeld, "held still it turns nothing");
-    Step1(3, 560, 120);
-    Check(O.fireHeld, "dragged far off the pad it keeps firing");
 
     printf("Buttons exist only when they have something to do\n");
     Reset();
@@ -234,30 +254,29 @@ int main(void)
     Step1(10, L->reload.x, L->reload.y);
     Check(!O.reloadPressed, "and none while only walking is allowed");
 
-    printf("The LEAN buttons (near a wall or corner only, held)\n");
-    Reset(); C.leanAvailable = true;
-    Step1(11, L->leanLeft.x, L->leanLeft.y);
-    Check(O.leanLeftHeld && !O.leanRightHeld && !O.lookActive && !O.fireHeld, "a finger on LEAN LEFT holds it, and it is not a look finger");
-    Step1(11, L->leanLeft.x + 6, L->leanLeft.y - 4);
-    Check(O.leanLeftHeld && O.lookDX == 0.0f, "wobbling inside it keeps holding, and does not turn the camera");
-    Step1(11, 560, 120);
-    Check(O.leanLeftHeld, "a finger that slides off it keeps its job until it lifts");
-    Step(NULL, 0);
-    Check(!O.leanLeftHeld, "and lifting lets go: a lean is held, not toggled");
-    Reset(); C.leanAvailable = true;
-    Step1(11, L->leanRight.x, L->leanRight.y);
-    Check(O.leanRightHeld && !O.leanLeftHeld, "LEAN RIGHT is the other one");
-    Step2(11, L->leanRight.x, L->leanRight.y, 12, L->leanLeft.x, L->leanLeft.y);
-    Check(O.leanRightHeld && O.leanLeftHeld, "two thumbs can hold both (the game cancels them out)");
+    printf("The DIVE button (in the air after a sprinting jump, in SLIDE's place)\n");
+    Reset(); C.diveAvailable = true;
+    Step1(11, L->dive.x, L->dive.y);
+    Check(O.divePressed && !O.slidePressed && !O.lookActive && !O.fireHeld && !O.jumpHeld, "a finger on DIVE presses it, on the frame it lands, and it is not a look finger, a slide or a jump");
+    Step1(11, L->dive.x, L->dive.y);
+    Check(!O.divePressed, "and only on that frame (a tap, not a hold)");
     Reset();
-    Step1(11, L->leanLeft.x, L->leanLeft.y);
-    Check(!O.leanLeftHeld && O.lookActive, "no buttons away from a wall: the touch is a look finger, and the camera area is whole");
-    Reset(); C.leanAvailable = true; C.walkOnly = true;
-    Step1(11, L->leanLeft.x, L->leanLeft.y);
-    Check(!O.leanLeftHeld, "none while only walking is allowed");
-    Reset(); C.leanAvailable = true; C.locked = true;
-    Step1(11, L->leanLeft.x, L->leanLeft.y);
-    Check(!O.leanLeftHeld && !O.leanRightHeld, "nor while locked (a door, or dead)");
+    Step1(11, L->dive.x, L->dive.y);
+    Check(!O.divePressed && O.lookActive, "no DIVE button on the ground: the touch is a look finger and the area is whole");
+    Reset(); C.diveAvailable = true; C.slideAvailable = true;
+    Step1(11, L->dive.x, L->dive.y);
+    Check(O.divePressed && !O.slidePressed, "(the two share a spot and are never up together; if they were, the dive wins)");
+    Reset(); C.diveAvailable = true; C.walkOnly = true;
+    Step1(11, L->dive.x, L->dive.y);
+    Check(!O.divePressed, "none while only walking is allowed");
+    Reset(); C.diveAvailable = true; C.locked = true;
+    Step1(11, L->dive.x, L->dive.y);
+    Check(!O.divePressed, "nor while locked (a door, or dead)");
+    Reset(); C.diveAvailable = true;
+    Step1(1, 200, 300); Step1(1, 200, 300 - R);
+    Step2(1, 200, 300 - R, 11, L->dive.x, L->dive.y);
+    Check(O.divePressed && O.stickActive && Near(O.moveY, -1.0f, 0.01f), "the stick finger stays on the stick through the tap: the dive reads the stick as it is then");
+    Check(Near(L->dive.x, L->slide.x, 0.001f) && Near(L->dive.y, L->slide.y, 0.001f) && Near(L->dive.r, L->slide.r, 0.001f), "DIVE sits where SLIDE does");
 
     printf("Tap-only regions\n");
     Reset(); C.blocked[0] = HudLayout_StatsButton() ; C.blockedCount = 1;
@@ -309,8 +328,8 @@ int main(void)
     printf("Layout\n");
     {
         const UiRect inv = { 698, 8, 92, 36 };             // the INV button (src/inventory/inventory_ui.c), top right
-        const UiCircle round[] = { L->jump, L->use, L->swap, L->light, L->slide, L->reload, L->firePad, L->leanLeft, L->leanRight };
-        const char *rnames[] = { "jump", "use", "swap", "light", "slide", "reload", "fire pad", "lean left", "lean right" };
+        const UiCircle round[] = { L->jump, L->use, L->swap, L->light, L->slide, L->reload, L->firePad };    // (DIVE is in SLIDE's place on purpose)
+        const char *rnames[] = { "jump", "use", "swap", "light", "slide", "reload", "fire pad" };
         const int nr = (int)(sizeof round / sizeof round[0]);
         const UiRect flat[] = { inv, HudLayout_StatsButton() };
         const char *fnames[] = { "inv", "stats" };
@@ -324,7 +343,7 @@ int main(void)
         Check(outside == 0, "every control is inside the 800 x 450 screen");
         Check(overlaps == 0, "no two controls overlap (each is a place a thumb can land)");
         Check(UiRect_Overlaps(HudLayout_StatsButton(), L->stickZone) == 0, "the STATS button is outside the stick zone");
-        Check(L->firePad.r >= 40.0f && L->jump.r >= 30.0f && L->use.r >= 30.0f && L->slide.r >= 30.0f && L->reload.r >= 28.0f && L->leanLeft.r >= 26.0f && L->leanRight.r >= 26.0f && L->swap.r >= 24.0f && L->light.r >= 24.0f, "the controls are thumb-sized (a 60 px disc is about 9 mm on the phone)");
+        Check(L->firePad.r >= 40.0f && L->jump.r >= 30.0f && L->use.r >= 30.0f && L->slide.r >= 30.0f && L->reload.r >= 28.0f && L->dive.r >= 30.0f && L->swap.r >= 24.0f && L->light.r >= 24.0f, "the controls are thumb-sized (a 60 px disc is about 9 mm on the phone)");
         Check(L->stickMinX - R >= 0.0f && L->stickMaxX + R <= 400.0f + 0.01f + 50.0f, "the stick's range keeps its ring on screen (and mostly in the left half)");
         const float iconTop = L->stickMinY - R - L->sprintIconGap - 2.0f * L->sprintIconRadius;
         Check(iconTop >= 0.0f && L->stickMaxY + R <= TC_SCREEN_H + 0.01f, "with room above it for the sprint icon and below for the ring");

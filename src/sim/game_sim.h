@@ -76,8 +76,8 @@ void GameSim_Step(GameSim *s, SimCmd cmd);
 
 // What a shot fired now would scatter by, in degrees (the held gun's spread, narrowed by aiming down the sights).
 float GameSim_SpreadDeg(const GameSim *s);
-// Whether the LEAN buttons exist: a gun is in hand, a wall or corner is close and the player is on foot.
-bool GameSim_LeanButtonsShown(const GameSim *s);
+// Whether the DIVE button exists: in the air after a sprinting jump, and not yet diving (it takes the SLIDE button's place).
+bool GameSim_DiveButtonShown(const GameSim *s);
 
 // What the host's UI can do between steps: they take effect at once, not at the next step.
 void GameSim_DropSlot(GameSim *s, int slot);
@@ -89,7 +89,7 @@ void GameSim_TorchFrame(GameSim *s, float dt);
 
 // Which door, pickup or console is within reach now (-1 for none).
 void GameSim_FindNear(const GameSim *s, int *nearDoor, int *nearPickup, bool *nearConsole);
-bool GameSim_SlideButtonShown(const GameSim *s);
+bool GameSim_SlideButtonShown(const GameSim *s);      // a forward sprint, or a slide in progress
 void GameSim_FlatForward(const GameSim *s, float *fx, float *fz);   // forward on the floor plane, from the camera
 
 bool GameSim_PopEvent(GameSim *s, SimEvent *out);

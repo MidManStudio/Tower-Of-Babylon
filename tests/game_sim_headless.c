@@ -382,58 +382,131 @@ int main(void)
         sim.player.health.isAlive = true;
     }
 
-    printf("\n-- leaning from a wall or a corner\n");
+    // An open stretch of the floor to run in: the first spot with floor all round it, and a 13 by 13 tile square made level round it.
+    int openX = -1, openZ = -1;
+
+    printf("\n-- leaning at a corner (automatic)\n");
     {
         Boot(1);
         LoadoutGuns();                                                      // a gun in hand: leaning is for guns
         Idle(12);
         God();
-        // A floor tile with a wall on its west side, and a floor tile with open floor all round it.
-        int wx = -1, wz = -1, ox = -1, oz = -1;
-        for (int z = 2; z < MAP_HEIGHT - 2; ++z) for (int x = 2; x < MAP_WIDTH - 2; ++x) {
-            if (wx < 0 && sim.map->grid[z][x].type == TILE_FLOOR && sim.map->grid[z][x - 1].type == TILE_WALL
-                && sim.map->grid[z][x + 1].type == TILE_FLOOR && sim.map->grid[z][x + 2].type == TILE_FLOOR) { wx = x; wz = z; }
+        for (int z = 8; z < MAP_HEIGHT - 8 && openX < 0; ++z) for (int x = 8; x < MAP_WIDTH - 8 && openX < 0; ++x) {
             int open = 1;
             for (int dz = -2; dz <= 2 && open; ++dz) for (int dx = -2; dx <= 2; ++dx)
                 if (sim.map->grid[z + dz][x + dx].type != TILE_FLOOR) { open = 0; break; }
-            if (ox < 0 && open) { ox = x; oz = z; }
+            if (open) { openX = x; openZ = z; }
         }
-        Check(wx >= 0 && ox >= 0, "the floor has a spot beside a wall and a spot in the open (the test's own set-up)");
-        if (wx >= 0 && ox >= 0) {
-            SimCmd lean = None(); lean.lean = -1;                           // yaw 0 looks along +z and right is -x: the wall is on the right, so lean left is away from it
-            GoTo((Vector3){ ox * TILE_SIZE, 0.0f, oz * TILE_SIZE });
-            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
-            Check(!sim.player.leanNearWall && sim.player.leanBlend == 0.0f && !GameSim_LeanButtonsShown(&sim), "in the open the buttons are not there and holding lean does nothing");
-
-            GoTo((Vector3){ wx * TILE_SIZE - 0.5f, 0.0f, wz * TILE_SIZE });
-            Idle(2);
-            Check(sim.player.leanNearWall && GameSim_LeanButtonsShown(&sim), "half a metre from a wall they are");
-            const float x0 = sim.player.camera.position.x;
-            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
-            Check(sim.player.leanBlend == -1.0f && sim.player.camera.position.x > x0 + PLAYER_LEAN_SHIFT * 0.9f, "holding lean tips the eye away from the wall");
-            Check(sim.prevLean != 0.0f || sim.player.leanBlend != 0.0f, "(and the sim keeps the previous blend)");
+        Check(openX >= 0, "the floor has a spot with open floor all round it (the test's own set-up)");
+        if (openX >= 0) {
+            for (int dz = -6; dz <= 6; ++dz) for (int dx = -6; dx <= 6; ++dx) sim.map->grid[openZ + dz][openX + dx].type = TILE_FLOOR;
+            // A slab of wall three tiles long east of the spot: its face is at x = 2 * openX + 1 and it ends at z = 2 * openZ + 1, with open floor past the end.
+            for (int dz = -2; dz <= 0; ++dz) sim.map->grid[openZ + dz][openX + 1].type = TILE_WALL;
+            const float cx = (float)openX * TILE_SIZE - 0.2f, cz = (float)openZ * TILE_SIZE + 0.8f;     // 1.2 m from the face, 0.2 m short of the slab's end
+            GoTo((Vector3){ cx, 0.0f, cz });
+            sim.player.yaw = 1.5708f;                                       // facing +x, the slab; right is +z, toward the opening
+            for (int i = 0; i < 3; ++i) { God(); Stp(None()); }
+            for (int i = 0; i < 1; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanDir == 1 && sim.player.leanBlend > 0.0f && sim.player.leanBlend < 1.0f, "a gun in hand at the corner: after a moment it leans toward the opening, with no button, easing in");
+            Check(sim.prevLean > 0.0f && sim.prevLean < sim.player.leanBlend, "(and the sim keeps the previous blend for the picture to blend from)");
             for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
-            Check(sim.player.leanBlend == 0.0f, "letting go brings it back: a lean is held, not toggled");
+            Check(sim.player.leanBlend == 1.0f && Near(sim.player.camera.position.z, cz + PLAYER_LEAN_SHIFT, 0.02f) && Near(sim.player.camera.position.x, cx, 0.02f), "and it goes to full: the eye is a lean to the right of the body");
 
-            // With the fists or the pipe in hand there is no leaning.
+            // The gun decides.
             Arsenal_Equip(&sim.arsenal, WEAPON_HANDS);
-            Idle(2);
-            Check(sim.player.leanNearWall && !GameSim_LeanButtonsShown(&sim), "with the fists in hand the buttons are not there, though the wall is");
-            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
-            Check(sim.player.leanBlend == 0.0f, "and holding lean does nothing");
+            for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanBlend == 0.0f && sim.player.leanDir == 0, "put the gun away and the lean lets go, with the corner still there");
             Arsenal_Equip(&sim.arsenal, WEAPON_PISTOL);
             Idle(12);
-            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
-            Check(sim.player.leanBlend == -1.0f, "a gun back in hand: it leans");
-            Arsenal_Equip(&sim.arsenal, WEAPON_HANDS);
-            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
-            Check(sim.player.leanBlend == 0.0f, "put the gun away while leaning and the lean lets go, button still held");
-            Arsenal_Equip(&sim.arsenal, WEAPON_PISTOL);
-            Idle(12);
-            sim.invOpen = true;
-            for (int i = 0; i < 6; ++i) Stp(lean);
-            Check(sim.player.leanBlend == 0.0f, "with the inventory open it does not lean");
-            sim.invOpen = false;
+            for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanBlend == 1.0f, "a gun back in hand: it leans again");
+            sim.player.yaw = 0.0f;                                          // turn to face along the slab
+            for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanBlend == 0.0f, "turn away from the corner and it lets go");
+
+            // A flat wall, and the open.
+            GoTo((Vector3){ cx, 0.0f, (float)openZ * TILE_SIZE - 3.0f });
+            sim.player.yaw = 1.5708f;
+            for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanBlend == 0.0f, "facing the middle of the slab (a flat wall) there is no lean");
+            GoTo((Vector3){ (float)openX * TILE_SIZE - 5.0f, 0.0f, cz });
+            sim.player.yaw = 1.5708f;
+            for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanBlend == 0.0f, "and far from the wall there is none either");
+        }
+    }
+
+    printf("\n-- a slide goes forward only, and the dive\n");
+    {
+        Boot(1);
+        LoadoutGuns();
+        Idle(12);
+        God();
+        Check(openX >= 0, "(the test's own set-up from above)");
+        if (openX >= 0) {
+            for (int dz = -6; dz <= 6; ++dz) for (int dx = -6; dx <= 6; ++dx) sim.map->grid[openZ + dz][openX + dx].type = TILE_FLOOR;
+            const Vector3 start = { (float)openX * TILE_SIZE, 0.0f, (float)openZ * TILE_SIZE - 6.0f };
+            SimCmd fwd = None(); fwd.move = (Vector2){ 0.0f, -1.0f }; fwd.sprint = true;
+            SimCmd side = None(); side.move = (Vector2){ 1.0f, 0.0f }; side.sprint = true;
+            SimCmd back = None(); back.move = (Vector2){ 0.0f, 1.0f }; back.sprint = true;
+
+            GoTo(start);
+            for (int i = 0; i < 20; ++i) { God(); Stp(fwd); }
+            Check(sim.player.sprinting && GameSim_SlideButtonShown(&sim) && !GameSim_DiveButtonShown(&sim), "running forward: the SLIDE button is there, and no DIVE on the ground");
+            SimCmd sl = fwd; sl.slide = true;
+            Stp(sl);
+            Check(sim.player.sliding, "and a slide starts");
+            GoTo(start);
+            for (int i = 0; i < 20; ++i) { God(); Stp(side); }
+            Check(sim.player.sprinting && !GameSim_SlideButtonShown(&sim), "running sideways: no SLIDE button");
+            const float sb = sim.player.stamina;
+            SimCmd ss = side; ss.slide = true;
+            Stp(ss);
+            Check(!sim.player.sliding && sim.player.stamina >= sb - 1.0f, "and a slide asked for anyway does nothing and costs nothing");
+            GoTo(start);
+            for (int i = 0; i < 20; ++i) { God(); Stp(back); }
+            Check(sim.player.sprinting && !GameSim_SlideButtonShown(&sim), "backwards is the same");
+
+            // Run, jump, dive.
+            GoTo(start);
+            for (int i = 0; i < 24; ++i) { God(); Stp(fwd); }
+            SimCmd jmp = fwd; jmp.jump = true;
+            Stp(jmp);
+            Stp(fwd); Stp(fwd);
+            Check(!sim.player.isGrounded && GameSim_DiveButtonShown(&sim) && !GameSim_SlideButtonShown(&sim), "in the air after a sprinting jump the DIVE button is there (in the slide's place)");
+            TallyClear();
+            const float before = sim.player.stamina;
+            SimCmd dv = fwd; dv.dive = true; dv.move = (Vector2){ 1.0f, 0.0f }; dv.fireHeld = true; dv.fire = true;     // the stick to the right, and the thumb on the fire pad
+            Stp(dv);
+            Check(sim.player.diving && !GameSim_DiveButtonShown(&sim) && Near(before - sim.player.stamina, STAMINA_DIVE_COST, 1.0f), "the tap dives, and costs the stamina");
+            for (int i = 0; i < 4; ++i) { God(); Stp(dv); }
+            Check(sim.player.moveVel.x < -4.0f && fabsf(sim.player.moveVel.z) < 0.5f, "to the way the stick was pushed at the tap (right is -x here), even though the stick has changed since");
+            SimCmd later = dv; later.dive = false; later.move = (Vector2){ 0.0f, 1.0f };
+            for (int i = 0; i < 3; ++i) { God(); Stp(later); }
+            Check(sim.player.moveVel.x < -4.0f, "and the stick does not steer it");
+            Check(sim.player.wantAim && sim.player.aimBlend > 0.3f, "holding fire during the dive aims down the sights (you can ADS in a dive)");
+            for (int i = 0; i < 40; ++i) { God(); Stp(None()); }
+            Check(!sim.player.diving && !sim.player.rolling, "after the roll it is over");
+
+            // A walking jump has none, and too tired says so.
+            GoTo(start);
+            SimCmd walk = None(); walk.move = (Vector2){ 0.0f, -1.0f };
+            for (int i = 0; i < 20; ++i) { God(); Stp(walk); }
+            SimCmd wj = walk; wj.jump = true;
+            Stp(wj); Stp(walk); Stp(walk);
+            Check(!sim.player.isGrounded && !GameSim_DiveButtonShown(&sim), "after a walking jump there is no DIVE button");
+            GoTo(start);
+            for (int i = 0; i < 24; ++i) { God(); Stp(fwd); }
+            Stp(jmp); Stp(fwd); Stp(fwd);
+            sim.player.stamina = STAMINA_DIVE_COST - 5.0f;
+            TallyClear();
+            SimCmd dv2 = fwd; dv2.dive = true;
+            Stp(dv2);
+            Check(!sim.player.diving && Said("TOO TIRED TO DIVE") && GameSim_DiveButtonShown(&sim), "with too little stamina it says TOO TIRED TO DIVE, and the button stays (drawn orange)");
+            sim.player.health.isAlive = false;
+            Stp(dv2);
+            Check(!sim.player.diving, "a dead player does not dive");
+            sim.player.health.isAlive = true;
         }
     }
 

@@ -18,15 +18,14 @@ static const TcLayout g_layout = {
     .sprintOn = 0.92f, .sprintOff = 0.80f,
     .sprintIconGap = 23.0f, .sprintIconRadius = 22.0f, .idleX = 128.0f, .idleY = 326.0f,
     .firePad = { 724.0f, 315.0f, 71.0f }, .fireInnerRadius = 42.0f,
-    .lookGain = 2.0f, .aimDeadzone = 0.10f, .aimFullAt = 0.85f, .aimCurve = 1.6f, .aimRatePx = 720.0f,
+    .lookGain = 2.0f, .fireLookGain = 1.0f, .aimDeadzone = 0.10f, .aimFullAt = 0.85f, .aimCurve = 1.6f, .aimRatePx = 720.0f,
     .jump = { 760.0f, 175.0f, 37.0f },
     .use = { 639.0f, 172.0f, 46.0f },
     .swap = { 632.0f, 258.0f, 30.0f },
     .light = { 700.0f, 88.0f, 32.0f },
     .slide = { 606.0f, 357.0f, 37.0f },
     .reload = { 668.0f, 408.0f, 30.0f },       // not in the sketch: the one free spot big enough, clear of SLIDE and the fire pad by 13 and 7 px
-    .leanLeft  = { 470.0f, 330.0f, 28.0f },    // not in the sketch either: in the middle of the screen, in the camera finger's area, a thumb's reach from the pad. They exist only near a wall
-    .leanRight = { 536.0f, 330.0f, 28.0f },
+    .dive = { 606.0f, 357.0f, 37.0f },         // where SLIDE is: they are never there together (a slide needs a forward sprint on the ground, a dive the air after a sprinting jump)
 };
 
 const TcLayout *Tc_Layout(void) { return &g_layout; }
@@ -63,10 +62,9 @@ static int AssignRole(TcState *s, float x, float y, const TcContext *ctx)
     if (ctx->useAvailable && UiCircle_Contains(L->use, x, y)) return TC_ROLE_USE;
     if (ctx->swapAvailable && UiCircle_Contains(L->swap, x, y)) return TC_ROLE_SWAP;
     if (ctx->lightAvailable && UiCircle_Contains(L->light, x, y)) return TC_ROLE_LIGHT;
+    if (ctx->diveAvailable && UiCircle_Contains(L->dive, x, y)) return TC_ROLE_DIVE;
     if (ctx->slideAvailable && UiCircle_Contains(L->slide, x, y)) return TC_ROLE_SLIDE;
     if (ctx->reloadAvailable && UiCircle_Contains(L->reload, x, y)) return TC_ROLE_RELOAD;
-    if (ctx->leanAvailable && UiCircle_Contains(L->leanLeft, x, y)) return TC_ROLE_LEAN_L;
-    if (ctx->leanAvailable && UiCircle_Contains(L->leanRight, x, y)) return TC_ROLE_LEAN_R;
     if (UiCircle_Contains(L->jump, x, y)) return TC_ROLE_JUMP;
     if (UiCircle_Contains(L->firePad, x, y)) return HasRole(s, TC_ROLE_FIRE) ? TC_ROLE_IGNORE : TC_ROLE_FIRE;
     return HasRole(s, TC_ROLE_LOOK) ? TC_ROLE_IGNORE : TC_ROLE_LOOK;                          // a free spot on the right: the camera finger
@@ -136,11 +134,11 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
                 const float dx = px - L->firePad.x, dy = py - L->firePad.y, d = sqrtf(dx * dx + dy * dy);
                 const float fx = d > 0.001f ? dx / d : 0.0f, fy = d > 0.001f ? dy / d : 0.0f;
                 const float shown = d < L->firePad.r ? d : L->firePad.r;
-                out->aimActive = true;                                           // the knob follows the finger in either mode
-                out->aimKnobX = L->firePad.x + fx * shown; out->aimKnobY = L->firePad.y + fy * shown;
-                if (ctx->aimMode == TC_AIM_DRAG) {                               // turn by how far the finger moved, like the look finger
-                    out->lookDX += (px - sl->lastX) * L->lookGain; out->lookDY += (py - sl->lastY) * L->lookGain;
-                } else {                                                         // turn at a rate set by how far the knob is from the centre
+                if (ctx->aimMode == TC_AIM_DRAG) {                               // turn by how far the finger moved, one to one: the disc stays where it is
+                    out->lookDX += (px - sl->lastX) * L->fireLookGain; out->lookDY += (py - sl->lastY) * L->fireLookGain;
+                } else {                                                         // a joystick: the knob follows the finger, and the camera turns at a rate set by how far out it is
+                    out->aimActive = true;
+                    out->aimKnobX = L->firePad.x + fx * shown; out->aimKnobY = L->firePad.y + fy * shown;
                     const float m = Clampf(d / L->firePad.r, 0.0f, 1.0f);
                     if (m > L->aimDeadzone) {
                         const float t = powf(Clampf((m - L->aimDeadzone) / (L->aimFullAt - L->aimDeadzone), 0.0f, 1.0f), L->aimCurve);
@@ -156,8 +154,7 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
             case TC_ROLE_LIGHT: if (sl->fresh) out->lightPressed = true; break;
             case TC_ROLE_SLIDE: if (sl->fresh) out->slidePressed = true; break;
             case TC_ROLE_RELOAD: if (sl->fresh) out->reloadPressed = true; break;
-            case TC_ROLE_LEAN_L: out->leanLeftHeld = true; break;
-            case TC_ROLE_LEAN_R: out->leanRightHeld = true; break;
+            case TC_ROLE_DIVE: if (sl->fresh) out->divePressed = true; break;
             default: break;
         }
         sl->lastX = px; sl->lastY = py; sl->fresh = false;
@@ -177,11 +174,11 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
     // 6. What the game allows right now.
     if (ctx->locked) {
         out->moveX = out->moveY = out->lookDX = out->lookDY = out->aimX = out->aimY = 0.0f;
-        out->sprint = out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = out->reloadPressed = false;
-        out->leanLeftHeld = out->leanRightHeld = false;
+        out->sprint = out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = out->reloadPressed = out->divePressed = false;
+        out->aimActive = false;
     } else if (ctx->walkOnly) {
         out->lookDX = out->lookDY = out->aimX = out->aimY = 0.0f;
-        out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = out->reloadPressed = false;
-        out->leanLeftHeld = out->leanRightHeld = false;
+        out->fireHeld = out->jumpHeld = out->useHeld = out->swapHeld = out->lightPressed = out->slidePressed = out->reloadPressed = out->divePressed = false;
+        out->aimActive = false;
     }
 }

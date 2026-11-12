@@ -43,6 +43,13 @@ static void OpenFloor(int wallColumn)
         }
 }
 
+// A slab of wall, x 23 to 25 and z 19 to 39 (tile column 12, rows 10 to 19), on open floor: the corner the leaning tests stand beside.
+static void CornerFloor(void)
+{
+    OpenFloor(-1);
+    for (int tz = 10; tz <= 19; ++tz) g_floor.grid[tz][12].type = TILE_WALL;
+}
+
 static PlayerController Place(float x, float z, float yaw)
 {
     PlayerController p;
@@ -461,19 +468,28 @@ int main(void)
         Check(fabsf(distFor[0] - distFor[2]) < 0.6f && fabsf(distFor[1] - distFor[2]) < 0.4f, "the distance a slide covers hardly depends on the frame rate");
     }
 
-    printf("Sliding in any direction\n");
+    printf("A slide goes forward only (left, right and back are for the dive)\n");
     {
         OpenFloor(-1);
         PlayerController f = Place(20.0f, 40.0f, 0.0f);
         Run(&f, FWD, true, 0.7f);
+        Check(PlayerSprintingForward(&f) && PlayerTrySlide(&f), "a forward sprint can slide");
+        PlayerController dg = Place(20.0f, 40.0f, 0.0f);
+        Run(&dg, (Vector2){ 0.707f, -0.707f }, true, 0.7f);
+        Check(PlayerSprintingForward(&dg) && PlayerTrySlide(&dg), "so can one forward and to the side (within 45 degrees of ahead)");
+        Check(dg.slideSpeed0 < f.slideSpeed0, "and the diagonal one starts a little slower, as that sprint was");
         PlayerController sd = Place(20.0f, 40.0f, 0.0f);
         Run(&sd, (Vector2){ 1.0f, 0.0f }, true, 0.7f);
+        Check(sd.sprinting && !PlayerSprintingForward(&sd) && !PlayerTrySlide(&sd) && !sd.sliding && sd.stamina < PLAYER_STAMINA_MAX, "a sideways sprint cannot slide (and nothing is taken for the refusal)");
         PlayerController bk = Place(20.0f, 40.0f, 0.0f);
         Run(&bk, (Vector2){ 0.0f, 1.0f }, true, 0.7f);
-        Check(PlayerTrySlide(&f) && PlayerTrySlide(&sd) && PlayerTrySlide(&bk), "a slide starts from a sideways or a backwards sprint too");
-        Check(sd.slideSpeed0 < f.slideSpeed0 && bk.slideSpeed0 < sd.slideSpeed0, "and a sideways one starts slower than a forward one, a backwards one slower still");
-        Run(&sd, (Vector2){ 1.0f, 0.0f }, true, DT);
-        Check(sd.moveVel.x < -1.0f && fabsf(sd.moveVel.z) < 0.5f, "the sideways slide goes sideways (right is -x when facing +z)");
+        Check(bk.sprinting && !PlayerTrySlide(&bk) && !bk.sliding, "nor a backwards one");
+        PlayerController hd = Place(20.0f, 40.0f, 0.0f);
+        Run(&hd, (Vector2){ 1.0f, -0.5f }, true, 0.7f);
+        Check(!PlayerTrySlide(&hd), "nor one that is more sideways than forward");
+        const float st = sd.stamina;
+        PlayerTrySlide(&sd);
+        Check(sd.stamina == st, "a refused slide costs nothing");
     }
 
     printf("Aiming down sights\n");
@@ -543,81 +559,262 @@ int main(void)
         Check(dead.aimBlend == 0.0f, "a dead player does not aim");
     }
 
-    printf("Leaning, near walls and corners only\n");
+    printf("Leaning: automatic, at the corner of a wall, toward the opening\n");
+    {
+        // A slab of wall, x 23 to 25 and z 19 to 39, with open floor on both ends of it. A player at x 21.8 facing +x (yaw 90 degrees) has the
+        // slab's face 1.2 m ahead; right is +z. Near z = 39 the eye, leaned right, is past the slab's end and sees far down the opening.
+        CornerFloor();
+        const float YAW_E = 1.5708f;
+        PlayerController c = Place(21.8f, 38.8f, YAW_E);
+        c.leanAllowed = true;
+        Run(&c, (Vector2){ 0, 0 }, false, DT);
+        Check(c.leanDir == 0 && c.leanBlend == 0.0f, "the first step at the corner does nothing: a lean waits a moment (PLAYER_LEAN_DWELL), so walking past is not a peek");
+        Run(&c, (Vector2){ 0, 0 }, false, PLAYER_LEAN_DWELL + 0.05f);
+        Check(c.leanDir == 1 && c.leanBlend > 0.0f, "a moment later the player leans toward the opening, which is on the right, with no button");
+        const float y0 = Place(21.8f, 38.8f, YAW_E).camera.position.y;
+        Run(&c, (Vector2){ 0, 0 }, false, 0.4f);
+        Check(c.leanBlend == 1.0f, "and it goes to full");
+        Check(fabsf(c.camera.position.z - (38.8f + PLAYER_LEAN_SHIFT)) < 0.01f && fabsf(c.camera.position.x - 21.8f) < 0.01f, "the eye moves sideways toward the opening by the lean distance, and not forward or back");
+        Check(c.camera.position.y < y0 - PLAYER_LEAN_DIP * 0.9f, "and dips a little");
+        Check(fabsf(c.position.z - 38.8f) < 1e-4f && fabsf(c.position.x - 21.8f) < 1e-4f, "the body does not move");
+        Check(c.camera.up.z > 0.1f && fabsf(c.camera.up.y) > 0.9f, "the view tilts toward the lean (the top of the view leans over to the right)");
+        Check(c.leanRoom[1] >= PLAYER_LEAN_SHIFT - 1e-4f && c.camera.position.z - 38.8f <= c.leanRoom[1] + 1e-4f, "the eye was within the room it had");
+
+        PlayerController l = Place(21.8f, 19.2f, YAW_E);      // the slab's other end: the opening is on the left
+        l.leanAllowed = true;
+        Run(&l, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(l.leanDir == -1 && l.leanBlend == -1.0f && l.camera.position.z < 19.2f - PLAYER_LEAN_SHIFT * 0.9f && l.camera.up.z < -0.1f, "at the other end the opening is on the left and the lean goes left");
+
+        PlayerController fist = Place(21.8f, 38.8f, YAW_E);   // no gun in hand: the rules leave leanAllowed off
+        Run(&fist, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(fist.leanDir == 0 && fist.leanBlend == 0.0f && fist.camera.up.y == 1.0f, "with no gun in hand there is no lean");
+
+        PlayerController flat = Place(21.8f, 30.0f, YAW_E);   // the middle of the slab: a flat wall
+        flat.leanAllowed = true;
+        Run(&flat, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(flat.leanDir == 0 && flat.leanBlend == 0.0f, "facing a flat wall nothing is revealed by leaning, so there is no lean");
+
+        PlayerController away = Place(15.0f, 38.8f, YAW_E);   // the same corner from 8 m away
+        away.leanAllowed = true;
+        Run(&away, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(away.leanDir == 0 && away.leanBlend == 0.0f, "from far away, not close to the wall, there is no lean");
+
+        PlayerController along = Place(21.8f, 38.8f, 0.0f);   // facing along the wall (+z), nothing ahead
+        along.leanAllowed = true;
+        Run(&along, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(along.leanDir == 0, "looking along the wall, with nothing close ahead, there is no lean");
+
+        // It lets go when the opening is gone, or the player turns away.
+        Run(&c, (Vector2){ 0, 0 }, false, 0.1f);
+        c.position.z = 36.0f;                                 // back along the slab: the leaned eye no longer clears its end
+        Run(&c, (Vector2){ 0, 0 }, false, 0.4f);
+        Check(c.leanDir == 0 && c.leanBlend == 0.0f && c.camera.up.y == 1.0f, "moving along the wall until the opening is out of reach lets the lean go, and the view comes upright");
+        c.position.z = 38.8f;
+        Run(&c, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(c.leanDir == 1 && c.leanBlend == 1.0f, "and back at the corner it comes again");
+        c.yaw = 0.0f;
+        Run(&c, (Vector2){ 0, 0 }, false, 0.4f);
+        Check(c.leanDir == 0 && c.leanBlend == 0.0f, "turning to face along the wall lets it go");
+
+        // Hysteresis: a lean that has started is kept while its opening is still worth seeing (the middle of the band between ON and OFF).
+        // (The sight lines are straight, so the opening grows or goes in steps of the leaned eye's position: here a short move that keeps it.)
+        PlayerController h = Place(21.8f, 38.8f, YAW_E);
+        h.leanAllowed = true;
+        Run(&h, (Vector2){ 0, 0 }, false, 0.5f);
+        h.position.x = 21.8f - 0.4f;                           // back a little: the wall is 1.6 m ahead, further than it takes to start (1.5) and nearer than it takes to let go (2.0)
+        Run(&h, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(h.leanDir == 1 && h.leanBlend == 1.0f, "a lean that has started is held a little beyond the distance it took to start");
+        PlayerController h2 = Place(21.8f - 0.4f, 38.8f, YAW_E);
+        h2.leanAllowed = true;
+        Run(&h2, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(h2.leanDir == 0, "but one that has not started does not start from there");
+
+        // No room, no lean: a second wall piece beside the player leaves the leaned eye nowhere to go.
+        g_floor.grid[20][11].type = TILE_WALL;                // x 21 to 23, z 39 to 41: right beside the opening
+        PlayerController nr = Place(21.8f, 38.8f, YAW_E);
+        nr.leanAllowed = true;
+        Run(&nr, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(nr.leanDir == 0 && nr.leanBlend == 0.0f, "when a wall right beside the player leaves the eye no room to lean, it does not");
+        CornerFloor();
+
+        // The eye is never in a wall, even from right up against one.
+        PlayerController up = Place(21.8f, 38.8f, YAW_E);
+        up.leanAllowed = true;
+        Run(&up, (Vector2){ 0, 0 }, false, 0.6f);
+        {
+            float worst = 99.0f;
+            for (int k = 0; k < 20; ++k) {
+                const float ex = up.camera.position.x, ez = up.camera.position.z;
+                const float h2d = TILE_SIZE * 0.5f; float best = 99.0f;
+                for (int tz = 0; tz < MAP_HEIGHT; ++tz) for (int tx = 0; tx < MAP_WIDTH; ++tx) {
+                    if (g_floor.grid[tz][tx].type != TILE_WALL) continue;
+                    const float cx = (float)tx * TILE_SIZE, cz = (float)tz * TILE_SIZE;
+                    if (fabsf(cx - ex) > 3.0f || fabsf(cz - ez) > 3.0f) continue;
+                    const float px = fminf(fmaxf(ex, cx - h2d), cx + h2d), pz = fminf(fmaxf(ez, cz - h2d), cz + h2d);
+                    const float d = sqrtf((ex - px) * (ex - px) + (ez - pz) * (ez - pz));
+                    if (d < best) best = d;
+                }
+                if (best < worst) worst = best;
+                Run(&up, (Vector2){ 0, 0 }, false, DT);
+            }
+            Check(worst >= PLAYER_LEAN_CAM_CLEAR - 0.011f, "the leaned eye stays at least PLAYER_LEAN_CAM_CLEAR from every wall");
+        }
+
+        // Sprinting, sliding, diving and the air all end or refuse it.
+        PlayerController sp = Place(21.8f, 38.8f, YAW_E);
+        sp.leanAllowed = true;
+        Run(&sp, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(sp.leanBlend == 1.0f, "(leaning at the corner)");
+        Run(&sp, (Vector2){ 0, 1.0f }, true, 0.6f);          // sprint, backwards, away from the wall
+        Check(sp.leanDir == 0 && sp.leanBlend == 0.0f && sp.sprinting, "a sprint cancels the lean at once, and then the sprint is not held back by it");
+        PlayerController air = Place(21.8f, 38.8f, YAW_E);
+        air.leanAllowed = true;
+        Run(&air, (Vector2){ 0, 0 }, false, 0.5f);
+        PlayerTryJump(&air);
+        Run(&air, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(!air.isGrounded && air.leanDir == 0 && air.leanBlend == 0.0f, "no leaning in the air: a jump lets it go");
+        PlayerController gone = Place(21.8f, 38.8f, YAW_E);
+        gone.leanAllowed = true;
+        Run(&gone, (Vector2){ 0, 0 }, false, 0.5f);
+        TeleportPlayer(&gone, (Vector3){ 20.0f, 0.0f, 40.0f }, 0.0f);
+        Check(gone.leanBlend == 0.0f && gone.leanDir == 0 && gone.camera.up.y == 1.0f, "a teleport (a new floor) starts upright");
+        PlayerController dead = Place(21.8f, 38.8f, YAW_E);
+        dead.leanAllowed = true;
+        dead.health.isAlive = false;
+        Run(&dead, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(dead.leanBlend == 0.0f, "a dead player does not lean");
+        PlayerController gunAway = Place(21.8f, 38.8f, YAW_E);
+        gunAway.leanAllowed = true;
+        Run(&gunAway, (Vector2){ 0, 0 }, false, 0.5f);
+        gunAway.leanAllowed = false;                          // the gun is put away
+        Run(&gunAway, (Vector2){ 0, 0 }, false, 0.4f);
+        Check(gunAway.leanDir == 0 && gunAway.leanBlend == 0.0f, "putting the gun away lets it go");
+        OpenFloor(-1);
+    }
+
+    printf("Diving: from the air after a sprinting jump, any direction, a fixed arc, then a roll\n");
     {
         OpenFloor(-1);
-        const float wall = TILE_SIZE * 0.5f;              // the border wall's face is at x = 1; yaw 0 looks along +z, so the wall is on the player's right
-        PlayerController far = Place(20.0f, 40.0f, 0.0f);
-        far.wantLean = 1;
-        Run(&far, (Vector2){ 0, 0 }, false, 0.5f);
-        Check(!far.leanNearWall && far.leanBlend == 0.0f && fabsf(far.camera.position.x - 20.0f) < 1e-4f, "in the open, leaning does nothing");
+        // A sprinting player jumps; secs later (in the air) the dive is asked for with the stick given.
+        PlayerController base = Place(20.0f, 20.0f, 0.0f);
+        Run(&base, FWD, true, 0.8f);
+        Check(base.sprinting && !PlayerDiveAvailable(&base), "no dive on the ground");
+        PlayerTryJump(&base);
+        Check(base.jumpedSprinting && PlayerDiveAvailable(&base), "the moment the feet leave the floor in a sprinting jump the dive is available");
+        Run(&base, FWD, false, 0.15f);
+        Check(!base.isGrounded && PlayerDiveAvailable(&base), "in the air after a sprinting jump the dive is available");
 
-        PlayerController p = Place(wall + 0.9f, 40.0f, 0.0f);
-        Run(&p, (Vector2){ 0, 0 }, false, 0.1f);
-        Check(p.leanNearWall, "with a wall 0.9 m away leaning is available");
-        const float x0 = p.camera.position.x, y0 = p.camera.position.y;
-        p.wantLean = -1;                                   // left: away from the wall
-        Run(&p, (Vector2){ 0, 0 }, false, 0.1f);
-        Check(p.leanBlend < -0.5f && p.leanBlend > -0.8f, "a lean is quick (PLAYER_LEAN_SECS, 0.15 s): two thirds of the way in after three steps");
-        Run(&p, (Vector2){ 0, 0 }, false, 0.3f);
-        Check(p.leanBlend == -1.0f, "then it is full");
-        Check(fabsf((p.camera.position.x - x0) - PLAYER_LEAN_SHIFT) < 0.01f && fabsf(p.camera.position.z - 40.0f) < 0.01f, "the eye moves sideways by the lean distance (to the left is +x here) and not forward or back");
-        Check(p.camera.position.y < y0 - PLAYER_LEAN_DIP * 0.9f, "and dips a little");
-        Check(fabsf(p.position.x - (wall + 0.9f)) < 1e-4f, "the body does not move");
-        {
-            Vector3 f = { p.camera.target.x - p.camera.position.x, p.camera.target.y - p.camera.position.y, p.camera.target.z - p.camera.position.z };
-            const float fl = sqrtf(f.x * f.x + f.y * f.y + f.z * f.z);
-            f.x /= fl; f.y /= fl; f.z /= fl;
-            const Vector3 u = p.camera.up;
-            const float dot = u.x * f.x + u.y * f.y + u.z * f.z, ul = sqrtf(u.x * u.x + u.y * u.y + u.z * u.z);
-            Check(p.camera.up.x > 0.1f && fabsf(dot) < 1e-3f && fabsf(ul - 1.0f) < 1e-3f,
-                  "the view tilts to the left (the up vector leans over, stays a unit vector, stays square to the view)");
+        PlayerController walk = Place(20.0f, 20.0f, 0.0f);
+        Run(&walk, FWD, false, 1.0f);
+        PlayerTryJump(&walk); Run(&walk, FWD, false, 0.15f);
+        Check(!walk.isGrounded && !PlayerDiveAvailable(&walk) && !PlayerTryDive(&walk, FWD), "after a walking jump there is no dive: it is run, jump, dive");
+
+        // Directions. yaw 0 faces +z; right is -x. Each dive is measured from the press to the landing.
+        struct { const char *name; Vector2 stick; float dx, dz; } dirs[] = {
+            { "forward", { 0.0f, -1.0f }, 0.0f, 1.0f }, { "centred (forward)", { 0.0f, 0.0f }, 0.0f, 1.0f },
+            { "right", { 1.0f, 0.0f }, -1.0f, 0.0f }, { "left", { -1.0f, 0.0f }, 1.0f, 0.0f }, { "back", { 0.0f, 1.0f }, 0.0f, -1.0f },
+            { "forward-right", { 0.707f, -0.707f }, -0.707f, 0.707f },
+        };
+        for (int i = 0; i < 6; ++i) {
+            PlayerController p = Place(40.0f, 40.0f, 0.0f);
+            Run(&p, FWD, true, 0.8f);
+            PlayerTryJump(&p); Run(&p, FWD, false, 0.15f);
+            const float sBefore = p.stamina;
+            const bool started = PlayerTryDive(&p, dirs[i].stick);
+            const float x0 = p.position.x, z0 = p.position.z;
+            float t = 0.0f;
+            while (p.diving && t < 2.0f) { Run(&p, (Vector2){ 0, 0 }, true, DT); t += DT; }
+            const float dx = p.position.x - x0, dz = p.position.z - z0, dist = sqrtf(dx * dx + dz * dz);
+            char msg[160];
+            snprintf(msg, sizeof msg, "dive %s: started, %.2f m in %.2f s, the right way, and it costs %.0f stamina", dirs[i].name, (double)dist, (double)t, (double)STAMINA_DIVE_COST);
+            Check(started && fabsf(dist - PLAYER_DIVE_DIST) < 0.2f && fabsf(t - PLAYER_DIVE_SECS) < 0.06f &&
+                  fabsf(dx - dirs[i].dx * dist) < 0.25f && fabsf(dz - dirs[i].dz * dist) < 0.25f && p.rolling && fabsf((sBefore - p.stamina) - STAMINA_DIVE_COST) < 1.0f, msg);
         }
-        p.wantLean = 0;
-        Run(&p, (Vector2){ 0, 0 }, false, 0.4f);
-        Check(p.leanBlend == 0.0f && fabsf(p.camera.position.x - x0) < 1e-3f && p.camera.up.x == 0.0f && p.camera.up.y == 1.0f, "letting go brings it back upright");
 
-        // Toward the wall: the eye stops short of it.
-        PlayerController w = Place(wall + 0.6f, 40.0f, 0.0f);
-        w.wantLean = 1;
-        Run(&w, (Vector2){ 0, 0 }, false, 0.5f);
-        const float eyeToWall = w.camera.position.x - wall;
-        Check(w.leanBlend == 1.0f && eyeToWall >= PLAYER_LEAN_CAM_CLEAR - 0.011f, "leaning toward a wall that is close stops the eye short of it (it is never in the wall)");
-        Check(eyeToWall < 0.6f - 0.05f, "but it does move toward it as far as there is room");
-        PlayerController t = Place(wall + 0.46f, 40.0f, 0.0f);
-        t.wantLean = 1;
-        Run(&t, (Vector2){ 0, 0 }, false, 0.5f);
-        Check(t.camera.position.x - wall >= PLAYER_LEAN_CAM_CLEAR - 0.011f, "right up against a wall (0.46 m) there is almost no room, and the eye still stays out of it");
+        // The arc is the same wherever in the jump it was asked.
+        float airFor[3];
+        const float asked[3] = { 0.05f, 0.25f, 0.55f };
+        for (int i = 0; i < 3; ++i) {
+            PlayerController p = Place(40.0f, 20.0f, 0.0f);
+            Run(&p, FWD, true, 0.8f);
+            PlayerTryJump(&p); Run(&p, FWD, false, asked[i]);
+            PlayerTryDive(&p, FWD);
+            float t = 0.0f;
+            while (p.diving && t < 2.0f) { Run(&p, (Vector2){ 0, 0 }, false, DT); t += DT; }
+            airFor[i] = t;
+        }
+        Check(fabsf(airFor[0] - PLAYER_DIVE_SECS) < 0.07f && fabsf(airFor[1] - PLAYER_DIVE_SECS) < 0.07f && fabsf(airFor[2] - PLAYER_DIVE_SECS) < 0.07f,
+              "whether asked just after take-off, near the top or on the way down, the dive lands after the same time (a committed arc)");
 
-        // Walking off from a wall ends the lean; leaning slows and stops the sprint.
-        PlayerController q = Place(wall + 0.9f, 40.0f, 0.0f);
-        q.wantLean = -1;
-        Run(&q, (Vector2){ 0, 0 }, false, 0.4f);
-        Check(q.leanBlend == -1.0f, "(leaning, wall 0.9 m away)");
-        Run(&q, (Vector2){ -1.0f, 0.0f }, false, 1.5f);                // left is +x here: walks away from the wall while leaning
-        Check(!q.leanNearWall && q.leanBlend == 0.0f && q.camera.up.y == 1.0f, "walking away from the wall ends the lean by itself, even with the button still held");
-        PlayerController m = Place(wall + 0.9f, 40.0f, 0.0f);
-        m.wantLean = -1;
-        Run(&m, FWD, false, 1.0f);
-        Check(fabsf(PlayerSpeed(&m) - PLAYER_WALK_SPEED * PLAYER_LEAN_MOVE_MUL) < 0.08f, "walking while leaning is at the lean's speed share");
-        PlayerController sp = Place(wall + 0.9f, 20.0f, 0.0f);
-        Run(&sp, FWD, true, 0.6f);
-        sp.wantLean = -1;
-        Run(&sp, FWD, true, 0.6f);
-        Check(!sp.sprinting && sp.leanBlend == -1.0f, "a sprint ends when a lean begins");
-        PlayerController air = Place(wall + 0.9f, 40.0f, 0.0f);
-        PlayerTryJump(&air);
-        air.wantLean = 1;
-        Run(&air, (Vector2){ 0, 0 }, false, 0.1f);
-        Check(!air.isGrounded && air.leanBlend == 0.0f, "no leaning in the air");
-        PlayerController gone = Place(wall + 0.9f, 40.0f, 0.0f);
-        gone.wantLean = -1;
-        Run(&gone, (Vector2){ 0, 0 }, false, 0.4f);
-        TeleportPlayer(&gone, (Vector3){ 20.0f, 0.0f, 40.0f }, 0.0f);
-        Check(gone.leanBlend == 0.0f && gone.camera.up.y == 1.0f, "a teleport (a new floor) starts upright");
-        PlayerController corner = Place(wall + 0.8f, wall + 0.8f, 0.0f);   // the inside corner of the map: walls on two sides
-        Run(&corner, (Vector2){ 0, 0 }, false, 0.1f);
-        Check(corner.leanNearWall, "a corner counts: the walls either side make it available");
+        // Refusals.
+        PlayerController tired = Place(40.0f, 20.0f, 0.0f);
+        Run(&tired, FWD, true, 0.8f); PlayerTryJump(&tired); Run(&tired, FWD, false, 0.15f);
+        tired.stamina = STAMINA_DIVE_COST - 1.0f;
+        Check(PlayerDiveAvailable(&tired) && !PlayerTryDive(&tired, FWD) && !tired.diving && tired.stamina == STAMINA_DIVE_COST - 1.0f, "with too little stamina the dive is refused and costs nothing (the button is still there, shown tired)");
+        tired.stamina = 100.0f; tired.exhausted = true;
+        Check(!PlayerTryDive(&tired, FWD), "and an exhausted player cannot dive");
+        PlayerController dead = Place(40.0f, 20.0f, 0.0f);
+        Run(&dead, FWD, true, 0.8f); PlayerTryJump(&dead); Run(&dead, FWD, false, 0.15f);
+        dead.health.isAlive = false;
+        Check(!PlayerDiveAvailable(&dead) && !PlayerTryDive(&dead, FWD), "a dead player does not dive");
+
+        // In the dive: committed, no sprint, no slide, no jump, a dropped camera, loud, and it can be aimed.
+        PlayerController d = Place(40.0f, 20.0f, 0.0f);
+        Run(&d, FWD, true, 0.8f); PlayerTryJump(&d); Run(&d, FWD, false, 0.15f);
+        const float standEye = Place(40.0f, 20.0f, 0.0f).camera.position.y;      // the eye above the feet, standing
+        PlayerTryDive(&d, (Vector2){ 1.0f, 0.0f });             // right: -x
+        d.wantAim = true; d.adsFov = 45.0f; d.adsMoveMul = 0.5f;
+        Check(!PlayerDiveAvailable(&d) && !PlayerTryDive(&d, FWD), "once it has started it cannot be asked for again");
+        Run(&d, (Vector2){ 0.0f, 1.0f }, true, 0.2f);            // the stick pulled the other way, sprint held
+        Check(d.moveVel.x < -5.5f && fabsf(d.moveVel.z) < 0.2f, "the stick does not steer a dive (it was asked for to the right and stays to the right)");
+        Check(!d.sprinting && !PlayerTrySlide(&d) && !PlayerTryJump(&d), "no sprint, no slide and no jump while it lasts");
+        Check(d.aimBlend > 0.3f, "and aiming down the sights works during it (the gun's numbers slow nothing: the dive is committed)");
+        Check((d.camera.position.y - d.position.y) < standEye - PLAYER_DIVE_DROP * 0.5f && d.diveBlend > 0.5f, "the camera drops (the eye is well below where it is standing, measured from the feet)");
+        Check(PlayerNoise(&d) >= PLAYER_DIVE_NOISE, "and it is heard from PLAYER_DIVE_NOISE metres");
+        if (PLAYER_DIVE_GRACE_SECS <= 0.0f) Check(DamagePlayer(&d, 1.0f, (Vector3){ 0, 0, 0 }), "a dive does not make the player harder to hurt (Call of Duty gives no such window; PLAYER_DIVE_GRACE_SECS is 0)");
+        else Check(!DamagePlayer(&d, 1.0f, (Vector3){ 0, 0, 0 }), "a dive protects for PLAYER_DIVE_GRACE_SECS");
+
+        // The roll.
+        PlayerController r = Place(40.0f, 20.0f, 0.0f);
+        Run(&r, FWD, true, 0.8f); PlayerTryJump(&r); Run(&r, FWD, false, 0.15f);
+        PlayerTryDive(&r, FWD);
+        float t = 0.0f;
+        while (r.diving && t < 2.0f) { Run(&r, (Vector2){ 0, 0 }, true, DT); t += DT; }
+        Check(r.rolling && !r.diving && r.isGrounded, "the dive lands into a roll");
+        const float rollSpeed0 = PlayerSpeed(&r);
+        Run(&r, (Vector2){ 0, 0 }, true, DT * 2.0f);
+        Check(PlayerSpeed(&r) < PLAYER_DIVE_DIST / PLAYER_DIVE_SECS - 1.5f && PlayerSpeed(&r) > PLAYER_ROLL_END_SPEED && PlayerSpeed(&r) <= PLAYER_ROLL_SPEED + 0.1f, "the roll is slower than the dive and runs down");
+        (void)rollSpeed0;
+        Check(!r.sprinting && !PlayerTrySlide(&r) && !PlayerTryJump(&r), "no sprint, slide or jump in the roll either, even with sprint held");
+        Run(&r, (Vector2){ 0, 0 }, true, PLAYER_ROLL_SECS);
+        Check(!r.rolling && !r.diving, "the roll ends after PLAYER_ROLL_SECS");
+        Run(&r, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(r.diveBlend < 0.01f && !r.jumpedSprinting && !PlayerDiveAvailable(&r), "the camera comes back up, and a dive cannot be asked for on the ground (the next one needs a new sprinting jump)");
+        Run(&r, FWD, true, 1.0f);
+        Check(r.sprinting && PlayerSpeed(&r) > 7.0f, "after the roll the player is in control again and can sprint");
+
+        // A slide into a jump counts as a sprinting jump.
+        PlayerController sj = Place(40.0f, 20.0f, 0.0f);
+        Run(&sj, FWD, true, 0.7f);
+        PlayerTrySlide(&sj);
+        Run(&sj, FWD, true, 0.2f);
+        PlayerTryJump(&sj); Run(&sj, FWD, false, 0.15f);
+        Check(!sj.isGrounded && PlayerDiveAvailable(&sj), "jumping out of a slide can be followed by a dive");
+
+        // Walls stop a dive like any other move.
+        OpenFloor(23);                                        // a wall column at x 45 to 47
+        PlayerController w = Place(41.0f, 40.0f, 1.5708f);    // facing +x
+        Run(&w, FWD, true, 0.6f);
+        PlayerTryJump(&w); Run(&w, FWD, false, 0.15f);
+        PlayerTryDive(&w, FWD);
+        Run(&w, (Vector2){ 0, 0 }, false, 1.0f);
+        Check(w.position.x < 45.0f - 0.3f, "a dive into a wall stops at it");
+        OpenFloor(-1);
+
+        PlayerController tp = Place(40.0f, 20.0f, 0.0f);
+        Run(&tp, FWD, true, 0.8f); PlayerTryJump(&tp); Run(&tp, FWD, false, 0.15f); PlayerTryDive(&tp, FWD);
+        TeleportPlayer(&tp, (Vector3){ 20.0f, 0.0f, 40.0f }, 0.0f);
+        Check(!tp.diving && !tp.rolling && tp.diveBlend == 0.0f && !tp.jumpedSprinting, "a teleport (a new floor) ends it");
     }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");

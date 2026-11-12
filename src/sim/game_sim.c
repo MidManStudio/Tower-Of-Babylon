@@ -132,7 +132,14 @@ static FloorMap *UseDoor(GameSim *s, DoorId id)
 static void TrySlide(GameSim *s)
 {
     if (PlayerTrySlide(&s->player)) return;
-    if (s->player.sprinting && s->player.stamina < STAMINA_SLIDE_COST) Say(s, "TOO TIRED TO SLIDE");
+    if (PlayerSprintingForward(&s->player) && s->player.stamina < STAMINA_SLIDE_COST) Say(s, "TOO TIRED TO SLIDE");
+}
+
+// A dive is asked for with the stick as it is now; the controller reads the direction from it.
+static void TryDive(GameSim *s, Vector2 move)
+{
+    if (PlayerTryDive(&s->player, move)) return;
+    if (PlayerDiveAvailable(&s->player) && (s->player.exhausted || s->player.stamina < STAMINA_DIVE_COST)) Say(s, "TOO TIRED TO DIVE");
 }
 
 static void RespawnPlayer(GameSim *s)
@@ -288,15 +295,11 @@ float GameSim_SpreadDeg(const GameSim *s)
     return spread;
 }
 
-// The lean buttons are there only with a gun in hand, near a wall or a corner, on foot.
-bool GameSim_LeanButtonsShown(const GameSim *s)
-{
-    return s->player.health.isAlive && Weapon_Def(s->arsenal.current)->kind == WEAPON_KIND_GUN
-        && s->player.leanNearWall && s->player.isGrounded && !s->player.sliding;
-}
+// The slide button is there only while the player is running forward (or sliding): a slide starts from a forward sprint.
+bool GameSim_SlideButtonShown(const GameSim *s) { return s->player.health.isAlive && (PlayerSprintingForward(&s->player) || s->player.sliding); }
 
-// The slide button is there only while the player is running (or sliding): a slide starts from a sprint.
-bool GameSim_SlideButtonShown(const GameSim *s) { return s->player.health.isAlive && (s->player.sprinting || s->player.sliding); }
+// The dive button is there in the air after a sprinting jump, until the dive starts (it is drawn in the slide button's place).
+bool GameSim_DiveButtonShown(const GameSim *s) { return PlayerDiveAvailable(&s->player); }
 
 // ---- the step ----------------------------------------------------------------------------------------
 void GameSim_FindNear(const GameSim *s, int *nearDoor, int *nearPickup, bool *nearConsole)
@@ -346,12 +349,12 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
 
     // Nothing is live while a door opens or the player is dead, and with the inventory open only walking is.
     if (s->seq != SEQ_NONE || !s->player.health.isAlive || s->invOpen) {
-        cmd.jump = cmd.fire = cmd.fireHeld = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.reload = cmd.useHeld = false;
-        cmd.lean = 0;
+        cmd.jump = cmd.fire = cmd.fireHeld = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.reload = cmd.useHeld = cmd.dive = false;
         if (s->seq != SEQ_NONE || !s->player.health.isAlive) cmd.move = (Vector2){ 0 };
     }
     if (cmd.light && Inventory_Has(&s->inv, ITEM_FLASHLIGHT)) ToggleTorch(s);
     if (cmd.slide) TrySlide(s);
+    if (cmd.dive) TryDive(s, cmd.move);
 
     // Start using a door. The player stands still while it opens.
     if (cmd.use && nearDoor >= 0 && !Staircase_DoorLocked((DoorId)nearDoor, s->map)) {
@@ -404,9 +407,9 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
         }
         s->player.wantAim = gun && cmd.fireHeld && !s->arsenal.reloading && s->arsenal.equipT >= 0.6f && s->seq == SEQ_NONE && !s->invOpen;
     }
-    // Leaning, like the sights, is for a gun in hand (put the gun away and the lean lets go). The controller adds the rest: near a wall,
-    // on foot.
-    s->player.wantLean = Weapon_Def(s->arsenal.current)->kind == WEAPON_KIND_GUN ? cmd.lean : 0;
+    // Leaning, like the sights, is for a gun in hand (put the gun away and the lean lets go). The controller does the rest by itself: it
+    // finds the corner and leans toward the opening (no button).
+    s->player.leanAllowed = Weapon_Def(s->arsenal.current)->kind == WEAPON_KIND_GUN;
     PlayerStep(&s->player, cmd.move, dt, s->map);
     if (cmd.jump) PlayerTryJump(&s->player);
 

@@ -28,7 +28,7 @@ typedef struct {
 typedef struct {
     bool  alive, sprinting, sliding, exhausted;
     float hp, maxHp, stamina01, exhaustRecover01;
-    bool  tooTiredToSlide;
+    bool  tooTiredToSlide, tooTiredToDive;
     const char *weaponName; bool weaponIsGun, weaponIsMelee; int ammo; bool weaponDry; int weaponsOwned;   // ammo: the reserve in the bag (the whole count for a gun with no magazine)
     int   mag, magSize;                 // the gun in hand: rounds loaded, and what the magazine holds (magSize 0: no magazine)
     bool  reloading; float reloadFrac;  // a reload is running; how far through the current step (0..1)
@@ -39,7 +39,7 @@ typedef struct {
     const char *floorInfo;              // the generator's numbers for this floor, one line
     bool  useShown, useLocked; const char *useLabel;
     bool  slideShown;
-    bool  leanShown;                    // the two LEAN buttons are drawn (a wall or corner is close)
+    bool  diveShown;                    // the DIVE button is drawn, in SLIDE's place (in the air after a sprinting jump)
     bool  invOpen;
     const char *characterName;          // the chosen character's short name, or NULL when none is chosen (shown beside STATS in the popup)
     int   stairPhase;                   // the stair clock: 0 none on this floor, 1 find the console, 2 countdown, 3 collapsing

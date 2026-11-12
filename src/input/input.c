@@ -93,7 +93,7 @@ void Input_Update(const InputContext *ctx, InputFrame *f)
         f->light = g_touchOut.lightPressed;
         f->slide = g_touchOut.slidePressed;
         f->reload = g_touchOut.reloadPressed;
-        f->lean = (g_touchOut.leanRightHeld ? 1 : 0) - (g_touchOut.leanLeftHeld ? 1 : 0);
+        f->dive = g_touchOut.divePressed;
         useHeld = g_touchOut.useHeld;
         swapHeld = g_touchOut.swapHeld;
     }
@@ -112,8 +112,7 @@ void Input_Update(const InputContext *ctx, InputFrame *f)
         if (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_LEFT_CONTROL)) { f->slide = true; key = true; }
         if (IsKeyPressed(KEY_L)) { f->light = true; key = true; }
         if (IsKeyPressed(KEY_R)) { f->reload = true; key = true; }
-        if (IsKeyDown(KEY_Z)) { f->lean -= 1; key = true; }
-        if (IsKeyDown(KEY_X)) { f->lean += 1; key = true; }
+        if (IsKeyPressed(KEY_V)) { f->dive = true; key = true; }
         if (IsKeyDown(KEY_E)) { useHeld = true; key = true; }
         if (IsKeyPressed(KEY_Q)) { swapHeld = true; key = true; }
         if (IsKeyPressed(KEY_I) || IsKeyPressed(KEY_TAB)) { f->inventoryToggle = true; key = true; }
@@ -138,8 +137,7 @@ void Input_Update(const InputContext *ctx, InputFrame *f)
         f->gesture = gesture;                                      // ...but a touch still counts for opening the sound card
     } else if (ctx->walkOnly) {
         f->look = (Vector2){ 0 };
-        f->jump = f->fire = f->light = f->slide = f->reload = false;
-        f->lean = 0;
+        f->jump = f->fire = f->light = f->slide = f->reload = f->dive = false;
         useHeld = swapHeld = false;
     }
     f->useHeld = useHeld;

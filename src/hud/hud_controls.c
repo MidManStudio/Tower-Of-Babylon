@@ -95,10 +95,7 @@ void HudControls_Draw(const HudView *v)
 
     if (v->useShown) RoundButton(L->use, v->useLocked ? MAROON : DARKGREEN, v->useLabel, t->useHeld);
     if (v->weaponsOwned > 1) RoundButton(L->swap, DARKGRAY, "SWAP", t->swapHeld);
-    if (v->leanShown) {                                             // held: lean while a finger is on it
-        RoundButton(L->leanLeft,  t->leanLeftHeld  ? SKYBLUE : DARKGRAY, "LEAN\n<", t->leanLeftHeld);
-        RoundButton(L->leanRight, t->leanRightHeld ? SKYBLUE : DARKGRAY, "LEAN\n>", t->leanRightHeld);
-    }
+    if (v->diveShown) RoundButton(L->dive, v->tooTiredToDive ? ORANGE : (Color){ 40, 120, 170, 255 }, "DIVE", false);   // tap it with the stick where the dive should go
     if (v->slideShown) RoundButton(L->slide, v->sliding ? SKYBLUE : (v->tooTiredToSlide ? ORANGE : (Color){ 40, 120, 170, 255 }), v->sliding ? "SLIDING" : "SLIDE", false);
     if (v->reloadShown) {
         // Grey while a reload can start, maroon when the magazine is empty, amber (and not pressable) while one runs, with a ring filling round it.

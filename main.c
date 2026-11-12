@@ -216,7 +216,7 @@ static void Frame(void)
     // which controls are live: nothing while a door opens or the player is dead, only walking with the inventory open,
     // and a button only when it has something to act on.
     InputContext ictx = { 0 };
-    ictx.dt = dt;                                     // the fire pad aims at a rate, so it needs the frame's time
+    ictx.dt = dt;                                     // the joystick style of fire pad aims at a rate, so it needs the frame's time
     ictx.aimMode = TC_DEFAULT_AIM_MODE;               // how the fire pad aims (a setting, once there is a settings screen)
     ictx.locked = g_sim.seq != SEQ_NONE || !g_sim.player.health.isAlive;
     ictx.walkOnly = g_sim.invOpen;
@@ -225,7 +225,7 @@ static void Frame(void)
     ictx.lightAvailable = Inventory_Has(&g_sim.inv, ITEM_FLASHLIGHT);
     ictx.slideAvailable = GameSim_SlideButtonShown(&g_sim);
     ictx.reloadAvailable = Arsenal_CanReload(&g_sim.arsenal) && g_sim.player.health.isAlive;
-    ictx.leanAvailable = GameSim_LeanButtonsShown(&g_sim) && !g_sim.invOpen;      // only near a wall or a corner
+    ictx.diveAvailable = GameSim_DiveButtonShown(&g_sim) && !g_sim.invOpen;       // in the air after a sprinting jump
     ictx.blockedCount = Hud_BlockedRects(ictx.blocked, TC_MAX_BLOCKED - 1);
     {
         const Rectangle ib = InvUI_OpenButton();
@@ -387,7 +387,8 @@ static void Frame(void)
             hv.mag = hv.magSize > 0 ? g_sim.arsenal.mag[g_sim.arsenal.current] : 0;
             hv.reloading = g_sim.arsenal.reloading; hv.reloadFrac = Arsenal_ReloadFraction(&g_sim.arsenal);
             hv.magEmpty = hv.magSize > 0 && hv.mag <= 0;
-            hv.leanShown = ictx.leanAvailable;
+            hv.diveShown = ictx.diveAvailable;
+            hv.tooTiredToDive = g_sim.player.exhausted || g_sim.player.stamina < STAMINA_DIVE_COST;
             hv.reloadShown = g_sim.player.health.isAlive && !g_sim.invOpen && (Arsenal_CanReload(&g_sim.arsenal) || g_sim.arsenal.reloading);
             hv.weaponWears = held->kind == WEAPON_KIND_MELEE && held->durability > 0;
             hv.weaponCondition = Arsenal_Condition(&g_sim.arsenal, g_sim.arsenal.current);

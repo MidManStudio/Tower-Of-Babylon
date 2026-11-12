@@ -33,14 +33,37 @@
 #define PLAYER_ADS_OUT_SHARE   0.6f
 #define PLAYER_ADS_DEFAULT_SECS 0.20f
 
-// Leaning. Only near a wall or a corner; the eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
-#define PLAYER_LEAN_NEAR_WALL  1.0f    // metres: a wall tile this close to the body makes leaning available
+// Leaning: automatic, at the corner of a wall. A sight line is cast straight ahead from the body and again from the eye at full lean
+// to either side; if the wall ahead is close and one of the leaned lines gets PLAYER_LEAN_GAIN_ON metres further than the middle one,
+// there is an opening that leaning shows, and the player leans toward it. Facing a flat wall, or a long way from it, nothing happens.
+// The eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
+#define PLAYER_LEAN_NEAR_WALL  1.5f    // metres: the wall ahead is this close or closer for a lean to start
+#define PLAYER_LEAN_NEAR_LET_GO 2.0f   // ...and it lets go when the wall is further than this (so the edge of the range does not flicker)
+#define PLAYER_LEAN_SIGHT      8.0f    // metres: how far the sight lines look
+#define PLAYER_LEAN_GAIN_ON    1.0f    // a lean starts when a leaned line sees this much further than the middle one
+#define PLAYER_LEAN_GAIN_OFF   0.5f    // ...and lets go when it sees less than this
+#define PLAYER_LEAN_DWELL      0.10f   // seconds the above must hold before the lean starts (walking past a corner is not a peek)
 #define PLAYER_LEAN_SHIFT      0.40f   // metres the eye moves sideways at full lean
 #define PLAYER_LEAN_ROLL       0.1745f // radians the view tilts at full lean (10 degrees)
 #define PLAYER_LEAN_DIP        0.06f   // metres the eye drops at full lean
 #define PLAYER_LEAN_SECS       0.15f   // from upright to full lean
-#define PLAYER_LEAN_MOVE_MUL   0.40f   // walking speed share at full lean (a crawl)
+#define PLAYER_LEAN_MOVE_MUL   0.65f   // walking speed share at full lean
 #define PLAYER_LEAN_CAM_CLEAR  0.40f   // the eye stays at least this far from any wall (the near plane is 0.25 and the corners of the view reach about 0.39)
+
+#define PLAYER_GRAVITY         14.0f   // m/s squared
+
+// Diving: only from the air after a sprinting jump ("run, jump, dive"), in any direction (forward, left, right, back) as the stick was
+// pushed when the DIVE button was tapped. A fixed arc: PLAYER_DIVE_DIST metres in PLAYER_DIVE_SECS whatever height it was asked at,
+// then a roll of PLAYER_ROLL_SECS that runs down from PLAYER_ROLL_SPEED. Placeholder numbers, like the slide's.
+#define PLAYER_DIVE_DIST       3.0f    // metres along the floor, in the air
+#define PLAYER_DIVE_SECS       0.5f    // the airtime: the arc is made to land after exactly this long on level ground
+#define PLAYER_ROLL_SECS       0.4f
+#define PLAYER_ROLL_SPEED      3.5f    // m/s at the landing, running down linearly to PLAYER_ROLL_END_SPEED
+#define PLAYER_ROLL_END_SPEED  1.0f
+#define PLAYER_DIVE_DROP       0.55f   // metres the camera drops during a dive and the roll
+#define PLAYER_DIVE_NOISE      16.0f   // how far a dive is heard
+#define PLAYER_DIVE_GRACE_SECS 0.0f    // no damage for this long after a dive starts: 0, because Call of Duty gives none (set to 0.5 to cover the airtime)
+#define STAMINA_DIVE_COST      25.0f   // a dive needs at least this much in hand, and a player who is not exhausted
 
 #define PLAYER_STAMINA_MAX     200.0f  // twice the old 100. Drain and costs below are unchanged, so everything the bar pays for lasts twice as long
 #define STAMINA_SCALE          (PLAYER_STAMINA_MAX / 100.0f)   // the thresholds below were set for a bar of 100: they grow with it so the bar keeps its shape
@@ -64,6 +87,7 @@
 #define PLAYER_SLIDE_SECS      0.85f
 #define PLAYER_SLIDE_COOLDOWN  0.45f   // after it ends, before another may start
 #define STAMINA_SLIDE_COST     18.0f   // about a second of sprinting; a slide needs at least this much in hand
+#define PLAYER_SLIDE_MIN_FORWARD 0.70f // a slide only goes forward: the sprint must be within 45 degrees of straight ahead (left, right and back are for the dive)
 #define PLAYER_SLIDE_STEER     1.4f    // radians a second the stick can turn the slide
 #define PLAYER_SLIDE_DROP      0.25f   // metres the camera drops
 #define PLAYER_SLIDE_NOISE     14.0f   // how far a slide is heard: loud, but less than a sprint's 20
@@ -84,9 +108,17 @@ void UpdatePlayerController(PlayerController *player, Vector2 moveDelta, Vector2
 // Jumps if standing on something. Costs stamina; when there is too little, or the player is exhausted, it is a weak hop.
 // Returns true if the player left the ground.
 bool PlayerTryJump(PlayerController *player);
-// Starts a slide: needs a sprint in progress, the ground under the feet, STAMINA_SLIDE_COST in hand, no exhaustion and no slide
-// still cooling down. Returns whether it started (and then the cost is taken).
+// Starts a slide: needs a FORWARD sprint in progress (see PlayerSprintingForward), the ground under the feet, STAMINA_SLIDE_COST in hand,
+// no exhaustion and no slide still cooling down. Returns whether it started (and then the cost is taken).
 bool PlayerTrySlide(PlayerController *player);
+// A sprint that is going within 45 degrees of straight ahead (the velocity's direction against where the player faces): the only kind a slide can start from.
+bool PlayerSprintingForward(const PlayerController *player);
+// Whether a dive can be asked for now: alive, in the air from a jump that began from a sprint (or a slide), not already diving.
+// This is when the DIVE button exists, whether or not there is the stamina for it.
+bool PlayerDiveAvailable(const PlayerController *player);
+// Starts a dive: PlayerDiveAvailable, no exhaustion and STAMINA_DIVE_COST in hand (taken). The direction is read now: moveDelta is the stick
+// as for PlayerStep (x right, y negative forward); with the stick centred it is straight ahead. Returns whether it started.
+bool PlayerTryDive(PlayerController *player, Vector2 moveDelta);
 // Top speed in a direction, as a share of the forward speed: forward and right are the unit direction in the player's own frame
 // (forward 1, right 0 is straight ahead). 1 ahead, PLAYER_STRAFE_MUL to the side, PLAYER_BACKPEDAL_MUL backwards, smoothly between.
 float PlayerDirectionMul(float forward, float right);
