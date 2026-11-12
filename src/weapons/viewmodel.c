@@ -216,18 +216,33 @@ static void SlashPose(float p, float *pitch, float *roll, float *yaw, Vector3 *t
     *t = Lerp3(a->t, b->t, u);
 }
 
+// How far the gun and hands slide, at full ADS, to put the sights on the centre of the view (the sight line at the hip is a little right of
+// it and, for the long guns that sit lower, a little below it), in the hands' space after Rest().
+#define ADS_SLIDE_X_PISTOL   -0.130f
+#define ADS_SLIDE_Y_PISTOL    0.010f
+#define ADS_SLIDE_X_LONG     -0.150f
+#define ADS_SLIDE_Y_LONG      0.034f
+#define ADS_SWAY_LEFT         0.30f      // the share of the sway left when aimed
+
 void Viewmodel_Build(PartList *out, const Arsenal *a, const AimFrame *cam, float walk01, float t)
+{
+    Viewmodel_BuildAimed(out, a, cam, walk01, t, 0.0f);
+}
+
+void Viewmodel_BuildAimed(PartList *out, const Arsenal *a, const AimFrame *cam, float walk01, float t, float ads01)
 {
     PartList_Clear(out);
     g_pipeInHand = false;
     const Ctx ctx = { cam, out };
     const WeaponDef *def = Weapon_Def(a->current);
     const float p = a->attackT >= 0.0f ? Clamp01(a->attackT / def->duration) : -1.0f;
+    const float ads = def->kind == WEAPON_KIND_GUN ? Clamp01(ads01) : 0.0f;       // only guns have sights
 
-    // Sway and bob, shared by both hands.
+    // Sway and bob, shared by both hands. Aimed, they steady.
     const float phase = t * 8.5f;
-    const Vector3 sway = V(sinf(phase) * 0.012f * walk01 + sinf(t * 1.1f) * 0.003f,
-                           fabsf(sinf(phase)) * 0.010f * walk01 + sinf(t * 1.7f) * 0.004f, 0.0f);
+    const float calm = 1.0f - (1.0f - ADS_SWAY_LEFT) * ads;
+    const Vector3 sway = V((sinf(phase) * 0.012f * walk01 + sinf(t * 1.1f) * 0.003f) * calm,
+                           (fabsf(sinf(phase)) * 0.010f * walk01 + sinf(t * 1.7f) * 0.004f) * calm, 0.0f);
     const float raise = (1.0f - EaseOut(a->equipT)) * 0.40f;          // weapon comes up from below
 
     Xf right = { Rest(WRIST), 0.0f, 0.0f, 0.0f, V(sway.x, sway.y - raise, 0.0f) };
@@ -308,6 +323,14 @@ void Viewmodel_Build(PartList *out, const Arsenal *a, const AimFrame *cam, float
         }
     }
 
+    // Aimed down the sights: the gun and both hands move together to the middle of the view.
+    if (ads > 0.0f) {
+        const bool longGun = a->current == WEAPON_SHOTGUN || a->current == WEAPON_RIFLE;
+        const float dx = (longGun ? ADS_SLIDE_X_LONG : ADS_SLIDE_X_PISTOL) * ads, dy = (longGun ? ADS_SLIDE_Y_LONG : ADS_SLIDE_Y_PISTOL) * ads;
+        right.t.x += dx; right.t.y += dy;
+        left.t.x  -= dx; left.t.y  += dy;                     // (the left hand is the right one mirrored: its x runs the other way)
+    }
+
     AddHand(&ctx, -1, &left);
     AddHand(&ctx, 1, &right);
     if (def->kind == WEAPON_KIND_MELEE)  AddPipe(&ctx, &pipeXf);
@@ -384,8 +407,13 @@ static void TrailDraw(const AimFrame *cam, float timeSecs)
 
 void Viewmodel_Draw(const Arsenal *a, const AimFrame *cam, float walk01, float t, float brightness)
 {
+    Viewmodel_DrawAimed(a, cam, walk01, t, brightness, 0.0f);
+}
+
+void Viewmodel_DrawAimed(const Arsenal *a, const AimFrame *cam, float walk01, float t, float brightness, float ads01)
+{
     PartList list;
-    Viewmodel_Build(&list, a, cam, walk01, t);
+    Viewmodel_BuildAimed(&list, a, cam, walk01, t, ads01);
 
     // Light from above and to the left of the camera, in world space.
     const Vector3 light = V(-0.40f * cam->right.x + 0.80f * cam->up.x - 0.45f * cam->forward.x,

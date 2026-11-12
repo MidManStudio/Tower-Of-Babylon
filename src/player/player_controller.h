@@ -21,6 +21,27 @@
 #define PLAYER_AIR_CONTROL     0.35f   // share of the acceleration available in the air
 #define PLAYER_JUMP_SPEED      6.0f
 
+// Omnidirectional movement: walking and sprinting work in every direction, and the stick's direction is split into
+// forward/back and left/right. Each has its own top speed, as a share of the forward one, so a diagonal lands between the two.
+// (Placeholder numbers: Black Ops 6 does not publish its own. They are the one place to tune this.)
+#define PLAYER_STRAFE_MUL      0.85f   // left and right
+#define PLAYER_BACKPEDAL_MUL   0.70f   // backwards
+
+// Aiming down sights (the weapon's own field of view, time and move speed are in weapons.mdix). The base field of view, and how
+// quickly ADS lets go: a share of the time it took to go in.
+#define PLAYER_BASE_FOV        60.0f
+#define PLAYER_ADS_OUT_SHARE   0.6f
+#define PLAYER_ADS_DEFAULT_SECS 0.20f
+
+// Leaning. Only near a wall or a corner; the eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
+#define PLAYER_LEAN_NEAR_WALL  1.0f    // metres: a wall tile this close to the body makes leaning available
+#define PLAYER_LEAN_SHIFT      0.40f   // metres the eye moves sideways at full lean
+#define PLAYER_LEAN_ROLL       0.1745f // radians the view tilts at full lean (10 degrees)
+#define PLAYER_LEAN_DIP        0.06f   // metres the eye drops at full lean
+#define PLAYER_LEAN_SECS       0.15f   // from upright to full lean
+#define PLAYER_LEAN_MOVE_MUL   0.40f   // walking speed share at full lean (a crawl)
+#define PLAYER_LEAN_CAM_CLEAR  0.40f   // the eye stays at least this far from any wall (the near plane is 0.25 and the corners of the view reach about 0.39)
+
 #define PLAYER_STAMINA_MAX     200.0f  // twice the old 100. Drain and costs below are unchanged, so everything the bar pays for lasts twice as long
 #define STAMINA_SCALE          (PLAYER_STAMINA_MAX / 100.0f)   // the thresholds below were set for a bar of 100: they grow with it so the bar keeps its shape
 #define STAMINA_SPRINT_DRAIN   17.0f   // per second while sprinting: a full bar is about twelve seconds
@@ -53,6 +74,8 @@ void InitPlayerController(PlayerController *player, float startX, float startZ);
 //   PlayerSyncCamera(&p)              every frame after it: the camera's direction follows (its position stays as the last step left it)
 //   PlayerStep(&p, move, dt, map)     every step: movement, stamina, sliding, falling, the camera's position
 // moveDelta is the stick or keys: x to the right, y negative forward, length 0 to 1. Set player->wantSprint first.
+// (Aiming down sights makes it turn less per pixel, by the ratio of the two fields of view, so a pixel moves the crosshair across the
+// same stretch of world however zoomed in.)
 void PlayerApplyLook(PlayerController *player, Vector2 lookDelta);
 void PlayerSyncCamera(PlayerController *player);
 void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const FloorMap *map);
@@ -64,6 +87,16 @@ bool PlayerTryJump(PlayerController *player);
 // Starts a slide: needs a sprint in progress, the ground under the feet, STAMINA_SLIDE_COST in hand, no exhaustion and no slide
 // still cooling down. Returns whether it started (and then the cost is taken).
 bool PlayerTrySlide(PlayerController *player);
+// Top speed in a direction, as a share of the forward speed: forward and right are the unit direction in the player's own frame
+// (forward 1, right 0 is straight ahead). 1 ahead, PLAYER_STRAFE_MUL to the side, PLAYER_BACKPEDAL_MUL backwards, smoothly between.
+float PlayerDirectionMul(float forward, float right);
+// ADS amount, 0 hip to 1 fully aimed, eased (smoothstep) from aimBlend, for everything that looks or counts by how far in the player is.
+float PlayerAimAmount(const PlayerController *player);
+float PlayerAimEase(float aimBlend);        // the same easing of any aimBlend (an interpolated one, for drawing between steps)
+// The field of view for a given aimBlend (the camera's own, or an interpolated one for drawing between steps), sprint kick included.
+float PlayerViewFov(const PlayerController *player, float aimBlend);
+// The camera's up vector for a view direction and a leanBlend: straight up when upright, tilted toward the lean.
+Vector3 PlayerViewUp(Vector3 forward, float leanBlend);
 // How fast the player is moving on the floor plane right now, m/s.
 // The fatigue factor, 1 when fresh down to FATIGUE_MIN_MUL at zero stamina: what speed and acceleration are multiplied by.
 float PlayerFatigue(const PlayerController *player);

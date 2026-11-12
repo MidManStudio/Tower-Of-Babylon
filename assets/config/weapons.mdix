@@ -45,6 +45,10 @@
   //   reload_secs     seconds to reload a whole magazine, or, with reload_per_round = 1, seconds to load ONE round
   //   reload_per_round  0 = the whole magazine goes in at once (and cannot be interrupted by the trigger); 1 = one round at a time,
   //                   and pulling the trigger stops the reload and fires what is in (a pump shotgun's tube)
+  //   ads_fov         field of view in degrees at full aim-down-sights (holding the fire pad). The normal view is 60: lower zooms in
+  //   ads_secs        seconds from the hip to fully aimed
+  //   ads_move        share of the walking speed left while aimed (1.0 = not slowed)
+  //   ads_spread      share of the spread left at full aim (1.0 = no tighter); the shot's cone is narrowed by how far in the player is
   weapons::
     {
       id        = "hands",
@@ -96,7 +100,11 @@
       ammo_box      = 8,
       mag_size      = 12,
       reload_secs   = 1.4f,
-      reload_per_round = 0
+      reload_per_round = 0,
+      ads_fov       = 52.0f,
+      ads_secs      = 0.14f,
+      ads_move      = 0.80f,
+      ads_spread    = 0.50f
     },
     {
       id            = "shotgun",
@@ -122,7 +130,11 @@
       ammo_box      = 6,
       mag_size      = 6,
       reload_secs   = 0.55f,
-      reload_per_round = 1
+      reload_per_round = 1,
+      ads_fov       = 54.0f,
+      ads_secs      = 0.22f,
+      ads_move      = 0.65f,
+      ads_spread    = 0.75f
     },
     {
       id            = "rifle",
@@ -148,6 +160,10 @@
       ammo_box      = 24,
       mag_size      = 30,
       reload_secs   = 2.0f,
-      reload_per_round = 0
+      reload_per_round = 0,
+      ads_fov       = 46.0f,
+      ads_secs      = 0.20f,
+      ads_move      = 0.60f,
+      ads_spread    = 0.50f
     }
 )

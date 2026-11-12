@@ -68,6 +68,48 @@ static bool CheckCollisions(Vector3 from, Vector3 pos, const FloorMap *map, floa
     return false;
 }
 
+static float Smooth01(float t) { t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t); return t * t * (3.0f - 2.0f * t); }
+
+float PlayerDirectionMul(float forward, float right)
+{
+    // The unit direction is scaled axis by axis (forward at 1, backward at its own cap, sideways at its own cap) and the length of
+    // what comes out is the multiplier: an ellipse, so every direction in between is continuous with its neighbours.
+    const float f = forward >= 0.0f ? forward : forward * PLAYER_BACKPEDAL_MUL;
+    const float r = right * PLAYER_STRAFE_MUL;
+    return sqrtf(f * f + r * r);
+}
+
+float PlayerAimAmount(const PlayerController *player) { return Smooth01(player->aimBlend); }
+float PlayerAimEase(float aimBlend) { return Smooth01(aimBlend); }
+
+float PlayerViewFov(const PlayerController *player, float aimBlend)
+{
+    const float zoomed = player->adsFov > 1.0f ? player->adsFov : PLAYER_BASE_FOV;
+    return PLAYER_BASE_FOV + (zoomed - PLAYER_BASE_FOV) * Smooth01(aimBlend) + SPRINT_FOV_KICK * player->sprintBlend;
+}
+
+Vector3 PlayerViewUp(Vector3 forward, float leanBlend)
+{
+    const Vector3 worldUp = { 0.0f, 1.0f, 0.0f };
+    if (leanBlend > -0.0005f && leanBlend < 0.0005f) return worldUp;
+    const Vector3 r = Vector3Normalize(Vector3CrossProduct(forward, worldUp));        // the view's right
+    if (Vector3Length(r) < 0.001f) return worldUp;
+    const Vector3 u0 = Vector3CrossProduct(r, forward);
+    const float a = leanBlend * PLAYER_LEAN_ROLL;
+    return Vector3Add(Vector3Scale(u0, cosf(a)), Vector3Scale(r, sinf(a)));
+}
+
+// How far the eye may move along dir (a unit vector on the floor) from pos before it would come within PLAYER_LEAN_CAM_CLEAR of a wall.
+static float LeanRoom(const FloorMap *map, Vector3 pos, float dx, float dz)
+{
+    float room = 0.0f;
+    for (float d = 0.05f; d <= PLAYER_LEAN_SHIFT + 0.001f; d += 0.05f) {
+        if (NearestWallDist(map, pos.x + dx * d, pos.z + dz * d, PLAYER_LEAN_CAM_CLEAR) < PLAYER_LEAN_CAM_CLEAR) break;
+        room = d;
+    }
+    return room;
+}
+
 static void SyncPlayerCamera(PlayerController *player) {
     // Head bob follows the distance walked, so it is quicker and bigger when sprinting and gone when standing; a tired
     // player also heaves with each breath.
@@ -77,6 +119,14 @@ static void SyncPlayerCamera(PlayerController *player) {
     else if (player->stamina < STAMINA_LOW) bob += sinf(player->breathClock * 6.0f) * 0.009f;
     bob *= 1.0f - player->slideBlend;                                  // a slide is smooth
     player->camera.position = (Vector3){ player->position.x, player->eyeY + (player->height * 0.35f) + bob - PLAYER_SLIDE_DROP * player->slideBlend, player->position.z };
+    // A lean moves the eye sideways (never further than there is room for) and a little down.
+    if (player->leanBlend > 0.0005f || player->leanBlend < -0.0005f) {
+        const float room = player->leanBlend > 0.0f ? player->leanRoom[1] : player->leanRoom[0];
+        const float shift = player->leanBlend * fminf(PLAYER_LEAN_SHIFT, room);            // negative to the left
+        player->camera.position.x += sinf(player->yaw - 1.5708f) * shift;
+        player->camera.position.z += cosf(player->yaw - 1.5708f) * shift;
+        player->camera.position.y -= PLAYER_LEAN_DIP * fabsf(player->leanBlend);
+    }
     // The shake is only in the view; the player's real yaw and pitch are untouched.
     const float yaw = player->yaw + sinf(player->shakeClock * 48.0f) * SHAKE_YAW * player->shake;
     float pitch = player->pitch + sinf(player->shakeClock * 61.0f + 1.3f) * SHAKE_PITCH * player->shake;
@@ -88,6 +138,7 @@ static void SyncPlayerCamera(PlayerController *player) {
         cosf(yaw) * cosf(pitch)
     };
     player->camera.target = Vector3Add(player->camera.position, lookDir);
+    player->camera.up = PlayerViewUp(lookDir, player->leanBlend);
 }
 
 void InitPlayerController(PlayerController *player, float startX, float startZ) {
@@ -126,6 +177,15 @@ void InitPlayerController(PlayerController *player, float startX, float startZ) 
     player->slideCooldown = 0.0f;
     player->slideBlend = 0.0f;
     player->slideDir = (Vector3){ 0.0f, 0.0f, 1.0f };
+    player->wantAim = false;
+    player->aimBlend = 0.0f;
+    player->adsFov = 0.0f;
+    player->adsSecs = 0.0f;
+    player->adsMoveMul = 0.0f;
+    player->wantLean = 0;
+    player->leanNearWall = false;
+    player->leanBlend = 0.0f;
+    player->leanRoom[0] = player->leanRoom[1] = 0.0f;
 }
 
 float PlayerFatigue(const PlayerController *player)
@@ -161,7 +221,10 @@ bool PlayerTrySlide(PlayerController *player)
     const float speed = sqrtf(player->moveVel.x * player->moveVel.x + player->moveVel.z * player->moveVel.z);
     if (speed < 2.0f) return false;                                    // a sprint that has barely begun has nothing to slide with
     player->slideDir = (Vector3){ player->moveVel.x / speed, 0.0f, player->moveVel.z / speed };
-    const float start = PLAYER_SPRINT_SPEED * PLAYER_SLIDE_SPEED_MUL * PlayerFatigue(player);   // a tired slide is a slower one
+    // A slide goes the way the sprint was going, in any direction; a sideways or backwards one starts slower, as that sprint was.
+    const float fwd = sinf(player->yaw) * player->slideDir.x + cosf(player->yaw) * player->slideDir.z;
+    const float rgt = sinf(player->yaw - 1.5708f) * player->slideDir.x + cosf(player->yaw - 1.5708f) * player->slideDir.z;
+    const float start = PLAYER_SPRINT_SPEED * PLAYER_SLIDE_SPEED_MUL * PlayerFatigue(player) * PlayerDirectionMul(fwd, rgt);   // a tired slide is a slower one
     player->slideSpeed0 = start > speed ? start : speed;
     player->sliding = true;
     player->slideT = 0.0f;
@@ -235,6 +298,8 @@ void TeleportPlayer(PlayerController *player, Vector3 pos, float yaw) {
     player->isGrounded = true;
     player->sliding = false;
     player->slideBlend = 0.0f;
+    player->aimBlend = 0.0f;
+    player->leanBlend = 0.0f;
     player->eyeY = pos.y;
     player->yaw = yaw;
     player->pitch = 0.0f;
@@ -243,6 +308,10 @@ void TeleportPlayer(PlayerController *player, Vector3 pos, float yaw) {
 
 void PlayerApplyLook(PlayerController *player, Vector2 lookDelta) {
     float lookSensitivity = 0.005f;
+    if (player->adsFov > 1.0f && player->aimBlend > 0.0f) {                  // zoomed in: the same crosshair travel across the world
+        const float ratio = tanf(player->adsFov * DEG2RAD * 0.5f) / tanf(PLAYER_BASE_FOV * DEG2RAD * 0.5f);
+        lookSensitivity *= 1.0f + (ratio - 1.0f) * PlayerAimAmount(player);
+    }
     player->yaw -= lookDelta.x * lookSensitivity;
     player->pitch -= lookDelta.y * lookSensitivity;
     if (player->pitch > 1.4f) player->pitch = 1.4f;
@@ -261,11 +330,35 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     const bool moving = inLen > 0.12f;
     if (inLen > 1.0f) inLen = 1.0f;
 
-    // Stamina. Sprinting needs forward movement, some stamina left, and a player who is not exhausted.
+    // Aiming down sights eases in while wanted and out (a little quicker) when not.
+    {
+        const float secs = player->adsSecs > 0.01f ? player->adsSecs : PLAYER_ADS_DEFAULT_SECS;
+        const bool aimWanted = player->wantAim && player->health.isAlive;
+        const float rate = (aimWanted ? 1.0f : 1.0f / PLAYER_ADS_OUT_SHARE) * dt / secs;
+        if (aimWanted) { player->aimBlend += rate; if (player->aimBlend > 1.0f) player->aimBlend = 1.0f; }
+        else           { player->aimBlend -= rate; if (player->aimBlend < 0.0f) player->aimBlend = 0.0f; }
+    }
+    // Leaning: only with a wall or corner close by, on the ground and not sliding; the eye never goes into a wall.
+    {
+        player->leanNearWall = NearestWallDist(map, player->position.x, player->position.z, PLAYER_LEAN_NEAR_WALL) < PLAYER_LEAN_NEAR_WALL;
+        const bool canLean = player->leanNearWall && player->isGrounded && !player->sliding && player->health.isAlive;
+        const int target = canLean ? (player->wantLean > 0 ? 1 : (player->wantLean < 0 ? -1 : 0)) : 0;
+        const float rate = dt / PLAYER_LEAN_SECS;
+        if (player->leanBlend < (float)target) { player->leanBlend += rate; if (player->leanBlend > (float)target) player->leanBlend = (float)target; }
+        else if (player->leanBlend > (float)target) { player->leanBlend -= rate; if (player->leanBlend < (float)target) player->leanBlend = (float)target; }
+        if (target != 0 || player->leanBlend != 0.0f) {                          // the room to either side, for the camera
+            player->leanRoom[0] = LeanRoom(map, player->position, -sinf(player->yaw - 1.5708f), -cosf(player->yaw - 1.5708f));
+            player->leanRoom[1] = LeanRoom(map, player->position,  sinf(player->yaw - 1.5708f),  cosf(player->yaw - 1.5708f));
+        }
+    }
+    const bool leaning = player->leanBlend > 0.05f || player->leanBlend < -0.05f;
+
+    // Stamina. Sprinting works in every direction (omni sprint), needs some stamina left and a player who is not exhausted, and does
+    // not go with aiming down sights or leaning.
     // A sprint that is already going carries on until the stamina is gone; starting one takes a little in hand.
-    const bool canSprint = !player->exhausted && player->isGrounded &&
+    const bool canSprint = !player->exhausted && player->isGrounded && !player->wantAim && !leaning &&
                            (player->sprinting ? player->stamina > 0.0f : player->stamina > STAMINA_SPRINT_MIN);
-    player->sprinting = player->wantSprint && moving && moveDelta.y < -0.25f && canSprint;
+    player->sprinting = player->wantSprint && moving && canSprint;
     if (player->sprinting && player->sliding) {
         player->staminaDelay = STAMINA_REGEN_DELAY;                    // the slide was paid for when it started: no drain, no regeneration
     } else if (player->sprinting) {
@@ -283,14 +376,18 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
 
     // Target speed: walking or sprinting, slower the more tired the player is (smoothly, from STAMINA_FRESH down to zero).
     const float fatigue = PlayerFatigue(player);
-    const float topSpeed = (player->sprinting ? PLAYER_SPRINT_SPEED : PLAYER_WALK_SPEED) * fatigue;
+    float topSpeed = (player->sprinting ? PLAYER_SPRINT_SPEED : PLAYER_WALK_SPEED) * fatigue;
+    if (player->adsMoveMul > 0.0f) topSpeed *= 1.0f + (player->adsMoveMul - 1.0f) * PlayerAimAmount(player);   // aimed down sights: slower
+    topSpeed *= 1.0f + (PLAYER_LEAN_MOVE_MUL - 1.0f) * fabsf(player->leanBlend);                               // and leaning
     Vector3 want = { 0.0f, 0.0f, 0.0f };
     if (moving) {
         // The stick's direction at its own length (a gentle push walks slowly), then turned into world directions.
         const float ux = moveDelta.x / sqrtf(moveDelta.x * moveDelta.x + moveDelta.y * moveDelta.y);
         const float uy = moveDelta.y / sqrtf(moveDelta.x * moveDelta.x + moveDelta.y * moveDelta.y);
-        want.x = (-forward.x * uy + right.x * ux) * topSpeed * inLen;
-        want.z = (-forward.z * uy + right.z * ux) * topSpeed * inLen;
+        // Each axis has its own top speed: forward at 1, left and right and backwards slower (omni movement).
+        const float f = -uy * (uy > 0.0f ? PLAYER_BACKPEDAL_MUL : 1.0f), r = ux * PLAYER_STRAFE_MUL;
+        want.x = (forward.x * f + right.x * r) * topSpeed * inLen;
+        want.z = (forward.z * f + right.z * r) * topSpeed * inLen;
     }
     if (player->slideCooldown > 0.0f) player->slideCooldown -= dt;
     if (player->sliding) {
@@ -347,7 +444,7 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
         float k = dt * 6.0f;
         if (k > 1.0f) k = 1.0f;
         player->sprintBlend += (((player->sprinting || player->sliding) ? 1.0f : 0.0f) - player->sprintBlend) * k;
-        player->camera.fovy = 60.0f + SPRINT_FOV_KICK * player->sprintBlend;
+        player->camera.fovy = PlayerViewFov(player, player->aimBlend);
         // The camera drops into a slide and comes back up after it.
         float kd = dt * 12.0f;
         if (kd > 1.0f) kd = 1.0f;

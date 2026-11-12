@@ -39,6 +39,7 @@ typedef struct {
     const char *floorInfo;              // the generator's numbers for this floor, one line
     bool  useShown, useLocked; const char *useLabel;
     bool  slideShown;
+    bool  leanShown;                    // the two LEAN buttons are drawn (a wall or corner is close)
     bool  invOpen;
     const char *characterName;          // the chosen character's short name, or NULL when none is chosen (shown beside STATS in the popup)
     int   stairPhase;                   // the stair clock: 0 none on this floor, 1 find the console, 2 countdown, 3 collapsing

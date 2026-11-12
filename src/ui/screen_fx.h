@@ -22,6 +22,8 @@ void ScreenFx_DrawHealthEffects(int screenW, int screenH, float hpFraction, floa
 
 // A small aiming dot at the centre of the screen.
 void ScreenFx_DrawCrosshair(int screenW, int screenH);
+// The same, fading out as the player aims down the sights (ads01 0 at the hip, 1 aimed): the gun's own sights take over.
+void ScreenFx_DrawCrosshairAimed(int screenW, int screenH, float ads01);
 
 // Feedback for shots that land. hit and kill run from 1 (just happened) down to 0.
 // A hit is four short white ticks around the centre; a kill is larger, red ticks.

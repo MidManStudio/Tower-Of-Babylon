@@ -216,6 +216,8 @@ static void Frame(void)
     // which controls are live: nothing while a door opens or the player is dead, only walking with the inventory open,
     // and a button only when it has something to act on.
     InputContext ictx = { 0 };
+    ictx.dt = dt;                                     // the fire pad aims at a rate, so it needs the frame's time
+    ictx.aimMode = TC_DEFAULT_AIM_MODE;               // how the fire pad aims (a setting, once there is a settings screen)
     ictx.locked = g_sim.seq != SEQ_NONE || !g_sim.player.health.isAlive;
     ictx.walkOnly = g_sim.invOpen;
     ictx.useAvailable = useAvailable;
@@ -223,6 +225,7 @@ static void Frame(void)
     ictx.lightAvailable = Inventory_Has(&g_sim.inv, ITEM_FLASHLIGHT);
     ictx.slideAvailable = GameSim_SlideButtonShown(&g_sim);
     ictx.reloadAvailable = Arsenal_CanReload(&g_sim.arsenal) && g_sim.player.health.isAlive;
+    ictx.leanAvailable = GameSim_LeanButtonsShown(&g_sim) && !g_sim.invOpen;      // only near a wall or a corner
     ictx.blockedCount = Hud_BlockedRects(ictx.blocked, TC_MAX_BLOCKED - 1);
     {
         const Rectangle ib = InvUI_OpenButton();
@@ -290,10 +293,16 @@ static void Frame(void)
     Enemies_SetRenderAlpha(alpha);
     Projectiles_SetRenderLag((1.0f - alpha) * SIM_STEP_SECS);
     Camera3D viewCam = g_sim.player.camera;
+    // Aiming down sights and leaning are blended between steps like the eye: the field of view, the tilt and the hands' pose all
+    // move smoothly through the 0.2 s they take, not in 30 Hz jumps.
+    const float aimView = g_sim.prevAim + (g_sim.player.aimBlend - g_sim.prevAim) * alpha;
+    const float leanView = g_sim.prevLean + (g_sim.player.leanBlend - g_sim.prevLean) * alpha;
     {
         const Vector3 dir = Vector3Subtract(g_sim.player.camera.target, g_sim.player.camera.position);
         viewCam.position = Vector3Lerp(g_sim.prevEye, g_sim.player.camera.position, alpha);
         viewCam.target = Vector3Add(viewCam.position, dir);
+        viewCam.fovy = PlayerViewFov(&g_sim.player, aimView);
+        viewCam.up = PlayerViewUp(Vector3Normalize(dir), leanView);
     }
     const AimFrame viewAim = Aim_FromCamera(&viewCam);
 
@@ -338,7 +347,8 @@ static void Frame(void)
             const double tHands0 = GetTime();
             if (g_sim.player.health.isAlive) {
                 const float walk01 = PlayerSpeed(&g_sim.player) / PLAYER_WALK_SPEED > 1.5f ? 1.5f : PlayerSpeed(&g_sim.player) / PLAYER_WALK_SPEED;
-                Viewmodel_Draw(&g_sim.arsenal, &viewAim, g_sim.player.isGrounded ? walk01 : 0.0f, (float)GetTime(), Lighting_AtPoint(g_sim.player.position));
+                Viewmodel_DrawAimed(&g_sim.arsenal, &viewAim, g_sim.player.isGrounded ? walk01 : 0.0f, (float)GetTime(), Lighting_AtPoint(g_sim.player.position),
+                                    PlayerAimEase(aimView));
             }
             SubNote(SUB_HANDS, tHands0, GetTime());
         EndMode3D();
@@ -347,7 +357,7 @@ static void Frame(void)
         ScreenFx_DrawHealthEffects(screenWidth, screenHeight, g_sim.player.health.hp / g_sim.player.health.maxHp,
                                    g_sim.player.hitFlash, (float)GetTime());
         if (healFlash > 0.0f) DrawRectangle(0, 0, screenWidth, screenHeight, Fade((Color){ 60, 220, 100, 255 }, 0.22f * healFlash));
-        ScreenFx_DrawCrosshair(screenWidth, screenHeight);
+        ScreenFx_DrawCrosshairAimed(screenWidth, screenHeight, PlayerAimEase(aimView));
         ScreenFx_DrawHitMarker(screenWidth, screenHeight, hitMarker, killMarker);
 
         if (fade > 0.0f) DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, fade > 1.0f ? 1.0f : fade));
@@ -377,6 +387,7 @@ static void Frame(void)
             hv.mag = hv.magSize > 0 ? g_sim.arsenal.mag[g_sim.arsenal.current] : 0;
             hv.reloading = g_sim.arsenal.reloading; hv.reloadFrac = Arsenal_ReloadFraction(&g_sim.arsenal);
             hv.magEmpty = hv.magSize > 0 && hv.mag <= 0;
+            hv.leanShown = ictx.leanAvailable;
             hv.reloadShown = g_sim.player.health.isAlive && !g_sim.invOpen && (Arsenal_CanReload(&g_sim.arsenal) || g_sim.arsenal.reloading);
             hv.weaponWears = held->kind == WEAPON_KIND_MELEE && held->durability > 0;
             hv.weaponCondition = Arsenal_Condition(&g_sim.arsenal, g_sim.arsenal.current);

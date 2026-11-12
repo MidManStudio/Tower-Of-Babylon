@@ -4,7 +4,7 @@
 // See docs/config.md.
 #include "mdix_doc.h"
 
-// weapons.mdix   FNV-1a 0xadc902d1
+// weapons.mdix   FNV-1a 0x84f1e185
 static const MdixBakedEntry k_weapons[] = {
     { "weapons[0].arc_deg", 'f', "50" },
     { "weapons[0].cooldown", 'f', "0.45" },
@@ -28,6 +28,10 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[1].name", 's', "PIPE" },
     { "weapons[1].reach", 'f', "2.6" },
     { "weapons[1].windup", 'f', "0.31" },
+    { "weapons[2].ads_fov", 'f', "52" },
+    { "weapons[2].ads_move", 'f', "0.8" },
+    { "weapons[2].ads_secs", 'f', "0.14" },
+    { "weapons[2].ads_spread", 'f', "0.5" },
     { "weapons[2].ammo", 'i', "1" },
     { "weapons[2].ammo_box", 'i', "8" },
     { "weapons[2].ammo_per_shot", 'i', "1" },
@@ -52,6 +56,10 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[2].reload_secs", 'f', "1.4" },
     { "weapons[2].spread_deg", 'f', "0" },
     { "weapons[2].spread_max_deg", 'f', "1.5" },
+    { "weapons[3].ads_fov", 'f', "54" },
+    { "weapons[3].ads_move", 'f', "0.65" },
+    { "weapons[3].ads_secs", 'f', "0.22" },
+    { "weapons[3].ads_spread", 'f', "0.75" },
     { "weapons[3].ammo", 'i', "2" },
     { "weapons[3].ammo_box", 'i', "6" },
     { "weapons[3].ammo_per_shot", 'i', "1" },
@@ -76,6 +84,10 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[3].reload_secs", 'f', "0.55" },
     { "weapons[3].spread_deg", 'f', "4.5" },
     { "weapons[3].spread_max_deg", 'f', "4.5" },
+    { "weapons[4].ads_fov", 'f', "46" },
+    { "weapons[4].ads_move", 'f', "0.6" },
+    { "weapons[4].ads_secs", 'f', "0.2" },
+    { "weapons[4].ads_spread", 'f', "0.5" },
     { "weapons[4].ammo", 'i', "3" },
     { "weapons[4].ammo_box", 'i', "24" },
     { "weapons[4].ammo_per_shot", 'i', "1" },
@@ -102,7 +114,7 @@ static const MdixBakedEntry k_weapons[] = {
     { "weapons[4].spread_max_deg", 'f', "5" },
     { "weapons[]", 'i', "5" },
 };
-const MdixBaked g_bakedWeapons = { "weapons.mdix", 0xadc902d1u, k_weapons, (int)(sizeof k_weapons / sizeof k_weapons[0]) };
+const MdixBaked g_bakedWeapons = { "weapons.mdix", 0x84f1e185u, k_weapons, (int)(sizeof k_weapons / sizeof k_weapons[0]) };
 
 // projectiles.mdix   FNV-1a 0xb1c65ff6
 static const MdixBakedEntry k_projectiles[] = {

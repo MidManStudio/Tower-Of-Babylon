@@ -78,20 +78,27 @@ void HudControls_Draw(const HudView *v)
     SprintIcon(ax, ay - L->stickRadius - L->sprintIconGap - L->sprintIconRadius, L->sprintIconRadius, on ? t->sprintFill : 0.0f,
                on && t->sprint, v->exhausted, on ? 1.0f : 0.35f);
 
-    // The fire pad: held it fires, and the finger that holds it also turns the camera. An outer ring (where a finger counts as
-    // being on it) and a button disc with a bullet in it.
+    // The fire pad: fixed where it is, it fires while held and the finger that holds it also aims. An outer ring (where a finger
+    // counts as being on it), a faint mark at its centre, and the button disc with a bullet in it, which is the knob: it follows
+    // the finger, held inside the ring, the way the move stick's knob does.
     DrawCircleV((Vector2){ L->firePad.x, L->firePad.y }, L->firePad.r, Fade(BLACK, 0.18f));
     Ring(L->firePad.x, L->firePad.y, L->firePad.r, 3.0f, Fade(WHITE, 0.55f));
-    DrawCircleV((Vector2){ L->firePad.x, L->firePad.y }, L->fireInnerRadius, Fade(t->fireHeld ? RED : DARKGRAY, 0.65f));
-    Ring(L->firePad.x, L->firePad.y, L->fireInnerRadius, 2.0f, Fade(WHITE, 0.70f));
-    BulletIcon(L->firePad.x, L->firePad.y - 8.0f, Fade(WHITE, 0.90f));
+    const float fx = t->aimActive ? t->aimKnobX : L->firePad.x, fy = t->aimActive ? t->aimKnobY : L->firePad.y;
+    if (t->aimActive) Ring(L->firePad.x, L->firePad.y, 7.0f, 2.0f, Fade(WHITE, 0.45f));
+    DrawCircleV((Vector2){ fx, fy }, L->fireInnerRadius, Fade(t->fireHeld ? RED : DARKGRAY, 0.65f));
+    Ring(fx, fy, L->fireInnerRadius, 2.0f, Fade(WHITE, 0.70f));
+    BulletIcon(fx, fy - 8.0f, Fade(WHITE, 0.90f));
     const char *attack = v->weaponIsGun ? "FIRE" : (v->weaponIsMelee ? "SWING" : "PUNCH");
-    DrawText(attack, (int)(L->firePad.x - (float)MeasureText(attack, 12) / 2.0f), (int)L->firePad.y + 20, 12, WHITE);
+    DrawText(attack, (int)(fx - (float)MeasureText(attack, 12) / 2.0f), (int)fy + 20, 12, WHITE);
 
     RoundButton(L->jump, t->jumpHeld ? BLUE : DARKGRAY, "JUMP", t->jumpHeld);
 
     if (v->useShown) RoundButton(L->use, v->useLocked ? MAROON : DARKGREEN, v->useLabel, t->useHeld);
     if (v->weaponsOwned > 1) RoundButton(L->swap, DARKGRAY, "SWAP", t->swapHeld);
+    if (v->leanShown) {                                             // held: lean while a finger is on it
+        RoundButton(L->leanLeft,  t->leanLeftHeld  ? SKYBLUE : DARKGRAY, "LEAN\n<", t->leanLeftHeld);
+        RoundButton(L->leanRight, t->leanRightHeld ? SKYBLUE : DARKGRAY, "LEAN\n>", t->leanRightHeld);
+    }
     if (v->slideShown) RoundButton(L->slide, v->sliding ? SKYBLUE : (v->tooTiredToSlide ? ORANGE : (Color){ 40, 120, 170, 255 }), v->sliding ? "SLIDING" : "SLIDE", false);
     if (v->reloadShown) {
         // Grey while a reload can start, maroon when the magazine is empty, amber (and not pressable) while one runs, with a ring filling round it.

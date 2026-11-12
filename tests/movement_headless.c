@@ -83,7 +83,7 @@ int main(void)
 
         PlayerController d = Place(20.0f, 6.0f, 0.0f);
         Run(&d, (Vector2){ 1.0f, -1.0f }, false, 1.0f);
-        Check(fabsf(PlayerSpeed(&d) - PLAYER_WALK_SPEED) < 0.02f, "walking diagonally is not faster than walking straight");
+        Check(fabsf(PlayerSpeed(&d) - PLAYER_WALK_SPEED * PlayerDirectionMul(0.7071f, 0.7071f)) < 0.03f && PlayerSpeed(&d) < PLAYER_WALK_SPEED, "walking diagonally is not faster than walking straight (a bit slower: the sideways share is slower)");
         PlayerController h = Place(20.0f, 6.0f, 0.0f);
         Run(&h, (Vector2){ 0.0f, -0.5f }, false, 1.0f);
         Check(fabsf(PlayerSpeed(&h) - PLAYER_WALK_SPEED * 0.5f) < 0.05f, "a half push of the stick walks at half speed");
@@ -105,12 +105,36 @@ int main(void)
         Run(&p, FWD, false, 1.2f);
         Check(!p.sprinting && fabsf(p.camera.fovy - 60.0f) < 0.5f, "and narrows again when the sprint ends");
 
+        // Omni sprint: any direction, slower sideways and backwards.
         PlayerController s = Place(20.0f, 40.0f, 0.0f);
         Run(&s, (Vector2){ 1.0f, 0.0f }, true, 1.0f);
-        Check(!s.sprinting && PlayerSpeed(&s) <= PLAYER_WALK_SPEED + 0.02f, "there is no sprinting sideways");
+        Check(s.sprinting && fabsf(PlayerSpeed(&s) - PLAYER_SPRINT_SPEED * PLAYER_STRAFE_MUL) < 0.05f, "sprinting sideways works, at the strafe share of the sprint speed");
+        PlayerController l = Place(20.0f, 40.0f, 0.0f);
+        Run(&l, (Vector2){ -1.0f, 0.0f }, true, 1.0f);
+        Check(l.sprinting && fabsf(PlayerSpeed(&l) - PlayerSpeed(&s)) < 0.02f, "left is the same as right");
         PlayerController r = Place(20.0f, 40.0f, 0.0f);
         Run(&r, (Vector2){ 0.0f, 1.0f }, true, 1.0f);
-        Check(!r.sprinting && PlayerSpeed(&r) <= PLAYER_WALK_SPEED + 0.02f, "or backwards");
+        Check(r.sprinting && fabsf(PlayerSpeed(&r) - PLAYER_SPRINT_SPEED * PLAYER_BACKPEDAL_MUL) < 0.05f, "and backwards, at the backpedal share");
+        Check(PlayerSpeed(&r) < PlayerSpeed(&s) && PlayerSpeed(&s) < PLAYER_SPRINT_SPEED, "backwards is slower than sideways, and both slower than forward");
+        PlayerController dg = Place(20.0f, 40.0f, 0.0f);
+        Run(&dg, (Vector2){ 1.0f, 1.0f }, true, 1.0f);
+        Check(dg.sprinting && fabsf(PlayerSpeed(&dg) - PLAYER_SPRINT_SPEED * PlayerDirectionMul(-0.7071f, 0.7071f)) < 0.05f, "back and to the side lands between the two");
+        {
+            const float before = s.stamina;
+            Run(&s, (Vector2){ 1.0f, 0.0f }, true, 1.0f);
+            Check(fabsf((before - s.stamina) - STAMINA_SPRINT_DRAIN) < 0.5f, "a sideways sprint costs the same stamina as a forward one");
+        }
+        Check(PlayerDirectionMul(1.0f, 0.0f) == 1.0f && fabsf(PlayerDirectionMul(0.0f, 1.0f) - PLAYER_STRAFE_MUL) < 1e-4f && fabsf(PlayerDirectionMul(-1.0f, 0.0f) - PLAYER_BACKPEDAL_MUL) < 1e-4f, "the direction multiplier is 1 ahead, the strafe share to the side and the backpedal share behind");
+        {
+            float worst = 0.0f, prev = PlayerDirectionMul(1.0f, 0.0f);
+            for (int a = 1; a <= 360; ++a) {
+                const float th = (float)a * 3.14159265f / 180.0f;
+                const float m = PlayerDirectionMul(cosf(th), sinf(th));
+                if (fabsf(m - prev) > worst) worst = fabsf(m - prev);
+                prev = m;
+            }
+            Check(worst < 0.01f, "going round the compass the multiplier never jumps (no step between ahead and behind)");
+        }
         PlayerController st = Place(20.0f, 4.0f, 0.0f);
         Run(&st, (Vector2){ 0, 0 }, true, 1.0f);
         Check(!st.sprinting && st.stamina == PLAYER_STAMINA_MAX, "or standing still: it costs nothing");
@@ -435,6 +459,165 @@ int main(void)
             distFor[k] = q.position.z - z0;
         }
         Check(fabsf(distFor[0] - distFor[2]) < 0.6f && fabsf(distFor[1] - distFor[2]) < 0.4f, "the distance a slide covers hardly depends on the frame rate");
+    }
+
+    printf("Sliding in any direction\n");
+    {
+        OpenFloor(-1);
+        PlayerController f = Place(20.0f, 40.0f, 0.0f);
+        Run(&f, FWD, true, 0.7f);
+        PlayerController sd = Place(20.0f, 40.0f, 0.0f);
+        Run(&sd, (Vector2){ 1.0f, 0.0f }, true, 0.7f);
+        PlayerController bk = Place(20.0f, 40.0f, 0.0f);
+        Run(&bk, (Vector2){ 0.0f, 1.0f }, true, 0.7f);
+        Check(PlayerTrySlide(&f) && PlayerTrySlide(&sd) && PlayerTrySlide(&bk), "a slide starts from a sideways or a backwards sprint too");
+        Check(sd.slideSpeed0 < f.slideSpeed0 && bk.slideSpeed0 < sd.slideSpeed0, "and a sideways one starts slower than a forward one, a backwards one slower still");
+        Run(&sd, (Vector2){ 1.0f, 0.0f }, true, DT);
+        Check(sd.moveVel.x < -1.0f && fabsf(sd.moveVel.z) < 0.5f, "the sideways slide goes sideways (right is -x when facing +z)");
+    }
+
+    printf("Aiming down sights\n");
+    {
+        OpenFloor(-1);
+        PlayerController hip = Place(20.0f, 40.0f, 0.0f);
+        Run(&hip, FWD, false, 1.0f);
+        const float hipSpeed = PlayerSpeed(&hip);
+
+        PlayerController p = Place(20.0f, 40.0f, 0.0f);
+        p.adsFov = 45.0f; p.adsSecs = 0.20f; p.adsMoveMul = 0.60f;
+        Run(&p, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(p.aimBlend == 0.0f && fabsf(p.camera.fovy - 60.0f) < 0.01f, "without wanting it there is no ADS");
+        p.wantAim = true;
+        Run(&p, (Vector2){ 0, 0 }, false, 0.1f);
+        Check(p.aimBlend > 0.4f && p.aimBlend < 0.6f, "halfway through its time it is halfway in (adsSecs is the whole way in)");
+        Run(&p, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(p.aimBlend == 1.0f && fabsf(p.camera.fovy - 45.0f) < 0.01f, "then fully in, at the weapon's field of view");
+        Run(&p, FWD, false, 1.0f);
+        Check(fabsf(PlayerSpeed(&p) - hipSpeed * 0.60f) < 0.05f, "walking aimed down sights is at the weapon's move share of the walking speed");
+        Check(PlayerAimAmount(&p) == 1.0f && PlayerAimAmount(&hip) == 0.0f, "PlayerAimAmount is 0 at the hip and 1 when in");
+        {
+            PlayerController q = p;
+            q.aimBlend = 0.5f;
+            Check(fabsf(PlayerAimAmount(&q) - 0.5f) < 1e-4f && PlayerViewFov(&q, 0.5f) > 45.0f && PlayerViewFov(&q, 0.5f) < 60.0f, "half way in (smoothstep 0.5) the view is between the two fields of view");
+        }
+
+        const float yaw0 = p.yaw;
+        PlayerApplyLook(&p, (Vector2){ 100.0f, 0.0f });
+        const float ratio = tanf(45.0f * 3.14159265f / 360.0f) / tanf(30.0f * 3.14159265f / 180.0f);
+        Check(fabsf((yaw0 - p.yaw) - 100.0f * 0.005f * ratio) < 1e-4f && ratio < 0.8f, "zoomed in, the same swipe turns less, by the ratio of the two fields of view");
+        PlayerController h2 = Place(20.0f, 40.0f, 0.0f);
+        PlayerApplyLook(&h2, (Vector2){ 100.0f, 0.0f });
+        Check(fabsf(-h2.yaw - 0.5f) < 1e-4f, "and at the hip it is unchanged");
+
+        PlayerController sp = Place(20.0f, 40.0f, 0.0f);
+        sp.adsFov = 45.0f; sp.adsMoveMul = 0.60f;
+        Run(&sp, FWD, true, 0.8f);
+        Check(sp.sprinting, "(sprinting works at the hip)");
+        sp.wantAim = true;
+        Run(&sp, FWD, true, DT);
+        Check(!sp.sprinting, "wanting ADS ends the sprint at once");
+        Run(&sp, FWD, true, 1.5f);
+        Check(!sp.sprinting && PlayerSpeed(&sp) < PLAYER_WALK_SPEED, "and there is no sprinting while aimed, even with the stick at the rim");
+        sp.wantAim = false;
+        Run(&sp, FWD, true, 1.0f);
+        Check(sp.sprinting && sp.aimBlend == 0.0f && fabsf(sp.camera.fovy - (60.0f + SPRINT_FOV_KICK * sp.sprintBlend)) < 0.01f, "let go: the view comes back out, and the sprint carries on");
+
+        PlayerController out = Place(20.0f, 40.0f, 0.0f);
+        out.adsFov = 45.0f; out.adsSecs = 0.20f; out.wantAim = true;
+        Run(&out, (Vector2){ 0, 0 }, false, 0.4f);
+        out.wantAim = false;
+        Run(&out, (Vector2){ 0, 0 }, false, 0.1f);
+        Check(out.aimBlend > 0.0f && out.aimBlend < 0.5f, "coming out is quicker than going in (0.6 of the time) but is not instant");
+        Run(&out, (Vector2){ 0, 0 }, false, 0.2f);
+        Check(out.aimBlend == 0.0f, "and finishes");
+
+        PlayerController nz = Place(20.0f, 40.0f, 0.0f);
+        nz.wantAim = true;
+        Run(&nz, FWD, false, 1.0f);
+        Check(fabsf(nz.camera.fovy - 60.0f) < 0.01f && fabsf(PlayerSpeed(&nz) - hipSpeed) < 0.05f, "a weapon with no zoom or slowing set (adsFov 0, move 0) changes neither the view nor the speed");
+
+        PlayerController dead = Place(20.0f, 40.0f, 0.0f);
+        dead.adsFov = 45.0f; dead.wantAim = true;
+        dead.health.isAlive = false;
+        Run(&dead, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(dead.aimBlend == 0.0f, "a dead player does not aim");
+    }
+
+    printf("Leaning, near walls and corners only\n");
+    {
+        OpenFloor(-1);
+        const float wall = TILE_SIZE * 0.5f;              // the border wall's face is at x = 1; yaw 0 looks along +z, so the wall is on the player's right
+        PlayerController far = Place(20.0f, 40.0f, 0.0f);
+        far.wantLean = 1;
+        Run(&far, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(!far.leanNearWall && far.leanBlend == 0.0f && fabsf(far.camera.position.x - 20.0f) < 1e-4f, "in the open, leaning does nothing");
+
+        PlayerController p = Place(wall + 0.9f, 40.0f, 0.0f);
+        Run(&p, (Vector2){ 0, 0 }, false, 0.1f);
+        Check(p.leanNearWall, "with a wall 0.9 m away leaning is available");
+        const float x0 = p.camera.position.x, y0 = p.camera.position.y;
+        p.wantLean = -1;                                   // left: away from the wall
+        Run(&p, (Vector2){ 0, 0 }, false, 0.1f);
+        Check(p.leanBlend < -0.5f && p.leanBlend > -0.8f, "a lean is quick (PLAYER_LEAN_SECS, 0.15 s): two thirds of the way in after three steps");
+        Run(&p, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(p.leanBlend == -1.0f, "then it is full");
+        Check(fabsf((p.camera.position.x - x0) - PLAYER_LEAN_SHIFT) < 0.01f && fabsf(p.camera.position.z - 40.0f) < 0.01f, "the eye moves sideways by the lean distance (to the left is +x here) and not forward or back");
+        Check(p.camera.position.y < y0 - PLAYER_LEAN_DIP * 0.9f, "and dips a little");
+        Check(fabsf(p.position.x - (wall + 0.9f)) < 1e-4f, "the body does not move");
+        {
+            Vector3 f = { p.camera.target.x - p.camera.position.x, p.camera.target.y - p.camera.position.y, p.camera.target.z - p.camera.position.z };
+            const float fl = sqrtf(f.x * f.x + f.y * f.y + f.z * f.z);
+            f.x /= fl; f.y /= fl; f.z /= fl;
+            const Vector3 u = p.camera.up;
+            const float dot = u.x * f.x + u.y * f.y + u.z * f.z, ul = sqrtf(u.x * u.x + u.y * u.y + u.z * u.z);
+            Check(p.camera.up.x > 0.1f && fabsf(dot) < 1e-3f && fabsf(ul - 1.0f) < 1e-3f,
+                  "the view tilts to the left (the up vector leans over, stays a unit vector, stays square to the view)");
+        }
+        p.wantLean = 0;
+        Run(&p, (Vector2){ 0, 0 }, false, 0.4f);
+        Check(p.leanBlend == 0.0f && fabsf(p.camera.position.x - x0) < 1e-3f && p.camera.up.x == 0.0f && p.camera.up.y == 1.0f, "letting go brings it back upright");
+
+        // Toward the wall: the eye stops short of it.
+        PlayerController w = Place(wall + 0.6f, 40.0f, 0.0f);
+        w.wantLean = 1;
+        Run(&w, (Vector2){ 0, 0 }, false, 0.5f);
+        const float eyeToWall = w.camera.position.x - wall;
+        Check(w.leanBlend == 1.0f && eyeToWall >= PLAYER_LEAN_CAM_CLEAR - 0.011f, "leaning toward a wall that is close stops the eye short of it (it is never in the wall)");
+        Check(eyeToWall < 0.6f - 0.05f, "but it does move toward it as far as there is room");
+        PlayerController t = Place(wall + 0.46f, 40.0f, 0.0f);
+        t.wantLean = 1;
+        Run(&t, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(t.camera.position.x - wall >= PLAYER_LEAN_CAM_CLEAR - 0.011f, "right up against a wall (0.46 m) there is almost no room, and the eye still stays out of it");
+
+        // Walking off from a wall ends the lean; leaning slows and stops the sprint.
+        PlayerController q = Place(wall + 0.9f, 40.0f, 0.0f);
+        q.wantLean = -1;
+        Run(&q, (Vector2){ 0, 0 }, false, 0.4f);
+        Check(q.leanBlend == -1.0f, "(leaning, wall 0.9 m away)");
+        Run(&q, (Vector2){ -1.0f, 0.0f }, false, 1.5f);                // left is +x here: walks away from the wall while leaning
+        Check(!q.leanNearWall && q.leanBlend == 0.0f && q.camera.up.y == 1.0f, "walking away from the wall ends the lean by itself, even with the button still held");
+        PlayerController m = Place(wall + 0.9f, 40.0f, 0.0f);
+        m.wantLean = -1;
+        Run(&m, FWD, false, 1.0f);
+        Check(fabsf(PlayerSpeed(&m) - PLAYER_WALK_SPEED * PLAYER_LEAN_MOVE_MUL) < 0.08f, "walking while leaning is at the lean's speed share");
+        PlayerController sp = Place(wall + 0.9f, 20.0f, 0.0f);
+        Run(&sp, FWD, true, 0.6f);
+        sp.wantLean = -1;
+        Run(&sp, FWD, true, 0.6f);
+        Check(!sp.sprinting && sp.leanBlend == -1.0f, "a sprint ends when a lean begins");
+        PlayerController air = Place(wall + 0.9f, 40.0f, 0.0f);
+        PlayerTryJump(&air);
+        air.wantLean = 1;
+        Run(&air, (Vector2){ 0, 0 }, false, 0.1f);
+        Check(!air.isGrounded && air.leanBlend == 0.0f, "no leaning in the air");
+        PlayerController gone = Place(wall + 0.9f, 40.0f, 0.0f);
+        gone.wantLean = -1;
+        Run(&gone, (Vector2){ 0, 0 }, false, 0.4f);
+        TeleportPlayer(&gone, (Vector3){ 20.0f, 0.0f, 40.0f }, 0.0f);
+        Check(gone.leanBlend == 0.0f && gone.camera.up.y == 1.0f, "a teleport (a new floor) starts upright");
+        PlayerController corner = Place(wall + 0.8f, wall + 0.8f, 0.0f);   // the inside corner of the map: walls on two sides
+        Run(&corner, (Vector2){ 0, 0 }, false, 0.1f);
+        Check(corner.leanNearWall, "a corner counts: the walls either side make it available");
     }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");

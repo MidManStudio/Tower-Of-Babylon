@@ -14,8 +14,10 @@ Your mechanics list, with where each one stands, then a specification for what i
 | [x] | Magazines and reloading | **done** (`weapons.md`, "Magazines and reloading"): a magazine per gun, the R key and a RELOAD button, an empty gun reloads itself, the shotgun loads one shell at a time and can be interrupted |
 | [x] | Melee durability | **done** (`weapons.md`, "Durability"): the pipe breaks after 30 swings that connect and is gone |
 | [ ] | Crouching | to do |
-| [ ] | Wall peeking | to do |
-| [ ] | Dive | to do |
+| [x] | Omnidirectional movement | **done** (`player.md`, "Omnidirectional movement"): walking, sprinting and sliding in every direction, left, right and backwards slower (placeholder 0.85 and 0.70 of forward) |
+| [x] | Aiming down sights | **done** (`player.md`, "Aiming down sights"): holding the fire pad with a gun aims (a settings option comes later); per gun field of view, time, move share and spread share in `weapons.mdix`; the gun and hands move to the middle of the view. Not yet in the netcode's `NetCmd` |
+| [x] | Wall peeking | **done** (`player.md`, "Leaning"): held lean buttons or Z and X, with a gun in hand and only near a wall or a corner; the eye is kept out of walls. Not yet in the netcode's `NetCmd` |
+| [ ] | Dive | to do: open questions below |
 | [ ] | Consumables | **partly**: medkits and batteries exist and can be used; the "taking" mechanic below is not built |
 | [ ] | Inventory rework | to do (the current inventory is a simple 12 slot grid; `inventory.md`) |
 
@@ -38,9 +40,10 @@ Your description: the player runs and can click a slide button that appears, whi
 - Slide ends in a crouch if the crouch button is held (a natural tie with the dive's "roll, then crouch").
 - Tests: noise values, speed, camera blend, refusals, interplay with slide and sprint.
 
-## Wall peeking (to do)
+## Wall peeking (done)
 
-**Yours:** Call of Duty style wall peeking when holding a gun.
+**Yours:** Call of Duty style wall peeking when holding a gun. Asked later: when is it available? **Yours:** near walls and corners only.
+**Built as:** see `player.md`, "Leaning". The proposal below is what it was built from; the differences are the keys (Z and X, because Q and E are SWAP and USE), a 1 m wall probe for availability, a lean of 0.4 m, 10 degrees and 0.15 s, and the speed while leaning (0.4 of walking).
 **Proposal:**
 - Two small lean buttons that appear only when holding a gun and standing near a wall corner (a probe from the existing dungeon probes decides this), or a lean on an edge-swipe; a key (`Q` and `E`).
 - A lean moves the camera sideways by 0.4 m (the lean) and rolls it by 10 degrees, easing in and out in 0.15 s, with the weapon following. The body stays put, so the lean cannot go through a wall (the camera is clamped by a short probe the way the body is by the collision).
@@ -57,6 +60,15 @@ Your description: the player runs and can click a slide button that appears, whi
 - Invulnerability: your notes do not say. A brief window (0.25 s in the middle of the dive) is the usual reason a dive feels like a dodge; the alternative is only moving out of the way. Decide this.
 - The dive and the slide share the controller state structure, so build the dive as another state of the movement state machine (see below) rather than another pile of flags.
 - Tests: distance and duration, direction from the stick, stamina, refusals, the roll into the crouch.
+
+**Open questions (asked, not built; each with the default I would take if you say "your call"):**
+1. **Invulnerability.** Should the dive give a short grace window (0.25 s in the middle of the airtime), or is it only a dodge by moving out of the way? Default: a short window in the air only, none in the roll.
+2. **When is the direction read?** Your note says "at the time of the jump". The button appears after the jump, so is it the stick at the moment of the jump (committed early) or at the moment of the DIVE tap? Default: at the DIVE tap, relative to the camera, with the stick centred meaning forward.
+3. **How long does the DIVE button stay?** It appears while sprinting and airborne from a jump; does it vanish on landing only, or after a short window (about 0.4 s)? Default: until landing.
+4. **Crouch first?** The roll ends in a crouch and crouch does not exist yet (see "Crouching"). Build crouch first, or let the dive's roll end standing for now and join the crouch later? Default: crouch first, then the dive, with the movement state machine below.
+5. **Firing and aiming during the dive and the roll.** Allowed (Black Ops allows firing in a dive), or the gun is lowered and fire is ignored until the roll ends? Default: no fire and no ADS until the roll ends.
+6. **Numbers:** 3 m, 0.5 s in the air, a 0.4 s roll, 25 stamina, refused when exhausted. Right as a starting point?
+7. **Netcode:** a dive needs a button bit and a state in `NetCmd`/`NetSim_Step` (the other chat's code); the same goes for ADS and lean (`player.md`, "Netcode overlap").
 
 ### A movement state machine
 

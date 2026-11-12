@@ -10,7 +10,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 |---|---|---|
 | `server_smoke.sh` (not a C test) | the server and two bots built and run as separate programs over real UDP with 10% of every packet lost on the way out, plus a bot that lists, finds and joins a second, announcing server with no address given (about 15 s) | `net.md` |
 | `platform_check.sh` (not a C test) | main.c and every source compiled as web, Android and desktop, and `platform.h` checked against the table in `platforms.md` | `platforms.md` |
-| `input_headless.c` | the touch controls (floating stick, sprint at the rim, the fire pad that aims, roles, buttons including RELOAD, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
+| `input_headless.c` | the touch controls (the quick floating stick, sprint at the rim in any direction, the fixed fire pad as a joystick and as a drag, roles, buttons including RELOAD and the held LEAN pair, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
 | `audio_headless.c` | synthesiser numbers, limiter, voices, pan and distance, footsteps, every shipped sound recipe, the bank and the config registry | `audio.md` |
 | `dungeon_headless.c` | generator, floor window, probes | `dungeon.md` |
 | `stairs_headless.c` | staircase geometry and collision | `dungeon.md` |
@@ -18,12 +18,12 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `lighting_headless.c` | ceiling lights, light map, line of sight | `lighting.md` |
 | `highp_headless.c` | the shaders' text and the beam calls | `lighting.md`, `flashlight.md` |
 | `health_headless.c` | health and damage | `player.md` |
-| `movement_headless.c` | velocity, sprint, stamina, noise, sliding | `player.md` |
+| `movement_headless.c` | velocity, omni sprint and slide, stamina, noise, aiming down sights, leaning | `player.md` |
 | `enemies_headless.c`, `spider_headless.c` | enemy AI and spiders | `enemies.md` |
-| `weapons_headless.c` | arsenal, fire modes, magazines and reloading, melee durability, pickups, models, shots at real enemies | `weapons.md` |
+| `weapons_headless.c` | arsenal, fire modes, magazines and reloading, melee durability, aiming-down-sights numbers and pose, pickups, models, shots at real enemies | `weapons.md` |
 | `projectiles_headless.c` | patterns, falloff, swept hits, piercing, tracers, `Gunfire_Shoot` | `projectiles.md` |
 | `inventory_headless.c` | items, stacks, the inventory and its touch screen | `inventory.md` |
-| `sim_headless.c` | the input latch, the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
+| `sim_headless.c` | the input latch (lean included), the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
 | `game_sim_headless.c` | the simulation with no window: the event queue, the rules reported as events (flashlight, shots, hits, medkit, pickups, the stair clock, doors, death), the same world at any frame rate and on every run, and a scan that it reaches for no window, clock, sound or screen | `sim.md` |
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |
 | `floor_game_headless.c` | the stair clock in the game: where the console goes, the door lock, the monster calls, the kill, frame rate independence | `floor_run.md` |

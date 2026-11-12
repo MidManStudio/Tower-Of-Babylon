@@ -327,6 +327,116 @@ int main(void)
         Check(!sim.arsenal.reloading && sim.arsenal.mag[WEAPON_PISTOL] == 2, "putting the gun away stops the reload, and the rounds in it stay in it");
     }
 
+    printf("\n-- holding fire aims down the sights\n");
+    {
+        Boot(1);
+        LoadoutGuns();
+        Check(Arsenal_Replace(&sim.arsenal, WEAPON_RIFLE, WEAPON_PIPE) && sim.arsenal.current == WEAPON_RIFLE, "the rifle in hand (the test's own set-up)");
+        const WeaponDef *rd = Weapon_Def(WEAPON_RIFLE);
+        Idle(12);
+        God();
+        Check(sim.player.aimBlend == 0.0f && Near(sim.player.camera.fovy, 60.0f, 0.01f), "at the hip to begin with: the normal view");
+        const float hipSpread = GameSim_SpreadDeg(&sim);
+        Check(Near(hipSpread, rd->spreadDeg, 0.001f), "and the gun's own cold spread");
+        SimCmd h = None(); h.fireHeld = true;                               // holding the trigger, as SimCmd_Take reports it
+        h.fire = true;
+        Stp(h); Stp(h);
+        Check(sim.player.wantAim && sim.player.aimBlend > 0.0f && sim.player.aimBlend < 1.0f, "holding the fire pad with a gun starts aiming");
+        for (int i = 0; i < 12; ++i) { God(); Stp(h); }
+        Check(sim.player.aimBlend == 1.0f && Near(sim.player.camera.fovy, rd->adsFov, 0.05f), "and a moment later the view is the rifle's own zoom");
+        Check(Near(GameSim_SpreadDeg(&sim), Arsenal_SpreadDeg(&sim.arsenal) * rd->adsSpreadMul, 0.01f) && GameSim_SpreadDeg(&sim) < hipSpread * 1.01f + 5.0f, "the shot's cone is the gun's, narrowed to the ADS share");
+        Check(sim.prevAim <= sim.player.aimBlend && sim.prevLean == 0.0f, "(the sim keeps the previous blends for the picture to blend from)");
+        SimCmd rel = None();
+        Stp(rel);
+        for (int i = 0; i < 12; ++i) { God(); Stp(rel); }
+        Check(sim.player.aimBlend == 0.0f && Near(sim.player.camera.fovy, 60.0f, 0.01f), "let go of fire: the view comes back out");
+
+        // Sprinting and ADS exclude each other: holding fire cancels the sprint, letting go brings it back.
+        sim.arsenal.mag[WEAPON_RIFLE] = rd->magSize;
+        SimCmd run = None(); run.move = (Vector2){ 0.0f, -1.0f }; run.sprint = true;
+        for (int i = 0; i < 20; ++i) { God(); Stp(run); }
+        Check(sim.player.sprinting, "(running at the hip)");
+        SimCmd runfire = run; runfire.fireHeld = true; runfire.fire = true;
+        Stp(runfire);
+        Check(!sim.player.sprinting, "holding fire while running ends the sprint");
+        for (int i = 0; i < 20; ++i) { God(); Stp(run); }
+        Check(sim.player.sprinting, "and lifting the thumb lets the sprint carry on (the stick is still at the rim)");
+
+        // Not for everything in the hand, nor at every moment.
+        Arsenal_Equip(&sim.arsenal, WEAPON_HANDS);
+        Idle(12);
+        for (int i = 0; i < 12; ++i) { God(); Stp(h); }
+        Check(sim.player.aimBlend == 0.0f, "fists do not aim down sights: holding fire just punches");
+        Arsenal_Equip(&sim.arsenal, WEAPON_RIFLE);
+        Idle(12);
+        sim.arsenal.mag[WEAPON_RIFLE] = 5;
+        SimCmd rl = None(); rl.reload = true; rl.fireHeld = true;
+        Stp(rl);
+        Stp(h);                                                             // (the reload starts inside the step, so the next one is the first to see it)
+        Check(sim.arsenal.reloading && !sim.player.wantAim, "a reload takes you out of the sights, even with fire held");
+        for (int i = 0; i < 200 && sim.arsenal.reloading; ++i) Stp(None());
+        sim.invOpen = true;
+        for (int i = 0; i < 6; ++i) Stp(h);
+        Check(sim.player.aimBlend == 0.0f, "with the inventory open there is no aiming");
+        sim.invOpen = false;
+        sim.player.health.isAlive = true;
+    }
+
+    printf("\n-- leaning from a wall or a corner\n");
+    {
+        Boot(1);
+        LoadoutGuns();                                                      // a gun in hand: leaning is for guns
+        Idle(12);
+        God();
+        // A floor tile with a wall on its west side, and a floor tile with open floor all round it.
+        int wx = -1, wz = -1, ox = -1, oz = -1;
+        for (int z = 2; z < MAP_HEIGHT - 2; ++z) for (int x = 2; x < MAP_WIDTH - 2; ++x) {
+            if (wx < 0 && sim.map->grid[z][x].type == TILE_FLOOR && sim.map->grid[z][x - 1].type == TILE_WALL
+                && sim.map->grid[z][x + 1].type == TILE_FLOOR && sim.map->grid[z][x + 2].type == TILE_FLOOR) { wx = x; wz = z; }
+            int open = 1;
+            for (int dz = -2; dz <= 2 && open; ++dz) for (int dx = -2; dx <= 2; ++dx)
+                if (sim.map->grid[z + dz][x + dx].type != TILE_FLOOR) { open = 0; break; }
+            if (ox < 0 && open) { ox = x; oz = z; }
+        }
+        Check(wx >= 0 && ox >= 0, "the floor has a spot beside a wall and a spot in the open (the test's own set-up)");
+        if (wx >= 0 && ox >= 0) {
+            SimCmd lean = None(); lean.lean = -1;                           // yaw 0 looks along +z and right is -x: the wall is on the right, so lean left is away from it
+            GoTo((Vector3){ ox * TILE_SIZE, 0.0f, oz * TILE_SIZE });
+            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
+            Check(!sim.player.leanNearWall && sim.player.leanBlend == 0.0f && !GameSim_LeanButtonsShown(&sim), "in the open the buttons are not there and holding lean does nothing");
+
+            GoTo((Vector3){ wx * TILE_SIZE - 0.5f, 0.0f, wz * TILE_SIZE });
+            Idle(2);
+            Check(sim.player.leanNearWall && GameSim_LeanButtonsShown(&sim), "half a metre from a wall they are");
+            const float x0 = sim.player.camera.position.x;
+            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
+            Check(sim.player.leanBlend == -1.0f && sim.player.camera.position.x > x0 + PLAYER_LEAN_SHIFT * 0.9f, "holding lean tips the eye away from the wall");
+            Check(sim.prevLean != 0.0f || sim.player.leanBlend != 0.0f, "(and the sim keeps the previous blend)");
+            for (int i = 0; i < 12; ++i) { God(); Stp(None()); }
+            Check(sim.player.leanBlend == 0.0f, "letting go brings it back: a lean is held, not toggled");
+
+            // With the fists or the pipe in hand there is no leaning.
+            Arsenal_Equip(&sim.arsenal, WEAPON_HANDS);
+            Idle(2);
+            Check(sim.player.leanNearWall && !GameSim_LeanButtonsShown(&sim), "with the fists in hand the buttons are not there, though the wall is");
+            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
+            Check(sim.player.leanBlend == 0.0f, "and holding lean does nothing");
+            Arsenal_Equip(&sim.arsenal, WEAPON_PISTOL);
+            Idle(12);
+            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
+            Check(sim.player.leanBlend == -1.0f, "a gun back in hand: it leans");
+            Arsenal_Equip(&sim.arsenal, WEAPON_HANDS);
+            for (int i = 0; i < 12; ++i) { God(); Stp(lean); }
+            Check(sim.player.leanBlend == 0.0f, "put the gun away while leaning and the lean lets go, button still held");
+            Arsenal_Equip(&sim.arsenal, WEAPON_PISTOL);
+            Idle(12);
+            sim.invOpen = true;
+            for (int i = 0; i < 6; ++i) Stp(lean);
+            Check(sim.player.leanBlend == 0.0f, "with the inventory open it does not lean");
+            sim.invOpen = false;
+        }
+    }
+
     printf("\n-- picking a gun up loads it, dropping it gives the rounds back\n");
     {
         Boot(1);

@@ -125,6 +125,7 @@ static FloorMap *UseDoor(GameSim *s, DoorId id)
     else    Staircase_SpawnAbove(&pos, &yaw);   // came down: stand on the top landing of the flight
     TeleportPlayer(&s->player, pos, yaw);
     s->prevEye = s->player.camera.position;
+    s->prevAim = s->player.aimBlend; s->prevLean = s->player.leanBlend;
     return map;
 }
 
@@ -142,6 +143,7 @@ static void RespawnPlayer(GameSim *s)
     Staircase_SpawnBelow(&pos, &yaw);
     TeleportPlayer(&s->player, pos, yaw);
     s->prevEye = s->player.camera.position;
+    s->prevAim = s->player.aimBlend; s->prevLean = s->player.leanBlend;
     Projectiles_Clear();
     SpawnEnemiesForFloor(s->map, s->window.currentFloor);
     SpawnFloorSwarm(s, s->map, s->window.currentFloor);
@@ -276,6 +278,23 @@ void GameSim_DropSlot(GameSim *s, int slot)  { DropSlotImpl(s, slot);  DrainInve
 void GameSim_UseSlot(GameSim *s, int slot)   { UseSlotImpl(s, slot);   DrainInventory(s); }
 void GameSim_EquipSlot(GameSim *s, int slot) { EquipSlotImpl(s, slot); DrainInventory(s); }
 
+// What a shot fired now would scatter by: the gun's own spread (cold to hot), narrower the further into aiming down the sights the player is.
+float GameSim_SpreadDeg(const GameSim *s)
+{
+    float spread = Arsenal_SpreadDeg(&s->arsenal);
+    const WeaponDef *held = Weapon_Def(s->arsenal.current);
+    if (held->kind == WEAPON_KIND_GUN && held->adsSpreadMul > 0.0f)
+        spread *= 1.0f + (held->adsSpreadMul - 1.0f) * PlayerAimAmount(&s->player);
+    return spread;
+}
+
+// The lean buttons are there only with a gun in hand, near a wall or a corner, on foot.
+bool GameSim_LeanButtonsShown(const GameSim *s)
+{
+    return s->player.health.isAlive && Weapon_Def(s->arsenal.current)->kind == WEAPON_KIND_GUN
+        && s->player.leanNearWall && s->player.isGrounded && !s->player.sliding;
+}
+
 // The slide button is there only while the player is running (or sliding): a slide starts from a sprint.
 bool GameSim_SlideButtonShown(const GameSim *s) { return s->player.health.isAlive && (s->player.sprinting || s->player.sliding); }
 
@@ -302,6 +321,7 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
     Enemies_BeginTick();                          // remembers where the monsters are, for drawing between steps
     Swarm_BeginTick(&s->swarm);                    // and every dot of the swarm
     s->prevEye = s->player.camera.position;
+    s->prevAim = s->player.aimBlend; s->prevLean = s->player.leanBlend;
     Pickups_Update(dt);
 
     // Ammo boxes are picked up by walking over them; a weapon or a medkit needs the USE button.
@@ -326,7 +346,8 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
 
     // Nothing is live while a door opens or the player is dead, and with the inventory open only walking is.
     if (s->seq != SEQ_NONE || !s->player.health.isAlive || s->invOpen) {
-        cmd.jump = cmd.fire = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.reload = cmd.useHeld = false;
+        cmd.jump = cmd.fire = cmd.fireHeld = cmd.use = cmd.swap = cmd.light = cmd.slide = cmd.reload = cmd.useHeld = false;
+        cmd.lean = 0;
         if (s->seq != SEQ_NONE || !s->player.health.isAlive) cmd.move = (Vector2){ 0 };
     }
     if (cmd.light && Inventory_Has(&s->inv, ITEM_FLASHLIGHT)) ToggleTorch(s);
@@ -373,6 +394,19 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
     // Sprint: the move stick pushed all the way out ahead (the icon above it turns yellow), or Shift. The controller holds
     // it back when the player is too tired. The camera was already turned this frame; the step only moves the body.
     s->player.wantSprint = cmd.sprint;
+    // Aiming down sights: holding the fire pad (or F, or the left mouse button) with a gun in hand that is ready, and not reloading.
+    // The gun's numbers are taken only while the player is at the hip, so swapping guns while aimed cannot jump the view.
+    {
+        const WeaponDef *held = Weapon_Def(s->arsenal.current);
+        const bool gun = held->kind == WEAPON_KIND_GUN;
+        if (gun && s->player.aimBlend <= 0.0f) {
+            s->player.adsFov = held->adsFov; s->player.adsSecs = held->adsSecs; s->player.adsMoveMul = held->adsMoveMul;
+        }
+        s->player.wantAim = gun && cmd.fireHeld && !s->arsenal.reloading && s->arsenal.equipT >= 0.6f && s->seq == SEQ_NONE && !s->invOpen;
+    }
+    // Leaning, like the sights, is for a gun in hand (put the gun away and the lean lets go). The controller adds the rest: near a wall,
+    // on foot.
+    s->player.wantLean = Weapon_Def(s->arsenal.current)->kind == WEAPON_KIND_GUN ? cmd.lean : 0;
     PlayerStep(&s->player, cmd.move, dt, s->map);
     if (cmd.jump) PlayerTryJump(&s->player);
 
@@ -399,7 +433,7 @@ void GameSim_Step(GameSim *s, SimCmd cmd)
     const ItemId ammoItem = Item_ForAmmo(Weapon_Def(s->arsenal.current)->ammo);     // ITEM_NONE for the hands and the pipe
     s->arsenal.ammo = ammoItem != ITEM_NONE ? Inventory_Count(&s->inv, ammoItem) : 0;
     const int ammoBefore = s->arsenal.ammo;
-    const float spreadBefore = Arsenal_SpreadDeg(&s->arsenal);                      // a shot uses the spread from before it heated the gun
+    const float spreadBefore = GameSim_SpreadDeg(s);                                // a shot uses the spread from before it heated the gun
     if (cmd.reload && !Arsenal_StartReload(&s->arsenal)) SayWhyNoReload(s);         // (the reserve is set just above: a reload draws on it)
     Arsenal_Update(&s->arsenal, dt, cmd.fire, &weaponEv);
     if (ammoItem != ITEM_NONE && s->arsenal.ammo < ammoBefore) Inventory_Remove(&s->inv, ammoItem, ammoBefore - s->arsenal.ammo);
@@ -518,6 +552,7 @@ void GameSim_Begin(GameSim *s)
         TeleportPlayer(&s->player, spawn, spawnYaw);
     }
     s->prevEye = s->player.camera.position;
+    s->prevAim = s->player.aimBlend; s->prevLean = s->player.leanBlend;
     SimOut_Bind(NULL);
 }
 

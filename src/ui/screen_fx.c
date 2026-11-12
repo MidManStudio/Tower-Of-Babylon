@@ -62,10 +62,13 @@ void ScreenFx_DrawHealthEffects(int screenW, int screenH, float hpFraction, floa
     if (hitFlash > 0.0f) DrawRectangle(0, 0, screenW, screenH, Fade((Color){ 200, 20, 20, 255 }, 0.40f * hitFlash));
 }
 
-void ScreenFx_DrawCrosshair(int screenW, int screenH)
+void ScreenFx_DrawCrosshair(int screenW, int screenH) { ScreenFx_DrawCrosshairAimed(screenW, screenH, 0.0f); }
+
+void ScreenFx_DrawCrosshairAimed(int screenW, int screenH, float ads01)
 {
     const int cx = screenW / 2, cy = screenH / 2;
-    DrawRectangle(cx - 1, cy - 1, 3, 3, Fade(WHITE, 0.6f));
+    const float a = ads01 < 0.0f ? 0.0f : (ads01 > 1.0f ? 1.0f : ads01);
+    DrawRectangle(cx - 1, cy - 1, 3, 3, Fade(WHITE, 0.6f * (1.0f - 0.75f * a)));
 }
 
 void ScreenFx_DrawHitMarker(int screenW, int screenH, float hit, float kill)

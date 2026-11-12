@@ -163,6 +163,10 @@ static bool BuildWeapons(const MdixDoc *d, const ProjectileConfig *proj, int pro
             x->magSize        = RInt(&r, "weapons", i, "mag_size", 0, AMMO_MAX);
             x->reloadSecs     = RFloat(&r, "weapons", i, "reload_secs", 0.05f, 60.0f);
             x->reloadPerRound = RInt(&r, "weapons", i, "reload_per_round", 0, 1);
+            x->adsFov         = RFloat(&r, "weapons", i, "ads_fov", 20.0f, 60.0f);
+            x->adsSecs        = RFloat(&r, "weapons", i, "ads_secs", 0.02f, 2.0f);
+            x->adsMoveMul     = RFloat(&r, "weapons", i, "ads_move", 0.1f, 1.0f);
+            x->adsSpreadMul   = RFloat(&r, "weapons", i, "ads_spread", 0.05f, 1.0f);
         } else {
             x->durability = RInt(&r, "weapons", i, "durability", 0, 100000);
             x->windup    = RFloat(&r, "weapons", i, "windup", 0.0f, 60.0f);

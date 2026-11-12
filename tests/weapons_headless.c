@@ -78,6 +78,7 @@ double GetTime(void) { return 0.0; }
 
 static FloorMap g_floor;
 static int g_failures = 0;
+static int Near(float a, float b, float eps) { return fabsf(a - b) <= eps; }
 static void Check(int ok, const char *what)
 {
     printf("  [%s] %s\n", ok ? "pass" : "FAIL", what);
@@ -896,6 +897,61 @@ int main(void)
         g_projSets = 0;
         Viewmodel_Draw(&sv, &c0, 0.0f, 1.0f, 0.5f);
         Check(g_projSets >= 2, "drawing the hands sets their own depth range and puts the world's back");
+    }
+
+    printf("Aiming down sights: the numbers, and the pose\n");
+    {
+        const WeaponDef *pd = Weapon_Def(WEAPON_PISTOL), *sd = Weapon_Def(WEAPON_SHOTGUN), *rd = Weapon_Def(WEAPON_RIFLE);
+        int ok = 1;
+        const WeaponDef *gs[3] = { pd, sd, rd };
+        for (int i = 0; i < 3; ++i)
+            ok = ok && gs[i]->adsFov >= 20.0f && gs[i]->adsFov < 60.0f && gs[i]->adsSecs > 0.02f && gs[i]->adsSecs < 1.0f
+                    && gs[i]->adsMoveMul > 0.1f && gs[i]->adsMoveMul <= 1.0f && gs[i]->adsSpreadMul > 0.05f && gs[i]->adsSpreadMul <= 1.0f;
+        Check(ok, "each gun has a zoom (under the normal 60), a time, a move share and a spread share in range");
+        Check(rd->adsFov < sd->adsFov && rd->adsFov < pd->adsFov, "the rifle zooms the most");
+        Check(Weapon_Def(WEAPON_HANDS)->adsFov == 0.0f && Weapon_Def(WEAPON_PIPE)->adsFov == 0.0f, "the hands and the pipe have no sights, and none is configured");
+
+        const AimFrame cm = { { 0, 0, 0 }, { 0, 0, -1 }, { 1, 0, 0 }, { 0, 1, 0 } };
+        // The gun is the last parts added (pistol 5, shotgun 8, rifle 9); everything before them is the two hands and their sleeves.
+        struct { WeaponId w; int gunParts; float dx, dy; } cases[3] = { { WEAPON_PISTOL, 5, -0.130f, 0.010f }, { WEAPON_SHOTGUN, 8, -0.150f, 0.034f }, { WEAPON_RIFLE, 9, -0.150f, 0.034f } };
+        for (int i = 0; i < 3; ++i) {
+            Arsenal hv; PartList hip, ads, half;
+            Arsenal_Init(&hv); Arsenal_Give(&hv, cases[i].w); hv.equipT = 1.0f;
+            Viewmodel_BuildAimed(&hip, &hv, &cm, 0.0f, 0.0f, 0.0f);     // time 0: the idle sway is zero, so only the slide is measured
+            Viewmodel_BuildAimed(&ads, &hv, &cm, 0.0f, 0.0f, 1.0f);
+            Viewmodel_BuildAimed(&half, &hv, &cm, 0.0f, 0.0f, 0.5f);
+            const int g0 = hip.count - cases[i].gunParts;
+            double hx = 0, hy = 0, ax = 0, ay = 0, mx = 0, hhx = 0, ahx = 0;
+            for (int k = g0; k < hip.count; ++k) {
+                hx += hip.parts[k].a.x + hip.parts[k].b.x; hy += hip.parts[k].a.y + hip.parts[k].b.y;
+                ax += ads.parts[k].a.x + ads.parts[k].b.x; ay += ads.parts[k].a.y + ads.parts[k].b.y;
+                mx += half.parts[k].a.x + half.parts[k].b.x;
+            }
+            for (int k = 0; k < g0; ++k) { hhx += hip.parts[k].a.x + hip.parts[k].b.x; ahx += ads.parts[k].a.x + ads.parts[k].b.x; }
+            const double n = 2.0 * cases[i].gunParts;
+            char what[160];
+            snprintf(what, sizeof what, "%s: aimed, the gun slides %.3f across and %.3f up to put its sights on the centre", Weapon_IdString(cases[i].w), cases[i].dx, cases[i].dy);
+            Check(hip.count == ads.count && Near((float)((ax - hx) / n), cases[i].dx, 0.0005f) && Near((float)((ay - hy) / n), cases[i].dy, 0.0005f), what);
+            Check(Near((float)((mx - hx) / n), cases[i].dx * 0.5f, 0.0005f), "and half way in it is half way there");
+            Check((ahx - hhx) / (2.0 * g0) < cases[i].dx * 0.6f, "the hands go with it (their sleeves stay anchored at the edge, so they move a little less)");
+        }
+        Arsenal hv; PartList a0, a1;
+        Arsenal_Init(&hv); Arsenal_Give(&hv, WEAPON_PIPE); hv.equipT = 1.0f;
+        Viewmodel_BuildAimed(&a0, &hv, &cm, 0.0f, 1.0f, 0.0f);
+        Viewmodel_BuildAimed(&a1, &hv, &cm, 0.0f, 1.0f, 1.0f);
+        int same = a0.count == a1.count;
+        for (int k = 0; same && k < a0.count; ++k) same = a0.parts[k].a.x == a1.parts[k].a.x && a0.parts[k].a.y == a1.parts[k].a.y && a0.parts[k].b.x == a1.parts[k].b.x;
+        Check(same, "the pipe has no sights: asking for the aimed pose changes nothing");
+        Arsenal_Init(&hv); Arsenal_Give(&hv, WEAPON_RIFLE); hv.equipT = 1.0f;
+        PartList w0, w1, v0, v1;
+        Viewmodel_BuildAimed(&w0, &hv, &cm, 1.0f, 0.3f, 0.0f);
+        Viewmodel_BuildAimed(&w1, &hv, &cm, 1.0f, 0.9f, 0.0f);
+        Viewmodel_BuildAimed(&v0, &hv, &cm, 1.0f, 0.3f, 1.0f);
+        Viewmodel_BuildAimed(&v1, &hv, &cm, 1.0f, 0.9f, 1.0f);
+        Check(fabsf(v0.parts[0].a.y - v1.parts[0].a.y) < fabsf(w0.parts[0].a.y - w1.parts[0].a.y) * 0.5f + 1e-6f, "aimed, the walking sway is much calmer than at the hip");
+        Viewmodel_Build(&w0, &hv, &cm, 0.0f, 1.0f);
+        Viewmodel_BuildAimed(&w1, &hv, &cm, 0.0f, 1.0f, 0.0f);
+        Check(w0.count == w1.count && w0.parts[0].a.x == w1.parts[0].a.x, "Viewmodel_Build is the hip pose of the same function");
     }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");

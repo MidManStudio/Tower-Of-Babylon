@@ -26,9 +26,10 @@ typedef enum { INPUT_SCHEME_TOUCH = 0, INPUT_SCHEME_KEYBOARD } InputScheme;
 typedef struct {
     Vector2 move;                     // x right, y -1 forward (as W is)
     Vector2 look;                     // canvas pixels the camera should turn this frame
-    bool    sprint;                   // wanted: the stick pushed out ahead, or Shift
+    bool    sprint;                   // wanted: the stick pushed out to the rim (any direction), or Shift
     bool    jump;                     // try to jump this frame
-    bool    fire;                     // held
+    bool    fire;                     // held (and, with a gun in hand, it aims down the sights while it is)
+    int     lean;                     // held: -1 left, 0 upright, +1 right (the LEAN buttons, or Z and X)
     bool    use, swap, light, slide, reload;  // once per press (reload: the R key or the RELOAD button)
     bool    useHeld;                  // USE is down right now (the unlock console is worked by holding it)
     bool    inventoryToggle;          // the I or Tab key (the INV button is a tap: Input_NewTap)

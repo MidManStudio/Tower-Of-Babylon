@@ -56,6 +56,11 @@ typedef struct {
     int   magSize;       // rounds the gun holds. 0 = no magazine: it fires straight from the bag, as it did before reloading existed
     float reloadSecs;    // seconds to reload a whole magazine; with reloadPerRound, seconds to load ONE round
     int   reloadPerRound;// 1: rounds go in one at a time (a shotgun's tube): pulling the trigger stops the reload and keeps what is in
+    // aiming down sights (ADS): holding the fire pad with the gun in hand
+    float adsFov;        // field of view in degrees at full ADS (the base is 60: lower is more zoom)
+    float adsSecs;       // seconds from the hip to full ADS
+    float adsMoveMul;    // share of the walking speed left while aimed
+    float adsSpreadMul;  // share of the spread left at full ADS (1 = no tighter)
     // melee
     int   durability;    // melee: swings that connect before it breaks. 0 = it never wears (the hands)
 } WeaponDef;

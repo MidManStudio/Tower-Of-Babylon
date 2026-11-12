@@ -13,6 +13,7 @@ void SimCmd_Add(SimCmd *c, const InputFrame *in)
     c->move = in->move;
     c->sprint = in->sprint;
     c->useHeld = in->useHeld;
+    c->lean = in->lean;
     c->fireHeld = in->fire;
     c->jump  = c->jump  || in->jump;
     c->fire  = c->fire  || in->fire;

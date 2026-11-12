@@ -51,6 +51,7 @@ typedef struct GameSim {
     unsigned swarmHitsBase, swarmKillsBase;     // its hit and kill totals carried across floors, so a new floor does not look like a hit
     bool floorCleared;               // the player came down into this floor: its stairs are open and the clock is not run
     Vector3 prevEye;                 // where the camera was at the start of the last step (the picture blends from here)
+    float prevAim, prevLean;         // the aim-down-sights and lean blends at the start of the last step (the view blends from them too)
     uint32_t shotRng;                // pellet spread and speed
     float gunNoiseT, gunNoiseM;      // the last shot can be heard for this long, out to this many metres
     float blockToastT;               // keeps "AMMO FULL" from repeating at every step
@@ -72,6 +73,11 @@ void GameSim_Begin(GameSim *s);
 
 // One step of the rules, SIM_STEP_SECS long. cmd is what the player wanted since the last step.
 void GameSim_Step(GameSim *s, SimCmd cmd);
+
+// What a shot fired now would scatter by, in degrees (the held gun's spread, narrowed by aiming down the sights).
+float GameSim_SpreadDeg(const GameSim *s);
+// Whether the LEAN buttons exist: a gun is in hand, a wall or corner is close and the player is on foot.
+bool GameSim_LeanButtonsShown(const GameSim *s);
 
 // What the host's UI can do between steps: they take effect at once, not at the next step.
 void GameSim_DropSlot(GameSim *s, int slot);

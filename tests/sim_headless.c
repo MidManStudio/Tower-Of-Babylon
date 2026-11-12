@@ -75,8 +75,13 @@ int main(void)
         SimCmd_Add(&c, &useP); SimCmd_Take(&c); SimCmd_Add(&c, &none);
         t = SimCmd_Take(&c);
         Check(!t.use && !t.swap && !t.light && !t.slide && !t.reload, "and none is taken twice");
+        InputFrame lean = Frame(0, 0, false, false, false, false); lean.lean = -1;
+        SimCmd_Add(&c, &lean); t = SimCmd_Take(&c);
+        Check(t.lean == -1, "a lean is a hold: passed on as last seen");
+        SimCmd_Add(&c, &none); t = SimCmd_Take(&c);
+        Check(t.lean == 0, "and gone the moment the finger is (a lean is held, not toggled, and is not kept like a tap)");
         SimCmd d; SimCmd_Init(&d); SimCmd e = SimCmd_Take(&d);
-        Check(!e.jump && !e.fire && e.move.x == 0.0f, "a fresh command asks for nothing");
+        Check(!e.jump && !e.fire && e.move.x == 0.0f && e.lean == 0, "a fresh command asks for nothing");
     }
 
     printf("The same steps at any frame rate\n");

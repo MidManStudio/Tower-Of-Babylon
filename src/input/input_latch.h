@@ -15,6 +15,7 @@
 typedef struct {
     Vector2 move;                      // the stick or keys, as last seen
     bool    sprint, useHeld;           // held, as last seen
+    int     lean;                      // held, as last seen: -1 left, 0 upright, +1 right
     bool    jump, fire, use, swap, light, slide, reload;     // pressed at any time since the last tick (fire: held at any time)
     bool    fireHeld;                  // held at the last frame
 } SimCmd;

@@ -2,8 +2,8 @@
 // NOTICE: Full documentation, design decisions, and fix history for this file
 // live in docs/input.md, section "tests/input_headless.c"
 // ============================================================================
-// The touch controls and the HUD layout without a screen: the floating stick, the sprint at the rim, the fire pad that also
-// aims, the look finger, the buttons that exist only when they have something to act on, the tap-only regions, the locked
+// The touch controls and the HUD layout without a screen: the floating stick (quick to respond), the sprint at the rim in any
+// direction, the fixed fire pad that also aims (as a joystick, or as a drag), the look finger, the buttons that exist only when they have something to act on, the tap-only regions, the locked
 // and walk-only states, and that no two controls sit on top of each other.
 // Inside a macro so mray's build, which compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
@@ -41,17 +41,32 @@ int main(void)
     Step1(1, 200, 300);
     Check(O.stickActive && Near(O.anchorX, 200, 0.01f) && Near(O.anchorY, 300, 0.01f), "the stick appears exactly where the thumb lands");
     Check(O.moveX == 0.0f && O.moveY == 0.0f && !O.sprint, "untouched centre: no movement");
+    Step1(1, 200 + 0.25f * R, 300);
+    Check(Near(O.moveX, (0.25f - L->deadzone) / (L->stickFullAt - L->deadzone), 0.01f) && Near(O.moveY, 0.0f, 0.01f), "a quarter of the way out is a part-speed walk (the dead zone is taken off, and full speed is stickFullAt, not the rim)");
+    Step1(1, 200 + L->stickFullAt * R, 300);
+    Check(Near(O.moveX, 1.0f, 0.01f), "at stickFullAt of the ring the walk is already at full speed");
     Step1(1, 200 + 0.5f * R, 300);
-    Check(Near(O.moveX, (0.5f - L->deadzone) / (1.0f - L->deadzone), 0.01f) && Near(O.moveY, 0.0f, 0.01f), "half way out to the right is a bit under half speed (the dead zone is taken off)");
+    Check(Near(O.moveX, 1.0f, 0.01f) && !O.sprint, "half way out is full speed, and not yet a sprint");
     Check(Near(O.anchorX, 200, 0.01f), "the stick stays where it appeared while the finger moves");
     Step1(1, 200, 300 - R);
     Check(Near(O.moveY, -1.0f, 0.01f) && Near(O.moveX, 0.0f, 0.01f), "pushed up the screen is forward: y is -1, like W");
     Step1(1, 400, 100);
     Check(Near(sqrtf(O.moveX * O.moveX + O.moveY * O.moveY), 1.0f, 0.01f) && Near(hypotf(O.knobX - O.anchorX, O.knobY - O.anchorY), L->stickRadius, 0.01f), "far past the ring: full speed, and the knob stops on the ring");
-    Step1(1, 203, 301);
+    Step1(1, 200 + 0.5f * L->deadzone * R, 300);
     Check(O.moveX == 0.0f && O.moveY == 0.0f, "inside the dead zone: nothing");
     Step(NULL, 0);
     Check(!O.stickActive && O.moveX == 0.0f, "the finger lifts: the stick is gone");
+
+    printf("The stick is quick (a short drag moves you)\n");
+    Reset();
+    Step1(1, 200, 300);
+    Step1(1, 200 + 15.0f, 300);
+    Check(O.moveX > 0.25f, "a 15 px drag, the 'I have to drag before anything moves' case, is already over a quarter speed");
+    Step1(1, 200 + 30.0f, 300);
+    Check(O.moveX > 0.6f, "and 30 px is most of the way to full speed");
+    Check(L->deadzone <= 0.05f && L->stickFullAt <= 0.6f && L->stickFullAt > L->deadzone, "the dead zone is small and full speed comes well inside the ring");
+    Step1(1, 200 + 4.0f, 300 + 4.0f);
+    Check(O.moveX > 0.0f && O.moveY > 0.0f, "a drag of about 6 px in a diagonal already moves in that direction");
 
     Reset();
     Step1(1, 10, 60);
@@ -69,7 +84,7 @@ int main(void)
     Step1(1, 401, 300);
     Check(!O.stickActive && O.lookActive, "and 401 is the camera");
 
-    printf("Sprint: the knob at the rim, ahead\n");
+    printf("Sprint: the knob at the rim, in any direction\n");
     Reset();
     Step1(1, 200, 300);
     Step1(1, 200, 300 - 0.80f * R);
@@ -80,14 +95,21 @@ int main(void)
     Check(O.sprint, "easing back to 0.84 keeps the sprint (it does not flicker at the edge)");
     Step1(1, 200, 300 - 0.76f * R);
     Check(!O.sprint, "below 0.80 it ends");
+    Step1(1, 200, 300);
     Step1(1, 200 + R, 300);
-    Check(!O.sprint, "the rim sideways is not a sprint");
+    Check(O.sprint, "the rim sideways is a sprint (omni sprint)");
+    Step1(1, 200, 300);
+    Step1(1, 200 - R, 300);
+    Check(O.sprint, "the rim to the left too");
+    Step1(1, 200, 300);
     Step1(1, 200, 300 + R);
-    Check(!O.sprint, "the rim backwards is not a sprint");
+    Check(O.sprint, "the rim backwards too");
     Step1(1, 200 + 0.72f * R, 300 - 0.72f * R);
-    Check(O.sprint, "the rim ahead and to the right (45 degrees) is");
+    Check(O.sprint, "the rim ahead and to the right (45 degrees) too");
     Step1(1, 200 + R, 300);
-    Check(!O.sprint, "swinging the knob round to the side ends it");
+    Check(O.sprint, "swinging the knob round the rim keeps it: only coming in ends it");
+    Step1(1, 200 + 0.7f * R, 300);
+    Check(!O.sprint, "pulled in to 0.70 of the radius, sideways: it ends");
     Step1(1, 200, 300 - R);
     Step(NULL, 0);
     Check(!O.sprint && O.sprintFill == 0.0f, "lifting the finger ends it");
@@ -101,34 +123,74 @@ int main(void)
     Step1(5, 500, 100);
     Check(O.lookActive && O.lookDX == 0.0f && O.lookDY == 0.0f, "a finger landing on the right is the camera, and its first frame turns nothing");
     Step1(5, 510, 105);
-    Check(Near(O.lookDX, 10, 0.01f) && Near(O.lookDY, 5, 0.01f), "then it turns by exactly how far it moved");
+    Check(Near(O.lookDX, 10 * L->lookGain, 0.01f) && Near(O.lookDY, 5 * L->lookGain, 0.01f), "then it turns by how far it moved, times the look gain");
+    Check(L->lookGain >= 1.5f, "the look gain makes a short swipe turn the camera well (the 'rotating is hard' case)");
     Step1(5, L->jump.x, L->jump.y);
     Check(!O.jumpHeld && O.lookActive, "sliding the camera finger over JUMP does not press it");
     Step2(5, L->jump.x, L->jump.y + 10, 6, 450, 100);
-    Check(Near(O.lookDY, 10, 0.01f) && O.lookActive, "a second free finger on the right does not take the camera over (the first still turns it by its own 10 px)");
+    Check(Near(O.lookDY, 10 * L->lookGain, 0.01f) && O.lookActive, "a second free finger on the right does not take the camera over (the first still turns it by its own 10 px)");
     Reset();
     Step1(1, 200, 300);
     Step1(1, 600, 300);
     Check(O.stickActive, "a stick finger that wanders into the right half is still the stick");
 
-    printf("The fire pad aims as well\n");
-    Reset();
+    printf("The fire pad: fixed, with a knob, aims like a joystick\n");
+    {
+        const float PR = L->firePad.r;
+        const float dt = 1.0f / 60.0f;
+        const float tHalf = powf((0.5f - L->aimDeadzone) / (L->aimFullAt - L->aimDeadzone), L->aimCurve);     // the response at half the throw
+        Reset(); C.dt = dt;
+        Step1(3, L->firePad.x, L->firePad.y);
+        Check(O.fireHeld && !O.lookActive && O.aimActive, "a finger on the pad fires");
+        Check(Near(O.aimKnobX, L->firePad.x, 0.01f) && Near(O.aimKnobY, L->firePad.y, 0.01f) && O.aimX == 0.0f && O.aimY == 0.0f && O.lookDX == 0.0f, "at the centre: the knob is in the middle and nothing turns");
+        Step1(3, L->firePad.x + 0.5f * PR, L->firePad.y);
+        Check(Near(O.aimKnobX, L->firePad.x + 0.5f * PR, 0.01f) && Near(O.aimKnobY, L->firePad.y, 0.01f), "dragged out, the knob follows the finger");
+        Check(Near(O.aimX, tHalf, 0.01f) && Near(O.aimY, 0.0f, 0.01f) && O.aimX > 0.2f && O.aimX < 0.6f, "half way out is a gentle turn to the right (the response curve: fine aim near the middle)");
+        Check(Near(O.lookDX, O.aimX * L->aimRatePx * dt, 0.01f) && O.lookDX > 0.0f && Near(O.lookDY, 0.0f, 0.01f), "which turns the camera at that rate times the frame's time");
+        const float held = O.lookDX;
+        Step1(3, L->firePad.x + 0.5f * PR, L->firePad.y);
+        Check(Near(O.lookDX, held, 0.001f), "and it keeps turning while the finger is held still: a joystick, not a drag");
+        Step1(3, L->firePad.x, L->firePad.y - 0.5f * PR);
+        Check(O.aimY < 0.0f && Near(O.aimX, 0.0f, 0.01f) && O.lookDY < 0.0f, "dragged up it turns up");
+        Step1(3, L->firePad.x + 0.04f * PR, L->firePad.y);
+        Check(O.fireHeld && O.aimX == 0.0f && O.lookDX == 0.0f, "inside the pad's dead zone it fires and does not drift (a plain tap does not turn the camera)");
+        Step1(3, L->firePad.x + 3.0f * PR, L->firePad.y);
+        Check(Near(O.aimX, 1.0f, 0.001f) && Near(hypotf(O.aimKnobX - L->firePad.x, O.aimKnobY - L->firePad.y), PR, 0.01f), "far off the pad: full turn rate, and the knob stops on the ring");
+        Check(Near(O.lookDX, L->aimRatePx * dt, 0.01f), "full deflection turns at aimRatePx a second");
+        Step1(3, 560, 120);
+        Check(O.fireHeld, "dragged far off the pad it keeps firing");
+        Step(NULL, 0);
+        Check(!O.fireHeld && !O.aimActive && O.lookDX == 0.0f, "lifted: it stops, and the camera with it");
+        Reset();
+        Step1(3, L->firePad.x + 0.9f * PR, L->firePad.y);
+        Check(O.aimX > 0.8f, "the pad does not float: a finger landing near its edge is already a hard turn (the centre stays put)");
+        Reset();                                           // no frame time, no turn
+        Step1(3, L->firePad.x + 0.8f * PR, L->firePad.y);
+        Check(O.fireHeld && O.aimX > 0.0f && O.lookDX == 0.0f, "(with no frame time given nothing turns: the rate needs it)");
+        Reset(); C.dt = dt;
+        Step1(4, 450, 200);
+        Step1(4, L->firePad.x, L->firePad.y);
+        Check(!O.fireHeld, "a camera finger that slides onto the pad does not fire");
+        Reset(); C.dt = dt;
+        Step1(3, L->firePad.x, L->firePad.y);
+        Step2(3, L->firePad.x, L->firePad.y, 4, L->firePad.x + 5, L->firePad.y + 5);
+        Check(O.fireHeld && O.lookDX == 0.0f, "a second finger on an occupied pad is ignored");
+        Reset(); C.dt = dt; C.locked = true;
+        Step1(3, L->firePad.x + PR, L->firePad.y);
+        Check(!O.fireHeld && O.aimX == 0.0f && O.lookDX == 0.0f, "locked (a door, or dead): no fire and no turn");
+    }
+
+    printf("The fire pad as a drag (the other aim mode)\n");
+    Reset(); C.dt = 1.0f / 60.0f; C.aimMode = TC_AIM_DRAG;
     Step1(3, L->firePad.x, L->firePad.y);
-    Check(O.fireHeld && !O.lookActive, "a finger on the pad fires");
+    Check(O.fireHeld && O.aimActive && !O.lookActive && O.lookDX == 0.0f, "a finger on the pad fires and turns nothing on the first frame");
     Step1(3, L->firePad.x + 14, L->firePad.y - 12);
-    Check(O.fireHeld && Near(O.lookDX, 14, 0.01f) && Near(O.lookDY, -12, 0.01f), "moving that finger turns the camera while it fires");
+    Check(O.fireHeld && Near(O.lookDX, 14 * L->lookGain, 0.01f) && Near(O.lookDY, -12 * L->lookGain, 0.01f) && O.aimX == 0.0f, "moving that finger turns the camera by how far it moved, times the gain, while it fires");
+    Check(Near(O.aimKnobX, L->firePad.x + 14, 0.01f) && Near(O.aimKnobY, L->firePad.y - 12, 0.01f), "the knob follows the finger in this mode too");
+    Step1(3, L->firePad.x + 14, L->firePad.y - 12);
+    Check(O.lookDX == 0.0f && O.fireHeld, "held still it turns nothing");
     Step1(3, 560, 120);
     Check(O.fireHeld, "dragged far off the pad it keeps firing");
-    Step(NULL, 0);
-    Check(!O.fireHeld, "lifted: it stops");
-    Reset();
-    Step1(4, 450, 200);
-    Step1(4, L->firePad.x, L->firePad.y);
-    Check(!O.fireHeld, "a camera finger that slides onto the pad does not fire");
-    Reset();
-    Step1(3, L->firePad.x, L->firePad.y);
-    Step2(3, L->firePad.x, L->firePad.y, 4, L->firePad.x + 5, L->firePad.y + 5);
-    Check(O.fireHeld && O.lookDX == 0.0f, "a second finger on an occupied pad is ignored");
 
     printf("Buttons exist only when they have something to do\n");
     Reset();
@@ -171,6 +233,31 @@ int main(void)
     Reset(); C.reloadAvailable = true; C.walkOnly = true;
     Step1(10, L->reload.x, L->reload.y);
     Check(!O.reloadPressed, "and none while only walking is allowed");
+
+    printf("The LEAN buttons (near a wall or corner only, held)\n");
+    Reset(); C.leanAvailable = true;
+    Step1(11, L->leanLeft.x, L->leanLeft.y);
+    Check(O.leanLeftHeld && !O.leanRightHeld && !O.lookActive && !O.fireHeld, "a finger on LEAN LEFT holds it, and it is not a look finger");
+    Step1(11, L->leanLeft.x + 6, L->leanLeft.y - 4);
+    Check(O.leanLeftHeld && O.lookDX == 0.0f, "wobbling inside it keeps holding, and does not turn the camera");
+    Step1(11, 560, 120);
+    Check(O.leanLeftHeld, "a finger that slides off it keeps its job until it lifts");
+    Step(NULL, 0);
+    Check(!O.leanLeftHeld, "and lifting lets go: a lean is held, not toggled");
+    Reset(); C.leanAvailable = true;
+    Step1(11, L->leanRight.x, L->leanRight.y);
+    Check(O.leanRightHeld && !O.leanLeftHeld, "LEAN RIGHT is the other one");
+    Step2(11, L->leanRight.x, L->leanRight.y, 12, L->leanLeft.x, L->leanLeft.y);
+    Check(O.leanRightHeld && O.leanLeftHeld, "two thumbs can hold both (the game cancels them out)");
+    Reset();
+    Step1(11, L->leanLeft.x, L->leanLeft.y);
+    Check(!O.leanLeftHeld && O.lookActive, "no buttons away from a wall: the touch is a look finger, and the camera area is whole");
+    Reset(); C.leanAvailable = true; C.walkOnly = true;
+    Step1(11, L->leanLeft.x, L->leanLeft.y);
+    Check(!O.leanLeftHeld, "none while only walking is allowed");
+    Reset(); C.leanAvailable = true; C.locked = true;
+    Step1(11, L->leanLeft.x, L->leanLeft.y);
+    Check(!O.leanLeftHeld && !O.leanRightHeld, "nor while locked (a door, or dead)");
 
     printf("Tap-only regions\n");
     Reset(); C.blocked[0] = HudLayout_StatsButton() ; C.blockedCount = 1;
@@ -222,8 +309,8 @@ int main(void)
     printf("Layout\n");
     {
         const UiRect inv = { 698, 8, 92, 36 };             // the INV button (src/inventory/inventory_ui.c), top right
-        const UiCircle round[] = { L->jump, L->use, L->swap, L->light, L->slide, L->reload, L->firePad };
-        const char *rnames[] = { "jump", "use", "swap", "light", "slide", "reload", "fire pad" };
+        const UiCircle round[] = { L->jump, L->use, L->swap, L->light, L->slide, L->reload, L->firePad, L->leanLeft, L->leanRight };
+        const char *rnames[] = { "jump", "use", "swap", "light", "slide", "reload", "fire pad", "lean left", "lean right" };
         const int nr = (int)(sizeof round / sizeof round[0]);
         const UiRect flat[] = { inv, HudLayout_StatsButton() };
         const char *fnames[] = { "inv", "stats" };
@@ -237,12 +324,13 @@ int main(void)
         Check(outside == 0, "every control is inside the 800 x 450 screen");
         Check(overlaps == 0, "no two controls overlap (each is a place a thumb can land)");
         Check(UiRect_Overlaps(HudLayout_StatsButton(), L->stickZone) == 0, "the STATS button is outside the stick zone");
-        Check(L->firePad.r >= 40.0f && L->jump.r >= 30.0f && L->use.r >= 30.0f && L->slide.r >= 30.0f && L->reload.r >= 28.0f && L->swap.r >= 24.0f && L->light.r >= 24.0f, "the controls are thumb-sized (a 60 px disc is about 9 mm on the phone)");
+        Check(L->firePad.r >= 40.0f && L->jump.r >= 30.0f && L->use.r >= 30.0f && L->slide.r >= 30.0f && L->reload.r >= 28.0f && L->leanLeft.r >= 26.0f && L->leanRight.r >= 26.0f && L->swap.r >= 24.0f && L->light.r >= 24.0f, "the controls are thumb-sized (a 60 px disc is about 9 mm on the phone)");
         Check(L->stickMinX - R >= 0.0f && L->stickMaxX + R <= 400.0f + 0.01f + 50.0f, "the stick's range keeps its ring on screen (and mostly in the left half)");
         const float iconTop = L->stickMinY - R - L->sprintIconGap - 2.0f * L->sprintIconRadius;
         Check(iconTop >= 0.0f && L->stickMaxY + R <= TC_SCREEN_H + 0.01f, "with room above it for the sprint icon and below for the ring");
         Check(L->idleX - R >= 0.0f && L->idleY + R <= TC_SCREEN_H && L->idleX >= L->stickMinX && L->idleY >= L->stickMinY && L->idleY <= L->stickMaxY, "the faint idle ring is a place the stick can really be");
         Check(L->stickBaseRadius < R && L->knobRadius < L->stickBaseRadius && L->fireInnerRadius < L->firePad.r, "the inner discs are inside their rings");
+        Check(L->aimDeadzone > 0.0f && L->aimDeadzone < L->aimFullAt && L->aimFullAt <= 1.0f && L->aimCurve >= 1.0f && L->aimRatePx > 0.0f, "the aim joystick's tuning is in order (dead zone < full throw <= ring)");
         const UiRect p = HudLayout_StatsPanel(), x = HudLayout_StatsClose(), d = HudLayout_DiagToggle(), b = HudLayout_StatsButton();
         Check(p.x >= 0 && p.y >= 0 && p.x + p.w <= TC_SCREEN_W && p.y + p.h <= TC_SCREEN_H, "the popup is inside the screen");
         Check(x.x >= p.x && x.y >= p.y && x.x + x.w <= p.x + p.w && x.y + x.h <= p.y + p.h, "its X is inside it");
