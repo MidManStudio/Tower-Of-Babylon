@@ -378,6 +378,7 @@ static void Frame(void)
             hv.alive = g_sim.player.health.isAlive; hv.sprinting = g_sim.player.sprinting; hv.sliding = g_sim.player.sliding; hv.exhausted = g_sim.player.exhausted;
             hv.hp = g_sim.player.health.hp; hv.maxHp = g_sim.player.health.maxHp;
             hv.stamina01 = g_sim.player.stamina / PLAYER_STAMINA_MAX;
+            hv.stim01 = g_sim.player.stimLeft / PLAYER_STIM_SECS;
             hv.exhaustRecover01 = STAMINA_EXHAUST_RECOVER / PLAYER_STAMINA_MAX;
             hv.tooTiredToSlide = g_sim.player.stamina < STAMINA_SLIDE_COST;
             const WeaponDef *held = Weapon_Def(g_sim.arsenal.current);

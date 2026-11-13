@@ -28,6 +28,7 @@ typedef struct {
 typedef struct {
     bool  alive, sprinting, sliding, exhausted;
     float hp, maxHp, stamina01, exhaustRecover01;
+    float stim01;                       // a stim shot is working: the share of its time that remains (1 just used .. 0 over; 0 = none). The HUD shows the stamina bar and this while it runs
     bool  tooTiredToSlide, tooTiredToDive;
     const char *weaponName; bool weaponIsGun, weaponIsMelee; int ammo; bool weaponDry; int weaponsOwned;   // ammo: the reserve in the bag (the whole count for a gun with no magazine)
     int   mag, magSize;                 // the gun in hand: rounds loaded, and what the magazine holds (magSize 0: no magazine)

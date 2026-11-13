@@ -380,10 +380,10 @@ int main(void)
     printf("Pickups\n");
     GenerateFloorMap(&g_floor, 1, 2026u);
     Pickups_SpawnForFloor(&g_floor, 1, 0u);
-    Check(Pickups_Count() == 8, "floor 1 has a pipe, a pistol, two ammo boxes, a medkit, a flashlight and two batteries");
+    Check(Pickups_Count() == 9, "floor 1 has a pipe, a pistol, two ammo boxes, a medkit, a stim shot, a flashlight and two batteries");
     int kinds[12] = { 0 };
     for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active) kinds[Pickups_Get(i)->kind]++;
-    Check(kinds[PICKUP_PIPE] == 1 && kinds[PICKUP_PISTOL] == 1 && kinds[PICKUP_AMMO] == 2 && kinds[PICKUP_MEDKIT] == 1 && kinds[PICKUP_FLASHLIGHT] == 1 && kinds[PICKUP_BATTERY] == 2, "one of each weapon, two ammo, a medkit, a flashlight and two batteries");
+    Check(kinds[PICKUP_PIPE] == 1 && kinds[PICKUP_PISTOL] == 1 && kinds[PICKUP_AMMO] == 2 && kinds[PICKUP_MEDKIT] == 1 && kinds[PICKUP_STIM] == 1 && kinds[PICKUP_FLASHLIGHT] == 1 && kinds[PICKUP_BATTERY] == 2, "one of each weapon, two ammo, a medkit, a stim shot, a flashlight and two batteries");
     Vector3 first[MAX_PICKUPS]; int n0 = 0;
     for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active) first[n0++] = Pickups_Get(i)->pos;
     Pickups_SpawnForFloor(&g_floor, 1, 0u);
@@ -408,17 +408,17 @@ int main(void)
                 if (q->active && fabsf(q->pos.x - p->pos.x) + fabsf(q->pos.z - p->pos.z) < 6.0f * TILE_SIZE - 0.01f) spaced = 0;
             }
         }
-        if (Pickups_Count() < 5) reachable = 0;
+        if (Pickups_Count() < 6) reachable = 0;
     }
     Check(onFloor, "pickups lie on open, unreserved floor (25 floors)");
     Check(farEnough, "and never close to where the player arrives");
     Check(spaced, "and never on top of each other");
-    Check(reachable, "and every floor places its weapon, ammo, medkit and battery");
+    Check(reachable, "and every floor places its weapon, ammo, medkit, stim shot and battery");
 
     Pickups_SpawnForFloor(&g_floor, 2, WEAPON_BIT(WEAPON_PIPE) | WEAPON_BIT(WEAPON_PISTOL) | WEAPON_BIT(WEAPON_SHOTGUN) | WEAPON_BIT(WEAPON_RIFLE) | OWNED_FLASHLIGHT);
-    Check(Pickups_Count() == 5 || Pickups_Count() == 6, "later floors have one weapon, two ammo boxes, a medkit and a battery (sometimes two) when the player has everything");
+    Check(Pickups_Count() == 6 || Pickups_Count() == 7, "later floors have one weapon, two ammo boxes, a medkit, a stim shot and a battery (sometimes two) when the player has everything");
     int weaponsOnLater = 0;
-    for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active && !Pickup_IsAmmo(Pickups_Get(i)->kind) && Pickups_Get(i)->kind != PICKUP_MEDKIT && Pickups_Get(i)->kind != PICKUP_BATTERY && Pickups_Get(i)->kind != PICKUP_FLASHLIGHT) ++weaponsOnLater;
+    for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active && !Pickup_IsAmmo(Pickups_Get(i)->kind) && Pickups_Get(i)->kind != PICKUP_MEDKIT && Pickups_Get(i)->kind != PICKUP_STIM && Pickups_Get(i)->kind != PICKUP_BATTERY && Pickups_Get(i)->kind != PICKUP_FLASHLIGHT) ++weaponsOnLater;
     Check(weaponsOnLater == 0, "and a weapon the player already has turns into ammo (here the player has every weapon)");
 
     Pickups_SpawnForFloor(&g_floor, 1, 0u);
@@ -716,11 +716,11 @@ int main(void)
         Check(rifles == 1 && shotguns == 0, "floor 3 holds a rifle for a player who has none");
         Pickups_SpawnForFloor(&g_floor, 2, WEAPON_BIT(WEAPON_PIPE) | WEAPON_BIT(WEAPON_PISTOL) | WEAPON_BIT(WEAPON_SHOTGUN));
         int shellBoxes = 0, weaponsHere = 0;
-        for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active) { shellBoxes += Pickups_Get(i)->kind == PICKUP_SHELLS; weaponsHere += !Pickup_IsAmmo(Pickups_Get(i)->kind) && Pickups_Get(i)->kind != PICKUP_MEDKIT && Pickups_Get(i)->kind != PICKUP_BATTERY && Pickups_Get(i)->kind != PICKUP_FLASHLIGHT; }
+        for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active) { shellBoxes += Pickups_Get(i)->kind == PICKUP_SHELLS; weaponsHere += !Pickup_IsAmmo(Pickups_Get(i)->kind) && Pickups_Get(i)->kind != PICKUP_MEDKIT && Pickups_Get(i)->kind != PICKUP_STIM && Pickups_Get(i)->kind != PICKUP_BATTERY && Pickups_Get(i)->kind != PICKUP_FLASHLIGHT; }
         Check(weaponsHere == 0 && shellBoxes >= 1, "a shotgun already owned turns floor 2's weapon into a box of shells");
 
         // Across many floors and seeds: box sizes, kinds that appear, and nothing that should not.
-        int seen[12] = { 0 }, badCount = 0, riflesBefore3 = 0, rifleAmmoBefore3 = 0, medkits = 0;
+        int seen[12] = { 0 }, badCount = 0, riflesBefore3 = 0, rifleAmmoBefore3 = 0, medkits = 0, stims = 0;
         for (int floorNo = 1; floorNo <= 60; ++floorNo) {
             GenerateFloorMap(&g_floor, floorNo, 5000u + (unsigned)floorNo * 31u);
             Pickups_SpawnForFloor(&g_floor, floorNo, 0u);
@@ -734,6 +734,7 @@ int main(void)
                 if (floorNo < 3 && pk->kind == PICKUP_RIFLE && floorNo < 3) ++riflesBefore3;
                 if (floorNo < 3 && pk->kind == PICKUP_RIFLE_AMMO) ++rifleAmmoBefore3;
                 if (pk->kind == PICKUP_MEDKIT) ++medkits;
+                if (pk->kind == PICKUP_STIM) ++stims;
             }
         }
         Check(badCount == 0, "every box holds what weapons.mdix says (8, 6 or 24), a flashlight holds flashlight.mdix's start_secs, and every weapon, medkit and battery is 1");
@@ -741,6 +742,7 @@ int main(void)
         Check(seen[PICKUP_PIPE] > 0 && seen[PICKUP_PISTOL] > 0 && seen[PICKUP_SHOTGUN] > 0 && seen[PICKUP_RIFLE] > 0 && seen[PICKUP_SHELLS] > 0 && seen[PICKUP_RIFLE_AMMO] > 0 && seen[PICKUP_AMMO] > 0,
               "over 60 floors every kind of pickup turns up");
         Check(medkits == 60, "and there is exactly one medkit per floor");
+        Check(stims == 60 && strcmp(Pickup_Label(PICKUP_STIM), "STIM SHOT") == 0, "and exactly one stim shot per floor, labelled STIM SHOT");
         Check(seen[PICKUP_FLASHLIGHT] == 60 && seen[PICKUP_BATTERY] >= 60 + 59 * 0 && seen[PICKUP_BATTERY] <= 120, "a player with no flashlight finds one on every floor, and at least a battery");
         {
             // A player who has the flashlight never finds another, and floor 1 has two batteries.

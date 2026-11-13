@@ -46,6 +46,7 @@ static const ItemRow k_items[ITEM_COUNT] = {
     { "RIFLE AMMO",  "Rounds for the rifle. Stacks to 99.",                            KIND_AMMO,       -1, -1, -1, -1, WEAPON_HANDS,   0.0f, AMMO_RIFLE  },
     { "FLASHLIGHT",  "Use it to switch it on and off. Runs on batteries. Dies in the dark.", KIND_TOOL,   -1, -1, -1, -1, WEAPON_HANDS,   0.0f, AMMO_NONE   },
     { "BATTERY",     "Loads into the flashlight: 150 seconds more light. Stacks to 6.", KIND_CONSUMABLE,  6, -1, -1, -1, WEAPON_HANDS,   0.0f, AMMO_NONE   },
+    { "STIM SHOT",   "Stamina fills fast for 4 seconds, even while sprinting. Heals 15 health. Stacks to 5.", KIND_CONSUMABLE, -1, -1, -1, -1, WEAPON_HANDS, 0.0f, AMMO_NONE },
 };
 
 const char *ItemKind_Name(ItemKind k) { return (k >= 0 && k < KIND_COUNT) ? k_kinds[k].name : ""; }

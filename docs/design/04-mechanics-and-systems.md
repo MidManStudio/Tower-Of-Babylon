@@ -17,8 +17,9 @@ Your mechanics list, with where each one stands, then a specification for what i
 | [x] | Omnidirectional movement | **done** (`player.md`, "Omnidirectional movement"): walking, sprinting and sliding in every direction, left, right and backwards slower (placeholder 0.85 and 0.70 of forward) |
 | [x] | Aiming down sights | **done** (`player.md`, "Aiming down sights"): holding the fire pad with a gun aims (a settings option comes later); per gun field of view, time, move share and spread share in `weapons.mdix`; the gun and hands move to the middle of the view. Not yet in the netcode's `NetCmd` |
 | [x] | Wall peeking | **done** (`player.md`, "Leaning"): automatic, with a gun in hand, at the corner of a wall toward the opening (no buttons); the eye is kept out of walls. Not yet in the netcode's `NetCmd` |
-| [x] | Dive | **done** (`player.md`, "Diving"): run, jump, dive; answers below; the slide is now forward only |
-| [ ] | Consumables | **partly**: medkits and batteries exist and can be used; the "taking" mechanic below is not built |
+| [x] | Dive | **done** (`player.md`, "Diving"): run, jump, dive; answers below; the slide is now forward only; after the roll the player **lies** until the stick is moved (round 4), and the camera can no longer see under the floor |
+| [x] | Stim shot | **done** (`player.md`, "Stim shot"): stamina fills very fast for 4 s, even while sprinting, and 15 health comes back; one at a time; found on every floor. Numbers are placeholders |
+| [ ] | Consumables | **partly**: medkits, batteries and stim shots exist and can be used; the "taking" mechanic below (use times, channel, quick-use slots) is not built |
 | [ ] | Inventory rework | to do (the current inventory is a simple 12 slot grid; `inventory.md`) |
 
 ## Stamina, as you described it
@@ -66,7 +67,7 @@ Your description: the player runs and can click a slide button that appears, whi
 1. **Invulnerability.** *Answered: only if Call of Duty has it; the sources say nothing of it, so none. The constant is there to turn on.*
 2. **When is the direction read?** *Answered: at the press (the DIVE tap), relative to the camera, a centred stick meaning forward.*
 3. **How long does the DIVE button stay?** *Not answered; default taken: until the dive starts or the player lands.*
-4. **Crouch first?** *Not answered; taken: the roll ends standing for now, and the crouch joins later (building crouch first was not asked for).*
+4. **Crouch first?** *Answered in round 4: "when you dive and are at the lying or crouch or whatever it is you do not get up until the joystick is moved." The roll now ends lying and stays down until the stick is moved (let go and pushed again, or moved by a quarter of its range; a finger held still does not count). Whether that is the rule meant is the thing to check on a phone. Crouch itself is still to do.*
 5. **Firing and aiming during the dive and the roll.** *Answered for ADS: yes during the dive. Built: fire and ADS work throughout the dive and the roll (nothing blocks them).*
 6. **Numbers:** 3 m, 0.5 s in the air, a 0.4 s roll, 25 stamina, refused when exhausted. *Taken as the starting point.*
 7. **Netcode:** *Answered: later.* A dive needs a button bit and a state in `NetCmd`/`NetSim_Step` (the other chat's code); the same goes for ADS and lean (`player.md`, "Netcode overlap").
@@ -78,7 +79,7 @@ Sprint, slide, crouch, dive and the roll are all modes the player can be in, wit
 ## Consumables and "taking" them (partly)
 
 **Yours:** the consumables are in the items, which are dealt with separately, but the mechanics for taking them are needed; you will provide references.
-**Built:** an item can be used from the inventory screen and takes effect at once (a medkit heals 40; a battery loads the flashlight).
+**Built:** an item can be used from the inventory screen and takes effect at once (a medkit heals 40; a battery loads the flashlight; a stim shot starts a four second effect: stamina fills very fast even while sprinting, and 15 health comes back over the time; a second one is refused while it works).
 **Proposal for the rest:**
 - Each consumable has a **use time** in its row (0 for a battery, 2.0 s for a medkit, 0.8 s for a stimulant), a **channel**: a progress ring on the screen while it runs, the player slowed to walking speed, interrupted by damage or by pressing another action, and not consumed if interrupted.
 - Healing a downed teammate is the same mechanic with a target and a longer use time (`01-game-loop.md`).

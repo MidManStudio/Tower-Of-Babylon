@@ -143,6 +143,7 @@ void Pickups_SpawnForFloor(const FloorMap *f, int floorNumber, unsigned owned)
         list[n++] = Pickup_ForAmmo(types[Rand() % (uint32_t)kinds]);
     }
     list[n++] = PICKUP_MEDKIT;
+    list[n++] = PICKUP_STIM;
     if (!(owned & OWNED_FLASHLIGHT)) list[n++] = PICKUP_FLASHLIGHT;
     list[n++] = PICKUP_BATTERY;
     if (floorNumber <= 1 || Rand() % 10u < 4u) list[n++] = PICKUP_BATTERY;
@@ -263,6 +264,7 @@ const char *Pickup_Label(PickupKind kind)
         case PICKUP_RIFLE_AMMO: return "RIFLE AMMO";
         case PICKUP_FLASHLIGHT: return "FLASHLIGHT";
         case PICKUP_BATTERY:    return "BATTERY";
+        case PICKUP_STIM:       return "STIM SHOT";
         default:                return "PISTOL AMMO";
     }
 }
@@ -336,6 +338,13 @@ void Pickups_Draw(Vector3 viewer, float t)
                 Part_Draw(&(Part){ V(c.x + o.x - dir.x * 0.07f, c.y, c.z + o.z - dir.z * 0.07f), V(c.x + o.x + dir.x * 0.05f, c.y, c.z + o.z + dir.z * 0.05f), 0.030f, 0.030f, 8, 1.0f, 0.0f, up, (Color){ 40, 120, 70, 255 } }, light);
                 Part_Draw(&(Part){ V(c.x + o.x + dir.x * 0.05f, c.y, c.z + o.z + dir.z * 0.05f), V(c.x + o.x + dir.x * 0.075f, c.y, c.z + o.z + dir.z * 0.075f), 0.016f, 0.016f, 8, 1.0f, 0.0f, up, (Color){ 214, 178, 60, 255 } }, light);
             }
+        } else if (p->kind == PICKUP_STIM) {
+            // A syringe: a cyan barrel with a dark flange and thumb pad, a plunger rod, and a thin needle.
+            Part_Draw(&(Part){ V(c.x - dir.x * 0.07f, c.y, c.z - dir.z * 0.07f), V(c.x + dir.x * 0.07f, c.y, c.z + dir.z * 0.07f), 0.024f, 0.024f, 8, 1.0f, 0.0f, up, (Color){ 90, 220, 230, 255 } }, light);
+            Part_Draw(&(Part){ V(c.x + dir.x * 0.07f, c.y, c.z + dir.z * 0.07f), V(c.x + dir.x * 0.085f, c.y, c.z + dir.z * 0.085f), 0.040f, 0.040f, 8, 1.0f, 0.0f, up, (Color){ 50, 54, 62, 255 } }, light);
+            Part_Draw(&(Part){ V(c.x - dir.x * 0.14f, c.y, c.z - dir.z * 0.14f), V(c.x - dir.x * 0.07f, c.y, c.z - dir.z * 0.07f), 0.008f, 0.008f, 6, 1.0f, 0.0f, up, (Color){ 190, 194, 204, 255 } }, light);
+            Part_Draw(&(Part){ V(c.x - dir.x * 0.155f, c.y, c.z - dir.z * 0.155f), V(c.x - dir.x * 0.14f, c.y, c.z - dir.z * 0.14f), 0.026f, 0.026f, 8, 1.0f, 0.0f, up, (Color){ 50, 54, 62, 255 } }, light);
+            Part_Draw(&(Part){ V(c.x + dir.x * 0.085f, c.y, c.z + dir.z * 0.085f), V(c.x + dir.x * 0.18f, c.y, c.z + dir.z * 0.18f), 0.004f, 0.003f, 6, 1.0f, 0.0f, up, (Color){ 214, 218, 226, 255 } }, light);
         } else if (p->kind == PICKUP_MEDKIT) {
             // A white case with a red cross on top.
             Part_Draw(&(Part){ V(c.x - dir.x * 0.12f, c.y, c.z - dir.z * 0.12f), V(c.x + dir.x * 0.12f, c.y, c.z + dir.z * 0.12f), 0.105f, 0.105f, 4, 0.62f, 0.78539816f, up, (Color){ 226, 226, 220, 255 } }, light);

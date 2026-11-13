@@ -487,6 +487,14 @@ int main(void)
             Check(sim.player.wantAim && sim.player.aimBlend > 0.3f, "holding fire during the dive aims down the sights (you can ADS in a dive)");
             for (int i = 0; i < 40; ++i) { God(); Stp(None()); }
             Check(!sim.player.diving && !sim.player.rolling, "after the roll it is over");
+            Check(sim.player.lying && sim.player.diveBlend > 0.9f && sim.player.moveVel.x * sim.player.moveVel.x + sim.player.moveVel.z * sim.player.moveVel.z < 0.01f, "and the player is lying on the floor, not standing up");
+            SimCmd jmp2 = None(); jmp2.jump = true;
+            for (int i = 0; i < 30; ++i) { God(); Stp(None()); }
+            Stp(jmp2);
+            Check(sim.player.lying && sim.player.isGrounded, "a second later, with a jump asked for, still down (the jump is refused while lying)");
+            SimCmd push = None(); push.move = (Vector2){ 0.0f, -1.0f };
+            for (int i = 0; i < 3; ++i) { God(); Stp(push); }
+            Check(!sim.player.lying && PlayerSpeed(&sim.player) > 0.5f, "pushing the stick gets the player up and walking");
 
             // A walking jump has none, and too tired says so.
             GoTo(start);
@@ -508,6 +516,50 @@ int main(void)
             Check(!sim.player.diving, "a dead player does not dive");
             sim.player.health.isAlive = true;
         }
+    }
+
+    printf("\n-- the stim shot\n");
+    {
+        Boot(1);
+        Inventory_Add(&sim.inv, ITEM_STIM, 2);
+        DamagePlayer(&sim.player, 30.0f, sim.player.position);
+        sim.player.stamina = 20.0f;
+        sim.player.health.invulnerabilityTimer = 0.0f;
+        const float hp0 = sim.player.health.hp;
+        int slot = -1;
+        for (int i = 0; i < INV_SLOTS; ++i) if (sim.inv.slots[i].item == ITEM_STIM) slot = i;
+        TallyClear();
+        GameSim_UseSlot(&sim, slot);
+        Drain();
+        Check(sim.player.stimLeft > PLAYER_STIM_SECS - 0.1f && Inventory_Count(&sim.inv, ITEM_STIM) == 1, "using a stim shot starts it and takes one from the bag");
+        Check(T.snd[SIMSND_USEITEM] == 1 && Said("USED STIM SHOT"), "and says what was used, with the sound");
+        Check(T.kind[SIMEV_HEAL_FLASH] == 0, "without the medkit's green flash (it heals a little, over time)");
+        TallyClear();
+        GameSim_UseSlot(&sim, slot);
+        Drain();
+        Check(Said("STIM IS STILL WORKING") && Inventory_Count(&sim.inv, ITEM_STIM) == 1, "a second one while it works is refused, and not used up");
+        for (int i = 0; i < 30; ++i) Stp(None());                                  // one second
+        Check(sim.player.stamina > 20.0f + 0.8f * STAMINA_STIM_RATE && sim.player.health.hp > hp0 + 2.0f, "a second later stamina is well up and health is coming back");
+        for (int i = 0; i < 120; ++i) Stp(None());                                 // five seconds in all
+        Check(sim.player.stimLeft == 0.0f && sim.player.stamina >= PLAYER_STAMINA_MAX - 0.01f, "when its time is up the bar is full");
+        Check(sim.player.health.hp > hp0 + PLAYER_STIM_HEAL - 1.0f, "and the health it gives is back");
+        TallyClear();
+        GameSim_UseSlot(&sim, slot);
+        Drain();
+        Check(sim.player.stimLeft > 0.0f && !Inventory_Has(&sim.inv, ITEM_STIM), "the next one can be used once it is over");
+
+        // Dropping it leaves a stim shot on the floor.
+        Boot(1);
+        Inventory_Add(&sim.inv, ITEM_STIM, 3);
+        slot = -1;
+        for (int i = 0; i < INV_SLOTS; ++i) if (sim.inv.slots[i].item == ITEM_STIM) slot = i;
+        int before = 0, after = 0;
+        for (int k = 0; k < MAX_PICKUPS; ++k) if (Pickups_Get(k)->active && Pickups_Get(k)->kind == PICKUP_STIM) ++before;
+        GameSim_DropSlot(&sim, slot);
+        Drain();
+        int dropped = 0;
+        for (int k = 0; k < MAX_PICKUPS; ++k) if (Pickups_Get(k)->active && Pickups_Get(k)->kind == PICKUP_STIM) { ++after; if (Pickups_Get(k)->count == 3) dropped = 1; }
+        Check(after == before + 1 && dropped && !Inventory_Has(&sim.inv, ITEM_STIM), "a dropped stack of stim shots lies on the floor as a stim shot pickup holding the three");
     }
 
     printf("\n-- picking a gun up loads it, dropping it gives the rounds back\n");

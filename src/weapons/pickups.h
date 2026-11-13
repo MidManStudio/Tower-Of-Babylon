@@ -16,7 +16,8 @@ typedef enum {
     PICKUP_PIPE = 0, PICKUP_PISTOL, PICKUP_AMMO, PICKUP_MEDKIT,
     PICKUP_SHOTGUN, PICKUP_RIFLE, PICKUP_SHELLS, PICKUP_RIFLE_AMMO,
     PICKUP_FLASHLIGHT,    // its count is the seconds of charge it holds
-    PICKUP_BATTERY
+    PICKUP_BATTERY,
+    PICKUP_STIM
 } PickupKind;
 
 bool       Pickup_IsAmmo(PickupKind kind);          // a box of rounds: picked up by walking over it
@@ -48,7 +49,7 @@ void Pickups_Clear(void);
 //   * Floor 1 has a pipe and a pistol, so both can be tried; floor 2 holds a shotgun and floor 3 a rifle; floors after
 //     that hold one weapon chosen from all of them. A weapon the player already has (`owned` has its WEAPON_BIT)
 //     turns into a box of its ammo; the pipe, which has none, into pistol ammo.
-//   * Every floor also has a medkit and two ammo boxes: pistol ammo on floor 1, and from floor 2 one pistol box and one
+//   * Every floor also has a medkit, a stim shot and two ammo boxes: pistol ammo on floor 1, and from floor 2 one pistol box and one
 //     of a kind picked among the guns that exist by then.
 //   * Floor 1 holds a flashlight and two batteries. Later floors hold one battery and, four times in ten, a second.
 //     A player without a flashlight (it was dropped and left behind) finds one on every floor until they have it, so it

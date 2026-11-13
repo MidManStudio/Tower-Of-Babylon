@@ -20,6 +20,7 @@ typedef enum {
     ITEM_NONE = 0, ITEM_PIPE, ITEM_PISTOL, ITEM_AMMO, ITEM_MEDKIT,
     ITEM_SHOTGUN, ITEM_RIFLE, ITEM_SHELLS, ITEM_RIFLE_AMMO,
     ITEM_FLASHLIGHT, ITEM_BATTERY,
+    ITEM_STIM,            // stim shot: stamina fills fast for a few seconds, a little health back
     ITEM_COUNT
 } ItemId;
 

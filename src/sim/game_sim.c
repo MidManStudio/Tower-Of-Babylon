@@ -42,6 +42,7 @@ static ItemId ItemForPickup(PickupKind k)
 {
     if (k == PICKUP_FLASHLIGHT) return ITEM_FLASHLIGHT;
     if (k == PICKUP_BATTERY) return ITEM_BATTERY;
+    if (k == PICKUP_STIM) return ITEM_STIM;
     if (Pickup_IsAmmo(k)) return Item_ForAmmo(Pickup_AmmoType(k));
     if (k == PICKUP_MEDKIT) return ITEM_MEDKIT;
     return Item_ForWeapon(Pickup_Weapon(k));          // the pipe and the guns
@@ -52,6 +53,7 @@ static PickupKind PickupForItem(ItemId it)
     if (it == ITEM_MEDKIT) return PICKUP_MEDKIT;
     if (it == ITEM_FLASHLIGHT) return PICKUP_FLASHLIGHT;
     if (it == ITEM_BATTERY) return PICKUP_BATTERY;
+    if (it == ITEM_STIM) return PICKUP_STIM;
     if (Item_AmmoType(it) != AMMO_NONE) return Pickup_ForAmmo(Item_AmmoType(it));
     if (Item_Equippable(it)) return Pickup_ForWeapon(Item_Weapon(it));
     return PICKUP_AMMO;
@@ -247,11 +249,21 @@ static void ToggleTorch(GameSim *s)
     Snd(s, SIMSND_FLASHLIGHT, s->torch.on);
 }
 
+// A stim shot: stamina fills fast for a few seconds and a little health comes back (the player's own numbers, PLAYER_STIM_*). One at a
+// time: a second one is refused while the first is working, so a stray tap does not waste it.
+static void UseStim(GameSim *s, int slot)
+{
+    if (!PlayerTryStim(&s->player)) { Say(s, "STIM IS STILL WORKING"); return; }
+    Inventory_RemoveAt(&s->inv, slot, 1);
+    Inventory_Post(&s->inv, INV_EV_USED, ITEM_STIM, 1);
+}
+
 static void UseSlotImpl(GameSim *s, int slot)
 {
     const ItemId item = s->inv.slots[slot].item;
     if (item == ITEM_FLASHLIGHT) { ToggleTorch(s); return; }
     if (item == ITEM_BATTERY) { LoadBattery(s); return; }
+    if (item == ITEM_STIM) { UseStim(s, slot); return; }
     if (Item_HealAmount(item) > 0.0f) {
         if (HealPlayer(&s->player, Item_HealAmount(item))) {
             Inventory_RemoveAt(&s->inv, slot, 1);

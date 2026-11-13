@@ -130,7 +130,7 @@ static float SightDist(const FloorMap *map, float x, float z, float dx, float dz
 static void UpdateAutoLean(PlayerController *player, bool sprintIntent, float dt, const FloorMap *map)
 {
     const bool allowed = player->leanAllowed && player->health.isAlive && player->isGrounded && !player->sliding &&
-                         !player->diving && !player->rolling && !sprintIntent;
+                         !player->diving && !player->rolling && !player->lying && !sprintIntent;
     int dir = 0;
     bool looked = false;
     if (allowed) {
@@ -186,6 +186,12 @@ static void SyncPlayerCamera(PlayerController *player) {
         player->camera.position.x += sinf(player->yaw - 1.5708f) * shift;
         player->camera.position.z += cosf(player->yaw - 1.5708f) * shift;
         player->camera.position.y -= PLAYER_LEAN_DIP * fabsf(player->leanBlend);
+    }
+    // The eye never goes lower than PLAYER_CAM_MIN_HEIGHT above the floor under it, however low the slide, the dive or lying would put it:
+    // closer than that the near plane cuts the floor away and the view looks out under it.
+    {
+        const float floorY = Staircase_GroundHeight(player->camera.position.x, player->camera.position.z, player->position.y);
+        if (player->camera.position.y < floorY + PLAYER_CAM_MIN_HEIGHT) player->camera.position.y = floorY + PLAYER_CAM_MIN_HEIGHT;
     }
     // The shake is only in the view; the player's real yaw and pitch are untouched.
     const float yaw = player->yaw + sinf(player->shakeClock * 48.0f) * SHAKE_YAW * player->shake;
@@ -253,6 +259,9 @@ void InitPlayerController(PlayerController *player, float startX, float startZ) 
     player->diveT = 0.0f;
     player->diveDir = (Vector3){ 0.0f, 0.0f, 1.0f };
     player->diveBlend = 0.0f;
+    player->lying = false;
+    player->lieStick = (Vector2){ 0.0f, 0.0f };
+    player->stimLeft = 0.0f;
 }
 
 float PlayerFatigue(const PlayerController *player)
@@ -294,7 +303,7 @@ bool PlayerSprintingForward(const PlayerController *player)
 bool PlayerTrySlide(PlayerController *player)
 {
     if (!player->health.isAlive || player->sliding || player->slideCooldown > 0.0f || !player->isGrounded) return false;
-    if (player->diving || player->rolling) return false;
+    if (player->diving || player->rolling || player->lying) return false;
     if (!player->sprinting || player->exhausted || player->stamina < STAMINA_SLIDE_COST) return false;
     const float speed = sqrtf(player->moveVel.x * player->moveVel.x + player->moveVel.z * player->moveVel.z);
     if (speed < 2.0f) return false;                                    // a sprint that has barely begun has nothing to slide with
@@ -348,10 +357,17 @@ bool PlayerTryDive(PlayerController *player, Vector2 moveDelta)
     return true;
 }
 
+bool PlayerTryStim(PlayerController *player)
+{
+    if (!player->health.isAlive || player->stimLeft > 0.0f) return false;
+    player->stimLeft = PLAYER_STIM_SECS;
+    return true;
+}
+
 bool PlayerTryJump(PlayerController *player)
 {
     if (!player->isGrounded || !player->health.isAlive) return false;
-    if (player->diving || player->rolling) return false;               // no jumping out of a roll
+    if (player->diving || player->rolling || player->lying) return false;   // no jumping out of a roll, and none from lying down: the stick gets the player up
     player->jumpedSprinting = player->sprinting;                       // a jump from a sprint (or a slide) can be followed by a dive
     if (player->sliding) EndSlide(player);                             // jumping out of a slide keeps the speed it had
     float power = PLAYER_JUMP_SPEED;
@@ -410,6 +426,9 @@ void TeleportPlayer(PlayerController *player, Vector3 pos, float yaw) {
     player->sliding = false;
     player->slideBlend = 0.0f;
     player->diving = player->rolling = player->jumpedSprinting = false;
+    player->lying = false;
+    player->lieStick = (Vector2){ 0.0f, 0.0f };
+    player->stimLeft = 0.0f;
     player->diveBlend = 0.0f;
     player->aimBlend = 0.0f;
     player->leanBlend = 0.0f;
@@ -445,6 +464,18 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     const bool moving = inLen > 0.12f;
     if (inLen > 1.0f) inLen = 1.0f;
 
+    // Lying (after a dive's roll): the player stays down until the stick is moved. It counts as moved when it is let go and pushed again,
+    // or pushed on from where it was held when the roll ended by PLAYER_LIE_PUSH; a finger that stays where it was does not get the player up.
+    if (player->lying) {
+        if (!moving) {
+            player->lieStick = (Vector2){ 0.0f, 0.0f };
+        } else {
+            const float dx = moveDelta.x - player->lieStick.x, dy = moveDelta.y - player->lieStick.y;
+            if (dx * dx + dy * dy > PLAYER_LIE_PUSH * PLAYER_LIE_PUSH) player->lying = false;
+        }
+    }
+    const bool wantMove = moving && !player->lying;                  // a player lying down goes nowhere
+
     // Aiming down sights eases in while wanted and out (a little quicker) when not.
     {
         const float secs = player->adsSecs > 0.01f ? player->adsSecs : PLAYER_ADS_DEFAULT_SECS;
@@ -460,9 +491,17 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     // Stamina. Sprinting works in every direction (omni sprint), needs some stamina left and a player who is not exhausted, and does
     // not go with aiming down sights or leaning.
     // A sprint that is already going carries on until the stamina is gone; starting one takes a little in hand.
-    const bool canSprint = !player->exhausted && player->isGrounded && !player->wantAim && !leaning && !player->diving && !player->rolling &&
+    const bool canSprint = !player->exhausted && player->isGrounded && !player->wantAim && !leaning && !player->diving && !player->rolling && !player->lying &&
                            (player->sprinting ? player->stamina > 0.0f : player->stamina > STAMINA_SPRINT_MIN);
-    player->sprinting = player->wantSprint && moving && canSprint;
+    player->sprinting = player->wantSprint && wantMove && canSprint;
+    // A stim shot adds to the stamina whatever else is happening (before the sprint's drain, so a nearly empty bar is not called exhausted
+    // in the same step it is being filled) and gives its health back a little each step.
+    if (player->stimLeft > 0.0f) {
+        const float used = fminf(dt, player->stimLeft);
+        player->stimLeft -= used;
+        player->stamina += STAMINA_STIM_RATE * used;
+        HealPlayer(player, PLAYER_STIM_HEAL / PLAYER_STIM_SECS * used);
+    }
     if (player->sprinting && player->sliding) {
         player->staminaDelay = STAMINA_REGEN_DELAY;                    // the slide was paid for when it started: no drain, no regeneration
     } else if (player->sprinting) {
@@ -475,6 +514,7 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
         player->stamina += STAMINA_REGEN * (player->exhausted ? EXHAUSTED_REGEN_MUL : 1.0f) * dt;
         if (player->stamina > PLAYER_STAMINA_MAX) player->stamina = PLAYER_STAMINA_MAX;
     }
+    if (player->stamina > PLAYER_STAMINA_MAX) player->stamina = PLAYER_STAMINA_MAX;
     if (player->exhausted && player->stamina >= STAMINA_EXHAUST_RECOVER) player->exhausted = false;
     player->breathClock += dt;
 
@@ -484,7 +524,7 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     if (player->adsMoveMul > 0.0f) topSpeed *= 1.0f + (player->adsMoveMul - 1.0f) * PlayerAimAmount(player);   // aimed down sights: slower
     topSpeed *= 1.0f + (PLAYER_LEAN_MOVE_MUL - 1.0f) * fabsf(player->leanBlend);                               // and leaning
     Vector3 want = { 0.0f, 0.0f, 0.0f };
-    if (moving) {
+    if (wantMove) {
         // The stick's direction at its own length (a gentle push walks slowly), then turned into world directions.
         const float ux = moveDelta.x / sqrtf(moveDelta.x * moveDelta.x + moveDelta.y * moveDelta.y);
         const float uy = moveDelta.y / sqrtf(moveDelta.x * moveDelta.x + moveDelta.y * moveDelta.y);
@@ -530,7 +570,7 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     // Toward the wanted velocity by at most accel * dt. Speeding up is gentler than stopping, the air steers less,
     // and an exhausted player is slow to get going.
     {
-        float rate = moving ? PLAYER_ACCEL : PLAYER_DECEL;
+        float rate = wantMove ? PLAYER_ACCEL : PLAYER_DECEL;
         if (!player->isGrounded) rate *= PLAYER_AIR_CONTROL;
         rate *= fatigue;                                   // sluggish to get going as well when tired
         const float dx = want.x - player->moveVel.x, dz = want.z - player->moveVel.z;
@@ -564,7 +604,7 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
         float kd = dt * 12.0f;
         if (kd > 1.0f) kd = 1.0f;
         player->slideBlend += ((player->sliding ? 1.0f : 0.0f) - player->slideBlend) * kd;
-        player->diveBlend += (((player->diving || player->rolling) ? 1.0f : 0.0f) - player->diveBlend) * kd;
+        player->diveBlend += (((player->diving || player->rolling || player->lying) ? 1.0f : 0.0f) - player->diveBlend) * kd;
         // A slide ends when its time is up, when it has run into something and slowed to a crawl, or when the feet leave the floor.
         if (player->sliding && (player->slideT >= PLAYER_SLIDE_SECS || speed < 1.5f)) EndSlide(player);
     }
@@ -612,7 +652,11 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     if (player->isGrounded) player->jumpedSprinting = false;            // a dive belongs to the jump it was started in
     // The dive lands into its roll, and the roll ends after its time (a dive that has somehow not landed long after it should have still lets go).
     if (player->diving && (player->isGrounded || player->diveT > 3.0f * PLAYER_DIVE_SECS)) { player->diving = false; player->rolling = true; player->diveT = 0.0f; }
-    else if (player->rolling && player->diveT >= PLAYER_ROLL_SECS) player->rolling = false;
+    else if (player->rolling && player->diveT >= PLAYER_ROLL_SECS) {
+        player->rolling = false;
+        player->lying = true;                                           // the roll ends flat on the floor, and stays there until the stick is moved
+        player->lieStick = moveDelta;
+    }
 
     // 4. Update Camera View Matrix. The eye follows the body height smoothly.
     {

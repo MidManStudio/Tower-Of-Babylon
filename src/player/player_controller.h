@@ -60,7 +60,10 @@
 #define PLAYER_ROLL_SECS       0.4f
 #define PLAYER_ROLL_SPEED      3.5f    // m/s at the landing, running down linearly to PLAYER_ROLL_END_SPEED
 #define PLAYER_ROLL_END_SPEED  1.0f
-#define PLAYER_DIVE_DROP       0.55f   // metres the camera drops during a dive and the roll
+#define PLAYER_DIVE_DROP       0.23f   // metres the camera drops during a dive, the roll and lying (0.63 standing -> 0.40, see PLAYER_CAM_MIN_HEIGHT)
+#define PLAYER_CAM_MIN_HEIGHT  0.40f   // the camera never goes lower than this above the floor under it: the near plane is 0.25 and the corners of the view reach about 0.39,
+                                       // so a lower camera sees under the floor (the first dive's 0.08 m did)
+#define PLAYER_LIE_PUSH        0.25f   // lying: the stick must move this far (of 1) from where it was when the roll ended, or be let go and pushed, to get up
 #define PLAYER_DIVE_NOISE      16.0f   // how far a dive is heard
 #define PLAYER_DIVE_GRACE_SECS 0.0f    // no damage for this long after a dive starts: 0, because Call of Duty gives none (set to 0.5 to cover the airtime)
 #define STAMINA_DIVE_COST      25.0f   // a dive needs at least this much in hand, and a player who is not exhausted
@@ -89,8 +92,15 @@
 #define STAMINA_SLIDE_COST     18.0f   // about a second of sprinting; a slide needs at least this much in hand
 #define PLAYER_SLIDE_MIN_FORWARD 0.70f // a slide only goes forward: the sprint must be within 45 degrees of straight ahead (left, right and back are for the dive)
 #define PLAYER_SLIDE_STEER     1.4f    // radians a second the stick can turn the slide
-#define PLAYER_SLIDE_DROP      0.25f   // metres the camera drops
+#define PLAYER_SLIDE_DROP      0.25f   // metres the camera drops (held at PLAYER_CAM_MIN_HEIGHT above the floor, so the real drop is 0.23)
 #define PLAYER_SLIDE_NOISE     14.0f   // how far a slide is heard: loud, but less than a sprint's 20
+
+// Stim shot (placeholder numbers): for PLAYER_STIM_SECS seconds stamina gets STAMINA_STIM_RATE a second on top of whatever else is going
+// on (regeneration, the sprint's drain, the regeneration pause), so a sprint keeps filling it (net 53 a second), and exhaustion is over in
+// a second; PLAYER_STIM_HEAL health comes back, spread evenly over the time. The time is long enough to fill an empty bar while sprinting.
+#define PLAYER_STIM_SECS       4.0f
+#define STAMINA_STIM_RATE      70.0f
+#define PLAYER_STIM_HEAL       15.0f
 
 void InitPlayerController(PlayerController *player, float startX, float startZ);
 // The game runs the rules on fixed steps but turns the camera every frame, so the aim never waits for a step:
@@ -119,6 +129,8 @@ bool PlayerDiveAvailable(const PlayerController *player);
 // Starts a dive: PlayerDiveAvailable, no exhaustion and STAMINA_DIVE_COST in hand (taken). The direction is read now: moveDelta is the stick
 // as for PlayerStep (x right, y negative forward); with the stick centred it is straight ahead. Returns whether it started.
 bool PlayerTryDive(PlayerController *player, Vector2 moveDelta);
+// Starts a stim shot: false (and nothing happens) when dead or when one is still running. The caller takes the item.
+bool PlayerTryStim(PlayerController *player);
 // Top speed in a direction, as a share of the forward speed: forward and right are the unit direction in the player's own frame
 // (forward 1, right 0 is straight ahead). 1 ahead, PLAYER_STRAFE_MUL to the side, PLAYER_BACKPEDAL_MUL backwards, smoothly between.
 float PlayerDirectionMul(float forward, float right);

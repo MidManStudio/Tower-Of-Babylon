@@ -787,11 +787,67 @@ int main(void)
         (void)rollSpeed0;
         Check(!r.sprinting && !PlayerTrySlide(&r) && !PlayerTryJump(&r), "no sprint, slide or jump in the roll either, even with sprint held");
         Run(&r, (Vector2){ 0, 0 }, true, PLAYER_ROLL_SECS);
-        Check(!r.rolling && !r.diving, "the roll ends after PLAYER_ROLL_SECS");
-        Run(&r, (Vector2){ 0, 0 }, false, 0.5f);
+        Check(!r.rolling && !r.diving && r.lying, "the roll ends after PLAYER_ROLL_SECS, with the player lying on the floor");
+        Run(&r, (Vector2){ 0, 0 }, true, 2.0f);
+        Check(r.lying && r.diveBlend > 0.95f && PlayerSpeed(&r) < 0.05f, "two seconds later the player is still down: camera low, not moving (sprint held, stick centred)");
+        Check(fabsf(r.camera.position.y - PLAYER_CAM_MIN_HEIGHT) < 0.03f && standEye - PLAYER_DIVE_DROP > PLAYER_CAM_MIN_HEIGHT - 0.03f, "lying, the eye is PLAYER_CAM_MIN_HEIGHT above the floor, no lower");
+        Check(!r.sprinting && !PlayerTrySlide(&r) && !PlayerTryJump(&r) && !PlayerDiveAvailable(&r), "lying: no sprint, no slide, no jump, no dive");
+        r.wantAim = true; r.adsFov = 45.0f;
+        Run(&r, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(r.lying && r.aimBlend > 0.9f, "and aiming down the sights works while lying (so does firing: nothing here stops it)");
+        r.wantAim = false;
+        Run(&r, (Vector2){ 0.0f, -0.15f }, true, 0.5f);
+        Check(r.lying && PlayerSpeed(&r) < 0.05f, "a touch of the stick (past the dead zone, short of a push) does not get the player up");
+        const float zDown = r.position.z;
+        Run(&r, FWD, false, 0.1f);
+        Check(!r.lying && PlayerSpeed(&r) > 0.5f && r.position.z > zDown, "pushing the stick gets the player up, and walking");
+        Run(&r, FWD, false, 0.5f);
         Check(r.diveBlend < 0.01f && !r.jumpedSprinting && !PlayerDiveAvailable(&r), "the camera comes back up, and a dive cannot be asked for on the ground (the next one needs a new sprinting jump)");
         Run(&r, FWD, true, 1.0f);
-        Check(r.sprinting && PlayerSpeed(&r) > 7.0f, "after the roll the player is in control again and can sprint");
+        Check(r.sprinting && PlayerSpeed(&r) > 7.0f, "after that the player is in control again and can sprint");
+
+        // The stick held forward right through the dive and the roll: the player stays down, does not get up by itself, and gets up when the
+        // stick is let go and pushed again (or turned a long way).
+        PlayerController h = Place(40.0f, 20.0f, 0.0f);
+        Run(&h, FWD, true, 0.8f); PlayerTryJump(&h); Run(&h, FWD, false, 0.15f); PlayerTryDive(&h, FWD);
+        t = 0.0f;
+        while ((h.diving || h.rolling) && t < 3.0f) { Run(&h, FWD, true, DT); t += DT; }
+        Run(&h, FWD, true, 1.5f);
+        Check(h.lying && PlayerSpeed(&h) < 0.05f && h.diveBlend > 0.95f, "with the stick held forward the whole time the player is down and stays down (a finger that does not move is not a move)");
+        Run(&h, (Vector2){ 0, 0 }, false, 0.3f);
+        Check(h.lying, "letting the stick go does not get the player up either");
+        Run(&h, FWD, false, 0.1f);
+        Check(!h.lying, "pushing it again does");
+        PlayerController h2 = Place(40.0f, 20.0f, 0.0f);
+        Run(&h2, FWD, true, 0.8f); PlayerTryJump(&h2); Run(&h2, FWD, false, 0.15f); PlayerTryDive(&h2, FWD);
+        t = 0.0f;
+        while ((h2.diving || h2.rolling) && t < 3.0f) { Run(&h2, FWD, true, DT); t += DT; }
+        Run(&h2, FWD, true, 0.5f);
+        Run(&h2, (Vector2){ 1.0f, 0.0f }, false, 0.1f);
+        Check(!h2.lying, "or, held, moving it to another direction");
+
+        // The camera never goes under the floor: the dive from take-off to getting up, and a slide.
+        {
+            PlayerController c = Place(40.0f, 20.0f, 0.0f);
+            Run(&c, FWD, true, 0.8f);
+            float lowest = 9.0f;
+            PlayerTryJump(&c);
+            for (int i = 0; i < 12; ++i) { Run(&c, FWD, false, DT); if (c.camera.position.y < lowest) lowest = c.camera.position.y; }
+            PlayerTryDive(&c, FWD);
+            for (int i = 0; i < 180; ++i) { Run(&c, (Vector2){ 0, 0 }, false, DT); if (c.camera.position.y < lowest) lowest = c.camera.position.y; }
+            Run(&c, FWD, false, DT * 2.0f);
+            for (int i = 0; i < 40; ++i) { Run(&c, FWD, false, DT); if (c.camera.position.y < lowest) lowest = c.camera.position.y; }
+            char msg[160];
+            snprintf(msg, sizeof msg, "through a whole dive (take-off, arc, roll, lying, getting up) the eye never goes below %.2f m above the floor (lowest %.3f)", (double)PLAYER_CAM_MIN_HEIGHT, (double)lowest);
+            Check(lowest >= PLAYER_CAM_MIN_HEIGHT - 0.001f, msg);
+            PlayerController sl = Place(40.0f, 20.0f, 0.0f);
+            Run(&sl, FWD, true, 0.8f);
+            PlayerTrySlide(&sl);
+            lowest = 9.0f;
+            for (int i = 0; i < 60; ++i) { Run(&sl, FWD, true, DT); if (sl.camera.position.y < lowest) lowest = sl.camera.position.y; }
+            Check(sl.slideBlend > 0.5f || lowest < 0.6f, "(the slide did drop the eye)");
+            Check(lowest >= PLAYER_CAM_MIN_HEIGHT - 0.001f, "and a slide's eye stays above it too");
+        }
 
         // A slide into a jump counts as a sprinting jump.
         PlayerController sj = Place(40.0f, 20.0f, 0.0f);
@@ -814,7 +870,51 @@ int main(void)
         PlayerController tp = Place(40.0f, 20.0f, 0.0f);
         Run(&tp, FWD, true, 0.8f); PlayerTryJump(&tp); Run(&tp, FWD, false, 0.15f); PlayerTryDive(&tp, FWD);
         TeleportPlayer(&tp, (Vector3){ 20.0f, 0.0f, 40.0f }, 0.0f);
-        Check(!tp.diving && !tp.rolling && tp.diveBlend == 0.0f && !tp.jumpedSprinting, "a teleport (a new floor) ends it");
+        tp.lying = true; tp.stimLeft = 2.0f;
+        TeleportPlayer(&tp, (Vector3){ 20.0f, 0.0f, 40.0f }, 0.0f);
+        Check(!tp.diving && !tp.rolling && !tp.lying && tp.stimLeft == 0.0f && tp.diveBlend == 0.0f && !tp.jumpedSprinting, "a teleport (a new floor) ends it, lying down and a running stim shot as well");
+    }
+
+    printf("Stim shot\n");
+    {
+        // Standing still, empty and exhausted: the bar is full by the time it ends, the exhaustion is over in about a second, a little health is back.
+        PlayerController a = Place(40.0f, 20.0f, 0.0f);
+        a.stamina = 0.0f; a.exhausted = true; a.staminaDelay = STAMINA_REGEN_DELAY; a.health.hp = 50.0f;
+        Check(PlayerTryStim(&a) && a.stimLeft == PLAYER_STIM_SECS, "a stim shot starts");
+        Check(!PlayerTryStim(&a), "a second one is refused while the first is working");
+        Run(&a, (Vector2){ 0, 0 }, false, 1.2f);
+        Check(!a.exhausted && a.stamina > STAMINA_EXHAUST_RECOVER, "within about a second the exhaustion is over (stamina is past the recovery mark)");
+        Run(&a, (Vector2){ 0, 0 }, false, PLAYER_STIM_SECS - 1.2f + 0.05f);
+        Check(a.stimLeft == 0.0f && a.stamina >= PLAYER_STAMINA_MAX - 0.01f, "when it ends the bar is full, and it never went past the top");
+        Check(fabsf(a.health.hp - (50.0f + PLAYER_STIM_HEAL)) < 0.2f, "and PLAYER_STIM_HEAL health has come back, no more");
+        Check(PlayerTryStim(&a), "once it is over another can be used");
+
+        // Sprinting nearly empty: the stim fills it faster than the sprint drains it, and the sprint is never interrupted.
+        PlayerController b = Place(40.0f, 20.0f, 0.0f);
+        Run(&b, FWD, true, 0.8f);
+        b.stamina = 1.0f;
+        PlayerController ctl = b;                                          // the same sprint without a stim, to compare
+        PlayerTryStim(&b);
+        bool neverStopped = true;
+        for (int i = 0; i < 60; ++i) { Run(&b, FWD, true, DT); Run(&ctl, FWD, true, DT); if (!b.sprinting) neverStopped = false; }
+        Check(neverStopped && b.stamina > 40.0f && !ctl.sprinting && ctl.exhausted, "sprinting on empty: the stim keeps it going and filling (a second in, over 40) while the same sprint without one is out of breath");
+        for (int i = 0; i < 180; ++i) { Run(&b, FWD, true, DT); if (!b.sprinting) neverStopped = false; }
+        Check(neverStopped && b.sprinting && b.stamina >= PLAYER_STAMINA_MAX - 0.01f, "and by the end of the stim's time, still sprinting, the bar is full: the time is long enough to fill an empty one");
+        Run(&b, FWD, true, 1.0f);
+        Check(b.stimLeft == 0.0f && b.stamina < PLAYER_STAMINA_MAX - 10.0f, "afterwards the sprint drains it as before");
+
+        // At a full bar a sprint stays full the whole time.
+        PlayerController f = Place(40.0f, 20.0f, 0.0f);
+        Run(&f, FWD, true, 0.5f);
+        PlayerTryStim(&f);
+        float lowestF = 999.0f;
+        for (int i = 0; i < 120; ++i) { Run(&f, FWD, true, DT); if (f.stamina < lowestF) lowestF = f.stamina; }
+        Check(lowestF > PLAYER_STAMINA_MAX - 15.0f && f.sprinting, "at a nearly full bar, a sprint under a stim stays at the top");
+
+        // Dead players do not take it; a teleport (a new floor) does not carry it over.
+        PlayerController dd = Place(40.0f, 20.0f, 0.0f);
+        dd.health.isAlive = false;
+        Check(!PlayerTryStim(&dd) && dd.stimLeft == 0.0f, "a dead player cannot use one");
     }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");

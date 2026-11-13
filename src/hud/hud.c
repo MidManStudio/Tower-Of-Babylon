@@ -103,6 +103,14 @@ void Hud_Draw(const HudView *v)
 
     if (!v->invOpen) HudRun_Draw(v);
     if (!v->invOpen && v->alive) WeaponReadout(v);
+    if (!v->invOpen && v->alive && v->stim01 > 0.0f) {                  // a stim shot: its time left, and the stamina it is filling
+        const int w = 200, x = (800 - w) / 2, y = 450 - 26;
+        const Color cyan = (Color){ 90, 220, 230, 255 };
+        DrawText("STIM", x, y - 14, 12, cyan);
+        DrawRectangle(x, y, w, 3, Fade(BLACK, 0.6f));
+        DrawRectangle(x, y, (int)((float)w * (v->stim01 > 1.0f ? 1.0f : v->stim01)), 3, cyan);
+        ScreenFx_DrawStaminaBar(x, y + 6, w, 6, v->stamina01, v->exhausted, v->exhaustRecover01, (float)GetTime());
+    }
 
 #if HUD_VITALS_ALWAYS_ON
     ScreenFx_DrawHealthBar(800 / 2 - 100, 450 - 22, 200, 14, v->hp, v->maxHp);

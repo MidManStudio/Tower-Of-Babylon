@@ -18,11 +18,11 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `lighting_headless.c` | ceiling lights, light map, line of sight | `lighting.md` |
 | `highp_headless.c` | the shaders' text and the beam calls | `lighting.md`, `flashlight.md` |
 | `health_headless.c` | health and damage | `player.md` |
-| `movement_headless.c` | velocity, omni sprint, forward-only slide, stamina, noise, aiming down sights, automatic corner leaning, dive and roll | `player.md` |
+| `movement_headless.c` | velocity, omni sprint, forward-only slide, stamina, noise, aiming down sights, automatic corner leaning, dive, roll and lying (stays down until the stick is moved; the camera never below the floor), the stim shot | `player.md` |
 | `enemies_headless.c`, `spider_headless.c` | enemy AI and spiders | `enemies.md` |
 | `weapons_headless.c` | arsenal, fire modes, magazines and reloading, melee durability, aiming-down-sights numbers and pose, pickups, models, shots at real enemies | `weapons.md` |
 | `projectiles_headless.c` | patterns, falloff, swept hits, piercing, tracers, `Gunfire_Shoot` | `projectiles.md` |
-| `inventory_headless.c` | items, stacks, the inventory and its touch screen | `inventory.md` |
+| `inventory_headless.c` | items (the stim shot included), stacks, the inventory and its touch screen | `inventory.md` |
 | `sim_headless.c` | the input latch (dive included), the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
 | `game_sim_headless.c` | the simulation with no window: the event queue, the rules reported as events (flashlight, shots, hits, medkit, pickups, the stair clock, doors, death), the same world at any frame rate and on every run, and a scan that it reaches for no window, clock, sound or screen | `sim.md` |
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |

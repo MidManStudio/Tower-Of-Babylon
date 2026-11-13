@@ -107,6 +107,15 @@ static void DrawIcon(ItemId it, Rectangle r)
             DrawRectangle((int)x + 14, (int)y + 34, 42, 8, (Color){ 214, 178, 60, 255 });
             DrawRectangleLines((int)x + 14, (int)y + 24, 42, 28, (Color){ 30, 36, 24, 255 });
             break;
+        case ITEM_STIM:
+            DrawRectangle((int)x + 18, (int)y + 28, 32, 14, (Color){ 90, 220, 230, 255 });     // barrel
+            DrawRectangleLines((int)x + 18, (int)y + 28, 32, 14, (Color){ 20, 60, 70, 255 });
+            DrawRectangle((int)x + 50, (int)y + 23, 5, 24, (Color){ 50, 54, 62, 255 });         // flange
+            DrawRectangle((int)x + 55, (int)y + 34, 14, 2, (Color){ 214, 218, 226, 255 });      // needle
+            DrawRectangle((int)x + 10, (int)y + 34, 8, 2, (Color){ 190, 194, 204, 255 });       // plunger rod
+            DrawRectangle((int)x + 5, (int)y + 28, 5, 14, (Color){ 50, 54, 62, 255 });          // thumb pad
+            DrawRectangle((int)x + 24, (int)y + 31, 20, 8, (Color){ 60, 210, 120, 255 });       // the dose
+            break;
         case ITEM_MEDKIT:
             DrawRectangle((int)x + 14, (int)y + 20, 42, 32, (Color){ 226, 226, 220, 255 });
             DrawRectangle((int)x + 31, (int)y + 25, 8, 22, (Color){ 190, 28, 28, 255 });

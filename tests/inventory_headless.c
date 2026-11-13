@@ -215,7 +215,10 @@ int main(void)
     Check(Item_StackMax(ITEM_FLASHLIGHT) == 1 && Item_StackMax(ITEM_BATTERY) == 6, "one flashlight to a slot, six batteries");
     Check(Item_Usable(ITEM_FLASHLIGHT) && Item_Usable(ITEM_BATTERY) && !Item_Equippable(ITEM_FLASHLIGHT) && !Item_Equippable(ITEM_BATTERY) && Item_Droppable(ITEM_FLASHLIGHT) && Item_Droppable(ITEM_BATTERY), "both are used (not equipped) and both can be dropped");
     Check(Item_HealAmount(ITEM_BATTERY) == 0.0f && Item_AmmoType(ITEM_BATTERY) == AMMO_NONE && Item_Weapon(ITEM_FLASHLIGHT) == WEAPON_HANDS, "a battery does not heal, spend as ammo or name a weapon");
-    Check(ITEM_COUNT == 11, "eleven item ids: none, pipe, pistol, pistol ammo, medkit, shotgun, rifle, shells, rifle ammo, flashlight, battery (a new item needs an icon in inventory_ui.c too)");
+    Check(Item_IsA(ITEM_STIM, KIND_CONSUMABLE) && Item_StackMax(ITEM_STIM) == 5 && Item_Usable(ITEM_STIM) && !Item_Equippable(ITEM_STIM) && Item_Droppable(ITEM_STIM), "the stim shot is a consumable: stacks to five, used (not equipped), can be dropped");
+    Check(Item_HealAmount(ITEM_STIM) == 0.0f && Item_AmmoType(ITEM_STIM) == AMMO_NONE && Item_Weapon(ITEM_STIM) == WEAPON_HANDS && strcmp(Item_Name(ITEM_STIM), "STIM SHOT") == 0,
+          "it carries no heal number in its row (the player's stim numbers do the healing over time, so the medkit's use-at-once path must not take it), no ammo type and no weapon");
+    Check(ITEM_COUNT == 12, "twelve item ids: none, pipe, pistol, pistol ammo, medkit, shotgun, rifle, shells, rifle ammo, flashlight, battery, stim shot (a new item needs an icon in inventory_ui.c too)");
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");
     return g_failures ? 1 : 0;

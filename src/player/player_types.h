@@ -69,7 +69,12 @@ typedef struct {
     bool  rolling;            // the roll after the landing
     float diveT;              // seconds into the dive, or into the roll
     Vector3 diveDir;          // the way it goes (unit, on the floor plane)
-    float diveBlend;          // 0 to 1, eased: drives the dropped camera
+    float diveBlend;          // 0 to 1, eased: drives the dropped camera (a dive, its roll, and lying)
+    bool  lying;              // down on the floor after the roll: stays down until the stick is pushed (see PLAYER_LIE_PUSH). No sprint, slide, jump or lean; fire and ADS work
+    Vector2 lieStick;         // the stick as it was when the roll ended (zero once it has been let go): a push is a move away from this
+
+    // Stim shot: a short time during which stamina fills quickly (even while sprinting) and a little health comes back.
+    float stimLeft;           // seconds of the stim that remain; 0 = none
 
     // Camera state
     float yaw;
