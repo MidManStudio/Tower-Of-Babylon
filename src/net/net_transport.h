@@ -13,6 +13,10 @@
 // whole, in order, once (a QUIC stream). The server and the client talk only through this, so the lossy loopback of the tests and, later, the
 // native QUIC and the browser's WebTransport (the Rust mid-net transports, reached over a C interface) are interchangeable.
 // recv functions return the length of the packet copied into buf, 0 when none is waiting, or -1 when it did not fit in cap (it is dropped).
+// Which transport a server speaks (announced in discovery, net_discovery.h, so a searcher only offers what its build can join).
+#define NET_TRANSPORT_UDP  0               // plain UDP with the game's own reliable layer (net_udp.h)
+#define NET_TRANSPORT_QUIC 1               // mid-net's QUIC (net_mid.h)
+
 typedef struct {
     void *self;
     bool (*sendDatagram)(void *self, const uint8_t *data, size_t len);     // false when refused (too big for NET_MTU, or the link is closed)

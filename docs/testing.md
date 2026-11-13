@@ -28,6 +28,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |
 | `floor_game_headless.c` | the stair clock in the game: where the console goes, the door lock, the monster calls, the kill, frame rate independence | `floor_run.md` |
 | `net_rel_headless.c` | the reliable-message layer over a path that loses, doubles and reorders: order, once each, wraparound, window, round trip, giving up | `net.md` |
+| `server_smoke_quic.sh` (not a C test) | the same server and bots over mid-net's QUIC, with a bot that lists and finds the server; skipped (exit 77) without cargo and a mid-engine checkout (about 17 s once built) | `net.md` |
 | `net_discovery_headless.c` | finding a game on the network: strict packets, the table of lobbies, address helpers, a host and a searcher over real UDP on the loopback, strangers' packets and a flood (about a second) | `net.md` |
 | `net_udp_headless.c` | the real UDP transport on this machine's loopback, in real time (about 15 s): handshake, play, 15% loss, a full server, strangers' packets | `net.md` |
 | `net_headless.c` | the multiplayer netcode: wire, protocol (and fuzz), pretend network, handshake, prediction and reconciliation over delay and loss, commands not to be trusted, other players, the clock lead | `net.md` |

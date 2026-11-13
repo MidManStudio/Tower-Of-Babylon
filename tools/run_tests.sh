@@ -20,6 +20,10 @@ for f in tests/*_headless.c; do
   if "$out" > /tmp/run_out.txt 2>&1; then echo "PASS  $f  ($(grep -c '^  ok\|ok:' /tmp/run_out.txt) ok lines)"; else echo "FAIL  $f"; tail -5 /tmp/run_out.txt; fail=1; fi
 done
 if bash tests/server_smoke.sh >/tmp/smoke_out.txt 2>&1; then echo "PASS  tests/server_smoke.sh  (the server and two bots as separate programs over real UDP, 10% packet loss each way)"; else echo "FAIL  tests/server_smoke.sh"; tail -8 /tmp/smoke_out.txt; fail=1; fi
+bash tests/server_smoke_quic.sh >/tmp/smoke_quic_out.txt 2>&1; qrc=$?
+if [ $qrc -eq 77 ]; then echo "SKIP  tests/server_smoke_quic.sh ($(head -1 /tmp/smoke_quic_out.txt))"
+elif [ $qrc -eq 0 ]; then echo "PASS  tests/server_smoke_quic.sh  (the server and bots over mid-net's QUIC, with discovery)"
+else echo "FAIL  tests/server_smoke_quic.sh"; tail -8 /tmp/smoke_quic_out.txt; fail=1; fi
 if bash tests/platform_check.sh >/tmp/platform_out.txt 2>&1; then echo "PASS  tests/platform_check.sh  (web, android and desktop all compile and agree with platform.h)"; else echo "FAIL  tests/platform_check.sh"; tail -8 /tmp/platform_out.txt; fail=1; fi
 if command -v node >/dev/null 2>&1; then
   if node tests/mdix_bridge_test.mjs 2>&1 | grep -v "^\[mdix\]" | tail -1 | grep -q "all passed"; then echo "PASS  tests/mdix_bridge_test.mjs"; else echo "FAIL  tests/mdix_bridge_test.mjs"; fail=1; fi

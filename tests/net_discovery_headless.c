@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "net/net_discovery.h"
+#include "platform/platform.h"
 
 static int g_failures = 0, g_checks = 0;
 static void Check(int ok, const char *what) { ++g_checks; printf("  [%s] %s\n", ok ? "pass" : "FAIL", what); if (!ok) ++g_failures; }
@@ -95,7 +96,7 @@ int main(void)
         uint8_t buf[NET_DISC_ASK_SIZE];
         NetDiscAnnounce a = Ann("steve's tower", 7777, 2, 4), back;
         size_t n = NetDisc_EncodeAnnounce(&a, buf, sizeof buf);
-        Check(n == 21 + strlen(a.name), "its length is the fixed part plus the name");
+        Check(n == 22 + strlen(a.name), "its length is the fixed part plus the name");
         Check(NetDisc_DecodeAnnounce(buf, n, &back) && !memcmp(&back, &a, sizeof a), "it decodes to exactly what was encoded");
         a = Ann("123456789012345678901234", 1, 4, 4);
         n = NetDisc_EncodeAnnounce(&a, buf, sizeof buf);
@@ -141,9 +142,9 @@ int main(void)
         uint8_t t[NET_DISC_ASK_SIZE];
         memcpy(t, buf, n); t[n] = 0;
         Check(!NetDisc_DecodeAnnounce(t, n + 1, &back), "a byte left over after the name is refused");
-        memcpy(t, buf, n); t[20] = 4;                                              // the name length says 4 but 5 bytes follow
+        memcpy(t, buf, n); t[21] = 4;                                              // the name length says 4 but 5 bytes follow
         Check(!NetDisc_DecodeAnnounce(t, n, &back), "a name length that does not match the packet is refused");
-        memcpy(t, buf, n); t[22] = 0;                                              // a zero byte inside the name
+        memcpy(t, buf, n); t[23] = 0;                                              // a zero byte inside the name
         Check(!NetDisc_DecodeAnnounce(t, n, &back), "a zero byte inside the name is refused");
         memcpy(t, buf, n); t[12] = 0; t[13] = 0;
         Check(!NetDisc_DecodeAnnounce(t, n, &back), "a packet that says port 0 is refused (checked on the way in, not only on the way out)");
@@ -153,6 +154,15 @@ int main(void)
         Check(!NetDisc_DecodeAnnounce(t, n, &back), "a packet that says more places than the game has is refused");
         memcpy(t, buf, n); t[14] = 3; t[15] = 2;
         Check(!NetDisc_DecodeAnnounce(t, n, &back), "a packet that says more players than places is refused");
+        {   // the transport the host speaks travels in the answer
+            NetDiscAnnounce q = Ann("quic game", 7777, 1, 4);
+            q.transport = NET_TRANSPORT_QUIC;
+            uint8_t qb[NET_DISC_ASK_SIZE];
+            const size_t qn = NetDisc_EncodeAnnounce(&q, qb, sizeof qb);
+            Check(qn > 0 && NetDisc_DecodeAnnounce(qb, qn, &back) && back.transport == NET_TRANSPORT_QUIC, "the transport (QUIC) travels in the answer");
+            q.transport = 9;                                                           // a transport this build has never heard of must still be listed
+            Check(NetDisc_EncodeAnnounce(&q, qb, sizeof qb) == qn && NetDisc_DecodeAnnounce(qb, qn, &back) && back.transport == 9, "an unknown transport still decodes, so it can be listed as one this build cannot join");
+        }
         NetDiscAsk askOnly = { 5 };
         uint8_t q[NET_DISC_ASK_SIZE];
         NetDisc_EncodeAsk(&askOnly, q, sizeof q);
@@ -197,6 +207,29 @@ int main(void)
         Check(NetLobbies_Nth(&t, 0)->info.port == 7777 && NetLobbies_Nth(&t, 0)->addr == IP(192, 168, 1, 5) && !strcmp(NetLobbies_Nth(&t, 1)->info.name, "two") && !strcmp(NetLobbies_Nth(&t, 2)->info.name, "three"),
               "they are listed in the order they were first heard");
         Check(NetLobbies_Nth(&t, 3) == NULL && NetLobbies_Nth(&t, 100) == NULL, "past the end there is nothing");
+        // the transport
+        {
+            Check(NetDisc_TransportSupported(NET_TRANSPORT_UDP) == (TOWER_NET_UDP != 0), "plain UDP is supported wherever the platform has UDP");
+            Check(NetDisc_TransportSupported(NET_TRANSPORT_QUIC) == (TOWER_MIDNET != 0), "QUIC is supported only in a build that linked mid-net");
+            Check(!NetDisc_TransportSupported(7) && !NetDisc_TransportSupported(255), "a transport this build has never heard of is not supported");
+            NetLobbies tr;
+            NetLobbies_Init(&tr);
+            NetDiscAnnounce u = Ann("udp", 7777, 0, 4), qk = Ann("quic", 7777, 0, 4), odd = Ann("odd", 7777, 0, 4);
+            u.hostId = 11; u.transport = NET_TRANSPORT_UDP;
+            qk.hostId = 12; qk.transport = NET_TRANSPORT_QUIC;
+            odd.hostId = 13; odd.transport = 7;
+            NetLobbies_Update(&tr, IP(10, 0, 0, 1), &odd, 0.0);
+            NetLobbies_Update(&tr, IP(10, 0, 0, 2), &qk, 0.0);
+            NetLobbies_Update(&tr, IP(10, 0, 0, 3), &u, 0.0);
+            Check(!NetLobbies_Nth(&tr, 0)->transportSupported && NetLobbies_Nth(&tr, 1)->transportSupported == (TOWER_MIDNET != 0) && NetLobbies_Nth(&tr, 2)->transportSupported == (TOWER_NET_UDP != 0),
+                  "each lobby is marked with whether this build can connect the way it wants");
+            const NetLobby *jf = NetLobbies_FirstJoinable(&tr);
+            Check((TOWER_NET_UDP && TOWER_MIDNET) ? (jf && !strcmp(jf->info.name, "quic")) : TOWER_NET_UDP ? (jf && !strcmp(jf->info.name, "udp")) : jf == NULL,
+                  "the first joinable skips a lobby this build cannot connect to (and one of a transport nobody has heard of)");
+            qk.transport = NET_TRANSPORT_UDP;
+            Check(NetLobbies_Update(&tr, IP(10, 0, 0, 2), &qk, 1.0) == NETLOBBY_CHANGED, "a host that changes transport is CHANGED");
+            Check(NetLobbies_Nth(&tr, 1)->info.transport == NET_TRANSPORT_UDP && NetLobbies_Nth(&tr, 1)->transportSupported == (TOWER_NET_UDP != 0), "and its supported flag follows the new transport, not the old one");
+        }
         // one host, two of its addresses
         {
             NetLobbies m;
@@ -336,7 +369,7 @@ int main(void)
         const uint16_t dport = NetDiscHost_Port(&host);
         NetDiscHost second;
         Check(!NetDiscHost_Open(&second, dport), "a second host on the same port fails: the port is not shared, so nobody is answered twice");
-        NetDiscHost_SetInfo(&host, "steve's tower", 7777, 1, 4);
+        NetDiscHost_SetInfo(&host, "steve's tower", 7777, 1, 4, NET_TRANSPORT_UDP);
         Check(NetDiscClient_Open(&cl, dport) && cl.open, "a searcher opens on a port of its own (so it can run next to a host)");
 
         double now = 100000.0;
@@ -350,7 +383,7 @@ int main(void)
         const int changed = NetDiscClient_Poll(&cl, now);
         Check(changed == 1 && NetLobbies_Count(&cl.lobbies) == 1, "the searcher lists exactly one lobby (the same host reached by several addresses is not listed twice)");
         const NetLobby *l = NetLobbies_Nth(&cl.lobbies, 0);
-        Check(l && !strcmp(l->info.name, "steve's tower") && l->info.port == 7777 && l->info.players == 1 && l->info.maxPlayers == 4 && l->compatible, "with its name, game port, places and version");
+        Check(l && !strcmp(l->info.name, "steve's tower") && l->info.port == 7777 && l->info.players == 1 && l->info.maxPlayers == 4 && l->compatible && l->info.transport == NET_TRANSPORT_UDP, "with its name, game port, places, version and transport");
         NetDiscIface mine[16];
         const int nm = NetDisc_ListInterfaces(mine, 16);
         int fromHere = l && l->addr == IP(127, 0, 0, 1);
@@ -358,12 +391,25 @@ int main(void)
         Check(fromHere, "and the address it ANSWERED from (this machine's own: the loopback or one of its interfaces), not one the host claims");
         Check(NetLobbies_FirstJoinable(&cl.lobbies) == l, "it can be joined");
 
-        NetDiscHost_SetInfo(&host, "steve's tower", 7777, 3, 4);
+        NetDiscHost_SetInfo(&host, "steve's tower", 7777, 3, 4, NET_TRANSPORT_UDP);
         now += 2100.0;
         NetDiscClient_Search(&cl, now);
         SleepMs(30); NetDiscHost_Poll(&host, now); SleepMs(30);
         Check(NetDiscClient_Poll(&cl, now) == 1 && NetLobbies_Nth(&cl.lobbies, 0)->info.players == 3, "when a player joins, the next round shows 3 of 4");
 
+        // a host that speaks QUIC says so, and the searcher knows whether this build can join it
+        NetDiscHost_SetInfo(&host, "steve's tower", 7777, 3, 4, NET_TRANSPORT_QUIC);
+        now += 2100.0;
+        NetDiscClient_Search(&cl, now);
+        SleepMs(30); NetDiscHost_Poll(&host, now); SleepMs(30);
+        NetDiscClient_Poll(&cl, now);
+        Check(NetLobbies_Nth(&cl.lobbies, 0)->info.transport == NET_TRANSPORT_QUIC && NetLobbies_Nth(&cl.lobbies, 0)->transportSupported == (TOWER_MIDNET != 0),
+              "a host that announces QUIC is listed as QUIC, joinable only in a build that has it");
+        NetDiscHost_SetInfo(&host, "steve's tower", 7777, 3, 4, NET_TRANSPORT_UDP);
+        now += 2100.0;
+        NetDiscClient_Search(&cl, now);
+        SleepMs(30); NetDiscHost_Poll(&host, now); SleepMs(30);
+        NetDiscClient_Poll(&cl, now);
         // strangers
         const int raw = RawSocket();
         uint8_t reply[200];
@@ -462,10 +508,10 @@ int main(void)
         RawSend(r2, NetDiscHost_Port(&mute), full, sizeof full);
         SleepMs(30);
         Check(NetDiscHost_Poll(&mute, 0.0) == 0 && RawRecv(r2, reply, sizeof reply, 60) < 0, "a host that has not said what it announces (no SetInfo) answers nobody");
-        NetDiscHost_SetInfo(&mute, "bad\tname\x7f\xff-and-a-very-long-name-indeed", 7777, 9, 99);
+        NetDiscHost_SetInfo(&mute, "bad\tname\x7f\xff-and-a-very-long-name-indeed", 7777, 9, 99, NET_TRANSPORT_UDP);
         Check(NetDisc_NameOk(mute.info.name) && strlen(mute.info.name) == NET_DISC_NAME_MAX && mute.info.maxPlayers == NET_MAX_PLAYERS && mute.info.players == NET_MAX_PLAYERS,
               "SetInfo makes any name safe (unprintable becomes '?', cut at 24) and clamps the numbers");
-        NetDiscHost_SetInfo(&mute, "", 7777, -3, 0);
+        NetDiscHost_SetInfo(&mute, "", 7777, -3, 0, NET_TRANSPORT_UDP);
         Check(!strcmp(mute.info.name, "tower") && mute.info.players == 0 && mute.info.maxPlayers == 1, "an empty name becomes \"tower\"");
         NetDiscHost_Close(&mute);
         close(r2);

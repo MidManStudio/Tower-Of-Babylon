@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "net_proto.h"
+#include "net_transport.h"
 
 // Finding a game on the local network without typing an address. The idea (and the phone knowledge in it) comes from the LocalLobbyManager
 // of the Unity package com.midmanstudio.netcode: a searching device broadcasts a small "who is hosting?" packet to the network, a host
@@ -43,6 +44,7 @@ typedef struct {
     uint16_t protocol;                     // NET_PROTOCOL_VERSION of the host
     uint16_t port;                         // the game's UDP port
     uint8_t  players, maxPlayers;
+    uint8_t  transport;                    // NET_TRANSPORT_UDP or NET_TRANSPORT_QUIC (net_transport.h): how to connect to the game port
     char     name[NET_DISC_NAME_MAX + 1];
 } NetDiscAnnounce;
 
@@ -58,6 +60,7 @@ bool   NetDisc_DecodeAnnounce(const uint8_t *buf, size_t len, NetDiscAnnounce *o
 // ---- what a searcher has found ------------------------------------------------------------------------------------------------------
 typedef struct {
     bool            used, compatible;      // compatible: the host speaks this game's protocol version
+    bool            transportSupported;    // this build can connect the way the host wants (NetDisc_TransportSupported)
     uint32_t        addr;                  // where the answer came FROM (never what the host claims about itself)
     unsigned        seq;                   // the order they were first heard in
     double          lastSeenMs;
@@ -77,7 +80,10 @@ NetLobbyResult NetLobbies_Update(NetLobbies *t, uint32_t srcAddr, const NetDiscA
 int            NetLobbies_Expire(NetLobbies *t, double nowMs, double timeoutMs);          // returns how many were removed
 int            NetLobbies_Count(const NetLobbies *t);
 const NetLobby *NetLobbies_Nth(const NetLobbies *t, int n);                              // in the order they were first heard; NULL past the end
-const NetLobby *NetLobbies_FirstJoinable(const NetLobbies *t);                           // the earliest heard that is compatible and not full
+// The earliest heard that is compatible, speaks a transport this build has, and is not full.
+const NetLobby *NetLobbies_FirstJoinable(const NetLobbies *t);
+// Whether this build can connect over a transport: plain UDP wherever there is UDP (TOWER_NET_UDP), QUIC where the build linked mid-net (TOWER_MIDNET).
+bool            NetDisc_TransportSupported(uint8_t transport);
 
 // ---- addresses ------------------------------------------------------------------------------------------------------------------------
 typedef struct { uint32_t ip, mask; char name[16]; bool up, loopback, canBroadcast; } NetDiscIface;
@@ -115,7 +121,7 @@ bool     NetDiscHost_Open(NetDiscHost *h, uint16_t port);
 uint16_t NetDiscHost_Port(const NetDiscHost *h);
 // What to say. The name is made safe (anything not printable becomes '?', cut at 24, empty becomes "tower"). Call it again whenever the
 // player count changes.
-void     NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, int players, int maxPlayers);
+void     NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, int players, int maxPlayers, uint8_t transport);
 int      NetDiscHost_Poll(NetDiscHost *h, double nowMs);                                  // answers what has come in; returns the answers sent
 void     NetDiscHost_Close(NetDiscHost *h);
 

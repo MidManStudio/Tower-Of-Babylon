@@ -4,7 +4,7 @@
 // ============================================================================
 // A player with no screen: connects to a server, walks a fixed course for a while, says how it went. For trying a server by hand and as the
 // other half of tests/server_smoke.sh. Built only on purpose (scripts/build_server.sh defines TOWER_BOT_MAIN).
-//   ./tower_bot [host] [port] [--seconds 10] [--name steve] [--loss 0] [--quiet]
+//   ./tower_bot [host] [port] [--seconds 10] [--name steve] [--loss 0] [--quiet] [--transport udp|quic]
 //   ./tower_bot --find [--wait 5] [--discovery-port 7778] [--probe IP]     look for a game on this network and join the first one that can be joined
 //   ./tower_bot --list [--wait 5] [--discovery-port 7778] [--probe IP]     only list what answers (net/net_discovery.h), then stop
 // --probe asks one address directly, for a host on another subnet or where broadcasts are filtered.
@@ -20,6 +20,7 @@
 
 #include "../net/net_client.h"
 #include "../net/net_discovery.h"
+#include "../net/net_mid.h"
 #include "../net/net_udp.h"
 
 void DrawCube(Vector3 p, float w, float h, float l, Color c) { (void)p; (void)w; (void)h; (void)l; (void)c; }
@@ -28,6 +29,7 @@ bool CheckObstacleCollision(Vector3 pos, float radius) { (void)pos; (void)radius
 
 static NetClient g_cl;
 static NetUdpHost g_host;
+static NetMidHost g_mid;
 
 static void SleepMs(double ms) { struct timespec ts; ts.tv_sec = 0; ts.tv_nsec = (long)(ms * 1e6); nanosleep(&ts, NULL); }
 
@@ -67,7 +69,7 @@ int main(int argc, char **argv)
     const char *host = "127.0.0.1", *name = "steve", *probeIp = NULL;
     unsigned port = 7777, discPort = NET_DISC_PORT;
     double seconds = 10.0, lossPercent = 0.0, waitSeconds = 5.0;
-    int quiet = 0, positional = 0, find = 0, list = 0;
+    int quiet = 0, positional = 0, find = 0, list = 0, useQuic = -1;
     char foundHost[16];
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = atof(argv[++i]);
@@ -75,13 +77,14 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--loss") && i + 1 < argc) lossPercent = atof(argv[++i]);
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
         else if (!strcmp(argv[i], "--find")) find = 1;
+        else if (!strcmp(argv[i], "--transport") && i + 1 < argc) { ++i; useQuic = !strcmp(argv[i], "quic") ? 1 : !strcmp(argv[i], "udp") ? 0 : -2; }
         else if (!strcmp(argv[i], "--list")) list = 1;
         else if (!strcmp(argv[i], "--wait") && i + 1 < argc) waitSeconds = atof(argv[++i]);
         else if (!strcmp(argv[i], "--discovery-port") && i + 1 < argc) discPort = (unsigned)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--probe") && i + 1 < argc) probeIp = argv[++i];
         else if (argv[i][0] != '-' && positional == 0) { host = argv[i]; ++positional; }
         else if (argv[i][0] != '-' && positional == 1) { port = (unsigned)atoi(argv[i]); ++positional; }
-        else { fprintf(stderr, "usage: %s [host] [port] [--seconds N] [--name steve] [--loss PERCENT] [--quiet]\n       %s --find|--list [--wait N] [--discovery-port N] [--probe IP]\n", argv[0], argv[0]); return 2; }
+        else { fprintf(stderr, "usage: %s [host] [port] [--seconds N] [--name steve] [--loss PERCENT] [--quiet] [--transport udp|quic]\n       %s --find|--list [--wait N] [--discovery-port N] [--probe IP]\n", argv[0], argv[0]); return 2; }
     }
     if (port == 0 || port > 65535 || discPort == 0 || discPort > 65535 || waitSeconds <= 0.0) { fprintf(stderr, "bad port or wait\n"); return 2; }
     if ((find || list) && positional) { fprintf(stderr, "give a host and port, or --find/--list, not both\n"); return 2; }
@@ -94,7 +97,9 @@ int main(int argc, char **argv)
             const NetLobby *l = NetLobbies_Nth(&cl.lobbies, i);
             char s[16];
             NetDisc_FormatIp(l->addr, s);
-            printf("  %d. \"%s\" at %s:%u, %d of %d players%s\n", i + 1, l->info.name, s, (unsigned)l->info.port, l->info.players, l->info.maxPlayers, l->compatible ? "" : " (another version of the game)");
+            printf("  %d. \"%s\" at %s:%u, %d of %d players, %s%s%s\n", i + 1, l->info.name, s, (unsigned)l->info.port, l->info.players, l->info.maxPlayers,
+                   l->info.transport == NET_TRANSPORT_QUIC ? "QUIC" : l->info.transport == NET_TRANSPORT_UDP ? "plain UDP" : "an unknown transport",
+                   l->compatible ? "" : " (another version of the game)", l->transportSupported ? "" : " (this build cannot connect that way)");
         }
         if (list) { NetDiscClient_Close(&cl); if (heard == 0) { printf("tower_bot: no game found\n"); return 3; } return 0; }
         const NetLobby *pick = NetLobbies_FirstJoinable(&cl.lobbies);
@@ -102,12 +107,20 @@ int main(int argc, char **argv)
         NetDisc_FormatIp(pick->addr, foundHost);
         host = foundHost;
         port = pick->info.port;
+        useQuic = pick->info.transport == NET_TRANSPORT_QUIC;                                  // the lobby says how to connect
         printf("tower_bot: found \"%s\" at %s:%u, joining\n", pick->info.name, host, port);
         NetDiscClient_Close(&cl);
     }
-    if (lossPercent > 0.0) NetUdp_SetDebug((float)(lossPercent / 100.0), 0.0f);
+    if (useQuic == -2) { fprintf(stderr, "--transport is udp or quic\n"); return 2; }
+    if (useQuic < 0) useQuic = NetMid_Available() ? 1 : 0;                                    // mid-net's QUIC whenever this build has it
+    if (useQuic && !NetMid_Available()) { fprintf(stderr, "tower_bot: this build has no QUIC (it was built without the mid-engine library: see docs/net.md)\n"); return 2; }
+    if (lossPercent > 0.0) {
+        if (useQuic) fprintf(stderr, "tower_bot: --loss only applies to plain UDP; ignored\n");
+        else NetUdp_SetDebug((float)(lossPercent / 100.0), 0.0f);
+    }
     NetTransport tp;
-    if (!NetUdpHost_Connect(&g_host, host, (uint16_t)port, &tp)) { fprintf(stderr, "tower_bot: cannot reach %s:%u\n", host, port); return 2; }
+    if (!(useQuic ? NetMidHost_Connect(&g_mid, host, (uint16_t)port, &tp) : NetUdpHost_Connect(&g_host, host, (uint16_t)port, &tp))) { fprintf(stderr, "tower_bot: cannot reach %s:%u\n", host, port); return 2; }
+    if (!quiet) printf("tower_bot: connecting to %s:%u over %s\n", host, port, useQuic ? "QUIC (mid-net)" : "plain UDP");
     NetClient_Init(&g_cl, tp, name, NetUdp_NowMs());
 
     const double start = NetUdp_NowMs();
@@ -131,8 +144,8 @@ int main(int argc, char **argv)
     const int ok = g_cl.state == NETC_PLAYING && played > 0.5 && (double)ticks >= played * (double)NET_TICK_RATE * 0.8 && g_cl.hardSnaps == 0;
     printf("tower_bot: %s; played %.1f s, %u ticks, %u corrections, %u hard snaps, state %d\n", ok ? "ok" : "NOT ok", played, ticks, g_cl.corrections, g_cl.hardSnaps, (int)g_cl.state);
     NetClient_Leave(&g_cl);
-    for (int i = 0; i < 20; ++i) { NetUdpHost_Pump(&g_host); SleepMs(5.0); }            // let the goodbye go out
-    NetUdpHost_Close(&g_host);
+    for (int i = 0; i < 30; ++i) { if (useQuic) NetMidHost_Pump(&g_mid); else NetUdpHost_Pump(&g_host); SleepMs(5.0); }      // let the goodbye go out
+    if (useQuic) NetMidHost_Close(&g_mid); else NetUdpHost_Close(&g_host);
     return ok ? 0 : 1;
 }
 #endif

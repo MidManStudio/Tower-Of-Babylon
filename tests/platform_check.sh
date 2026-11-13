@@ -53,6 +53,18 @@ PROBE
   done
   if [ $bad -eq 0 ]; then echo "  ok: $name: ${#sources[@]} files compile and platform.h matches the table"; else fail=1; fi
 done
+# TOWER_MIDNET (platform.h: the build linked the mid-engine QUIC library): the QUIC wrapper and its users must compile for real on the native
+# platforms, and the web build must refuse the option outright
+for flags in "-D__ANDROID__ -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -Itests/stubs" "-DPLATFORM_DESKTOP"; do
+  for f in src/net/net_mid.c src/net/net_discovery.c; do
+    if ! gcc -std=gnu99 -fsyntax-only -Wall -Wundef -Isrc -Iraylib/src $flags -DTOWER_MIDNET=1 "$f" 2>/tmp/platform_err.txt; then
+      echo "FAIL  TOWER_MIDNET=1: $f does not compile ($flags)"; head -5 /tmp/platform_err.txt; fail=1
+    fi
+  done
+done
+if gcc -std=gnu99 -fsyntax-only -Isrc -Iraylib/src -D__EMSCRIPTEN__ -Itests/stubs -DTOWER_MIDNET=1 src/net/net_mid.c 2>/tmp/platform_err.txt || ! grep -q "TOWER_MIDNET needs a native platform" /tmp/platform_err.txt; then
+  echo "FAIL  the web build accepted TOWER_MIDNET=1 (it must be refused: the QUIC library is not built for the browser)"; fail=1
+else echo "  ok: TOWER_MIDNET=1 compiles for android and desktop and is refused for the web"; fi
 # a raw platform test outside platform.h is how this goes wrong again
 raw=$(grep -rn "__EMSCRIPTEN__\|__ANDROID__" main.c src --include=*.c --include=*.h | grep -v "^src/platform/platform.h")
 if [ -n "$raw" ]; then echo "FAIL  a raw __EMSCRIPTEN__ or __ANDROID__ test outside src/platform/platform.h (use a TOWER_ capability):"; echo "$raw" | head -5; fail=1; fi

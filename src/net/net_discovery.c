@@ -9,11 +9,12 @@
 #include <string.h>
 
 #include "../platform/platform.h"
+#include "net_transport.h"
 #include "net_wire.h"
 
 #define K_ASK      1
 #define K_ANNOUNCE 2
-#define ANNOUNCE_FIXED 21                  // magic 4, version 1, kind 1, nonce 4, protocol 2, port 2, players 1, max 1, host id 4, name length 1
+#define ANNOUNCE_FIXED 22                  // magic 4, version 1, kind 1, nonce 4, protocol 2, port 2, players 1, max 1, transport 1, host id 4, name length 1
 
 // ---- the packets -----------------------------------------------------------------------------------------------------------------------
 bool NetDisc_NameOk(const char *name)
@@ -72,6 +73,7 @@ size_t NetDisc_EncodeAnnounce(const NetDiscAnnounce *a, uint8_t *buf, size_t cap
     NetW_U16(&w, a->port);
     NetW_U8(&w, a->players);
     NetW_U8(&w, a->maxPlayers);
+    NetW_U8(&w, a->transport);
     NetW_U32(&w, a->hostId);
     NetW_U8(&w, (uint8_t)nameLen);
     NetW_Bytes(&w, a->name, nameLen);
@@ -91,6 +93,7 @@ bool NetDisc_DecodeAnnounce(const uint8_t *buf, size_t len, NetDiscAnnounce *out
     a.port = NetR_U16(&r);
     a.players = NetR_U8(&r);
     a.maxPlayers = NetR_U8(&r);
+    a.transport = NetR_U8(&r);
     a.hostId = NetR_U32(&r);
     const uint8_t nameLen = NetR_U8(&r);
     if (nameLen < 1 || nameLen > NET_DISC_NAME_MAX) return false;
@@ -116,9 +119,10 @@ NetLobbyResult NetLobbies_Update(NetLobbies *t, uint32_t srcAddr, const NetDiscA
         // that answered from another of its addresses, say its Wi-Fi and its hotspot, is not listed twice; the address first heard is kept).
         if (l->info.port == a->port && (l->addr == srcAddr || l->info.hostId == a->hostId)) {
             const bool same = l->info.hostId == a->hostId && l->info.protocol == a->protocol && l->info.players == a->players &&
-                              l->info.maxPlayers == a->maxPlayers && !strcmp(l->info.name, a->name);
+                              l->info.maxPlayers == a->maxPlayers && l->info.transport == a->transport && !strcmp(l->info.name, a->name);
             l->info = *a;
             l->compatible = a->protocol == NET_PROTOCOL_VERSION;
+            l->transportSupported = NetDisc_TransportSupported(a->transport);
             l->lastSeenMs = nowMs;
             return same ? NETLOBBY_SAME : NETLOBBY_CHANGED;
         }
@@ -128,6 +132,7 @@ NetLobbyResult NetLobbies_Update(NetLobbies *t, uint32_t srcAddr, const NetDiscA
     free->addr = srcAddr;
     free->info = *a;
     free->compatible = a->protocol == NET_PROTOCOL_VERSION;
+    free->transportSupported = NetDisc_TransportSupported(a->transport);
     free->seq = t->nextSeq++;
     free->lastSeenMs = nowMs;
     return NETLOBBY_NEW;
@@ -170,9 +175,16 @@ const NetLobby *NetLobbies_FirstJoinable(const NetLobbies *t)
     for (int n = 0; n < NET_DISC_MAX_LOBBIES; ++n) {
         const NetLobby *l = NetLobbies_Nth(t, n);
         if (!l) return NULL;
-        if (l->compatible && l->info.players < l->info.maxPlayers) return l;
+        if (l->compatible && l->transportSupported && l->info.players < l->info.maxPlayers) return l;
     }
     return NULL;
+}
+
+bool NetDisc_TransportSupported(uint8_t transport)
+{
+    if (transport == NET_TRANSPORT_UDP) return TOWER_NET_UDP != 0;
+    if (transport == NET_TRANSPORT_QUIC) return TOWER_MIDNET != 0;
+    return false;                                                                  // a transport this build has never heard of
 }
 
 // ---- addresses ------------------------------------------------------------------------------------------------------------------------
@@ -336,7 +348,7 @@ bool NetDiscHost_Open(NetDiscHost *h, uint16_t port)
 
 uint16_t NetDiscHost_Port(const NetDiscHost *h) { return h->port; }
 
-void NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, int players, int maxPlayers)
+void NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, int players, int maxPlayers, uint8_t transport)
 {
     char safe[NET_DISC_NAME_MAX + 1];
     size_t n = 0;
@@ -346,6 +358,7 @@ void NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, in
     memcpy(h->info.name, safe, n + 1);
     h->info.port = gamePort;
     h->info.protocol = NET_PROTOCOL_VERSION;
+    h->info.transport = transport;
     h->info.maxPlayers = (uint8_t)(maxPlayers < 1 ? 1 : maxPlayers > NET_MAX_PLAYERS ? NET_MAX_PLAYERS : maxPlayers);
     h->info.players = (uint8_t)(players < 0 ? 0 : players > h->info.maxPlayers ? h->info.maxPlayers : players);
 }
@@ -472,7 +485,7 @@ void NetDiscClient_Close(NetDiscClient *c)
 int  NetDisc_ListInterfaces(NetDiscIface *out, int max) { (void)out; (void)max; return 0; }
 bool NetDiscHost_Open(NetDiscHost *h, uint16_t port) { (void)port; memset(h, 0, sizeof *h); h->fd = -1; return false; }
 uint16_t NetDiscHost_Port(const NetDiscHost *h) { return h->port; }
-void NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, int players, int maxPlayers) { (void)h; (void)name; (void)gamePort; (void)players; (void)maxPlayers; }
+void NetDiscHost_SetInfo(NetDiscHost *h, const char *name, uint16_t gamePort, int players, int maxPlayers, uint8_t transport) { (void)h; (void)name; (void)gamePort; (void)players; (void)maxPlayers; (void)transport; }
 int  NetDiscHost_Poll(NetDiscHost *h, double nowMs) { (void)h; (void)nowMs; return 0; }
 void NetDiscHost_Close(NetDiscHost *h) { h->open = false; }
 bool NetDiscClient_Open(NetDiscClient *c, uint16_t discoveryPort) { (void)discoveryPort; memset(c, 0, sizeof *c); c->fd = -1; NetLobbies_Init(&c->lobbies); return false; }

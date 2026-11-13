@@ -41,6 +41,8 @@ C has the same preprocessor as C#: `#if`, `#elif`, `#else`, `#endif`, and `-D` o
 | `TOWER_INPUT_KEYBOARD` | `src/input/input.c` | WASD, Shift, Space, F, E, Q, C, L, I, P are read | not compiled |
 | `TOWER_INPUT_POINTER_LOCK` | `src/input/input.c` | `DisableCursor()`; the mouse delta is the camera, the left button fires. **Desktop only, never run** | the camera comes from a finger or a held mouse button |
 | `TOWER_NET_UDP` | `src/net/net_udp.c` | the real UDP transport (`NetUdpHost`): bind, send, receive, with the reliable layer on top, and LAN discovery's sockets and interface list (`src/net/net_discovery.c`: its packets and lobby table build everywhere) | every function is there and says "no network" (false or 0); the browser will use WebTransport or WebSockets through its own bridge (`net.md`). **The Android build also needs the INTERNET permission in its manifest before a phone can use it; not added yet, because nothing in the app uses the network yet** |
+
+**Build options** (not platform capabilities: they have no column, and the build says them): `TOWER_MIDNET` (default 0) means the build linked the mid-engine QUIC library (`net/net_mid.c`, `scripts/build_server.sh --quic`). It needs a native platform: with the web configuration it is an `#error` (`tests/platform_check.sh` checks that, and that the real QUIC wrapper compiles for Android and desktop).
 | `TOWER_MAIN_LOOP_CALLBACK` | `main.c` (include and the end of `main`) | `emscripten_set_main_loop(Frame, 0, 1)` | `SetTargetFPS(60)` and `while (!WindowShouldClose()) Frame();` |
 
 ## What each platform is built with

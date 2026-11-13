@@ -75,6 +75,16 @@
     #define TOWER_NET_UDP 0
 #endif
 
+// ---- Build options (not platform capabilities: no table column, the build says it) --------------------------------------------------
+// TOWER_MIDNET: the build links the mid-engine QUIC library (crates/mid-net/transport-quinn-ffi, built with cargo), so the game can use mid-net's
+// transport (src/net/net_mid.c) as well as plain UDP. Off unless the build passes -DTOWER_MIDNET=1; only native builds can have it.
+#ifndef TOWER_MIDNET
+    #define TOWER_MIDNET 0
+#endif
+#if TOWER_MIDNET && !TOWER_NET_UDP
+    #error "TOWER_MIDNET needs a native platform (the QUIC library is not built for the browser)"
+#endif
+
 // The browser drives the frame loop (emscripten_set_main_loop); everywhere else main() runs its own while loop.
 #define TOWER_MAIN_LOOP_CALLBACK TOWER_PLATFORM_WEB
 
