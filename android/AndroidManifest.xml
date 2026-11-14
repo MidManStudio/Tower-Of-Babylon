@@ -17,6 +17,11 @@
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
+    <!-- Sockets: LAN discovery and the game's network transports (src/net) cannot open one without it. A normal permission: granted at
+         install, no prompt. Nothing else is asked for on purpose: the Wi-Fi state and multicast permissions are for Java calls (WifiManager) and
+         the app has no Java (android:hasCode="false"); the native code reads the interfaces with getifaddrs. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="Tower of Babylon"
         android:hasCode="false"

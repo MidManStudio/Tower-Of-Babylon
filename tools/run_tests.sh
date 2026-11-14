@@ -25,6 +25,7 @@ if [ $qrc -eq 77 ]; then echo "SKIP  tests/server_smoke_quic.sh ($(head -1 /tmp/
 elif [ $qrc -eq 0 ]; then echo "PASS  tests/server_smoke_quic.sh  (the server and bots over mid-net's QUIC, with discovery)"
 else echo "FAIL  tests/server_smoke_quic.sh"; tail -8 /tmp/smoke_quic_out.txt; fail=1; fi
 if bash tests/platform_check.sh >/tmp/platform_out.txt 2>&1; then echo "PASS  tests/platform_check.sh  (web, android and desktop all compile and agree with platform.h)"; else echo "FAIL  tests/platform_check.sh"; tail -8 /tmp/platform_out.txt; fail=1; fi
+if bash tests/android_script_check.sh >/tmp/android_script_out.txt 2>&1; then echo "PASS  tests/android_script_check.sh  (the Android build script against a fake NDK and cargo: QUIC stage, fallback, link checks)"; else echo "FAIL  tests/android_script_check.sh"; grep FAIL /tmp/android_script_out.txt | head -8; fail=1; fi
 if command -v node >/dev/null 2>&1; then
   if node tests/mdix_bridge_test.mjs 2>&1 | grep -v "^\[mdix\]" | tail -1 | grep -q "all passed"; then echo "PASS  tests/mdix_bridge_test.mjs"; else echo "FAIL  tests/mdix_bridge_test.mjs"; fail=1; fi
   if node tools/mdix_bake.mjs --check >/dev/null 2>&1; then echo "PASS  tools/mdix_bake.mjs --check (the baked config is up to date)"; else echo "FAIL  tools/mdix_bake.mjs --check: run node tools/mdix_bake.mjs"; fail=1; fi
