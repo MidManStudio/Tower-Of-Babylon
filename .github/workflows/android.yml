@@ -2,18 +2,46 @@
 # NOTICE: documentation for this file lives in docs/android.md, section ".github/workflows/android.yml"
 name: Android APK
 
-# Manual only. Builds a debug-signed APK of Tower of Babylon for 32-bit ARM (armeabi-v7a), the ABI a Galaxy A13 installs.
-# The tool setup mirrors the workflow that already builds the Terminal Viscosity APK. Open the Actions tab, choose
-# "Android APK", Run workflow, then download the artifact (a zip with the .apk inside) when it finishes.
+# Manual only. Builds a debug-signed APK of Tower of Babylon for 32-bit ARM (armeabi-v7a), the ABI a Galaxy A13 installs, with mid-net's QUIC
+# library (Rust, from the public repository Mid-D-Man/mid-engine) linked in unless you switch that off.
+# Open the Actions tab, choose "Android APK", Run workflow, then download the artifact (a zip with the .apk inside) when it finishes.
+# The run's summary page says whether QUIC is in the APK.
 on:
   workflow_dispatch:
+    inputs:
+      quic:
+        description: "Build mid-net's QUIC library and link it into the APK"
+        type: choice
+        default: "on"
+        options: ["on", "off"]
+      require_quic:
+        description: "Fail the run if the QUIC library cannot be built (off: build the APK without QUIC and warn)"
+        type: choice
+        default: "off"
+        options: ["off", "on"]
+      mid_engine_ref:
+        description: "mid-engine branch, tag or commit to build the QUIC library from (empty: its default branch)"
+        type: string
+        default: ""
 
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      # mid-engine is public, so no token is needed. Both of the QUIC steps below can fail without stopping the run: scripts/build_android.sh
+      # looks for what it needs and decides (it builds the APK without QUIC and warns, or stops when require_quic is on).
+      - name: Check out mid-engine
+        if: inputs.quic == 'on'
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: Mid-D-Man/mid-engine
+          ref: ${{ inputs.mid_engine_ref }}
+          path: mid-engine
+          fetch-depth: 1
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -41,6 +69,31 @@ jobs:
           ndk-version: r26d
           link-to-sdk: true
 
+      # The runner already has rustup. mid-engine's rust-toolchain.toml says "stable", so that is installed, with the armv7 Android target.
+      - name: Setup Rust
+        if: inputs.quic == 'on'
+        continue-on-error: true
+        run: |
+          rustup toolchain install stable --profile minimal --target armv7-linux-androideabi
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      # Registry downloads and the compiled dependencies (the slow part, a few minutes cold). The key follows the pinned lock file and the
+      # mid-net sources; when mid-engine changes, the newest older cache is restored and cargo rebuilds only what changed.
+      - name: Restore the Rust build cache
+        if: inputs.quic == 'on'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/android/midnet/target
+          key: tower-midnet-v1-${{ hashFiles('android/midnet.Cargo.lock') }}-${{ hashFiles('mid-engine/crates/mid-net/**/*.rs', 'mid-engine/crates/mid-net/**/Cargo.toml') }}
+          restore-keys: |
+            tower-midnet-v1-${{ hashFiles('android/midnet.Cargo.lock') }}-
+            tower-midnet-v1-
+
       # The debug key is throwaway (no secrets), but a phone only updates an installed app in place when the new APK is
       # signed with the same key. Keeping the key in the cache between runs gives that. If the cache has been cleared
       # (GitHub drops entries unused for 7 days) the next APK has a new key and the old app must be uninstalled first.
@@ -56,6 +109,7 @@ jobs:
           node --version
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          if [ -d mid-engine ]; then echo "mid-engine: $(git -C mid-engine rev-parse HEAD)"; else echo "mid-engine: not checked out"; fi
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
@@ -64,9 +118,20 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           TOWER_VERSION_CODE: ${{ github.run_number }}
           TOWER_VERSION_NAME: 0.1.${{ github.run_number }}
+          TOWER_MIDNET: ${{ inputs.quic == 'off' && '0' || '1' }}
+          TOWER_MIDNET_REQUIRED: ${{ inputs.require_quic == 'on' && '1' || '0' }}
+          MID_ENGINE: ${{ github.workspace }}/mid-engine
         run: bash scripts/build_android.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: tower-of-babylon-armv7-debug-apk
           path: build/android/tower-of-babylon-armv7-debug.apk
+
+      # The cargo log, for when the summary says QUIC is not in the APK. Kept even when the build failed.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: midnet-build-log
+          path: build/android/midnet.log
+          if-no-files-found: ignore
