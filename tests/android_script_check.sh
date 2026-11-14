@@ -34,8 +34,13 @@ cat > "$bin/llvm-nm" <<'EOF'
 #!/bin/bash
 last=""; for a in "$@"; do last="$a"; done
 case "$last" in
-  *.a) for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$FAKE_HDR" | tr -d '(' | sort -u); do
-         if [ "$fn" != "${FAKE_NM_MISSING:-}" ]; then echo "0000 T $fn"; fi; done ;;
+  *.a) if [ -z "${FAKE_NM_EMPTY:-}" ]; then
+         for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$FAKE_HDR" | tr -d '(' | sort -u); do
+           if [ "$fn" != "${FAKE_NM_MISSING:-}" ]; then echo "0000 T $fn"; fi; done
+       fi
+       # the real llvm-nm 17 on a library made by a newer rustc: complains about some members, exits 1, still lists the rest
+       if [ -n "${FAKE_NM_ERRORS:-}" ] || [ -n "${FAKE_NM_EMPTY:-}" ]; then
+         echo "llvm-nm: error: x.rcgu.o: Unknown attribute kind (102) (Producer: 'LLVM23.1.1-rust-1.99.1-stable' Reader: 'LLVM 17.0.2')" >&2; exit 1; fi ;;
   *libmain.so) echo "0000 T ANativeActivity_onCreate"
        if [ -z "${FAKE_SO_NO_QUIC:-}" ] && grep -- '-shared' "$FT/log/cc.log" | tail -1 | grep -q libmid_net_quic.a; then echo "0000 T mid_net_quic_connect"; fi ;;
 esac
@@ -98,6 +103,7 @@ check "the pinned lock file is in place during the build" has "$T/log/cargo.log"
 check "and gone from the mid-engine checkout afterwards" test ! -e "$T/me/Cargo.lock"
 check "the library cargo built (not an empty file) is copied to build/android/midnet" has "$T/proj/build/android/midnet/libmid_net_quic.a" FAKE-LIB-CONTENT
 check "every game source is compiled with -DTOWER_MIDNET=1" bash -c "test \"\$(grep -c -- ' -c ' '$T/log/cc.log')\" -ge 3 && test \"\$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=1')\" -eq \"\$(grep -c -- ' -c ' '$T/log/cc.log')\""
+check "the QUIC link strips the debug info of Rust's precompiled parts" bash -c "grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q -- '--strip-debug'"
 check "the link line has the QUIC library, before raylib" bash -c "linkline=\$(grep -- '-shared' '$T/log/cc.log' | tail -1); case \"\$linkline\" in *libmid_net_quic.a*libraylib.a*) true ;; *) false ;; esac"
 check "the link stage reports the library is inside and nothing extra is needed" has "$T/out.txt" "QUIC library linked in"
 
@@ -113,7 +119,7 @@ check "the stages still succeed" test $rc -eq 0
 check "a warning says the APK is built WITHOUT QUIC" has "$T/out.txt" "WITHOUT QUIC"
 check "cargo's output is kept in build/android/midnet.log" has "$T/proj/build/android/midnet.log" "fake cargo failure"
 check "no library, so compile says -DTOWER_MIDNET=0" bash -c "test ! -e '$T/proj/build/android/midnet/libmid_net_quic.a' && grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=0' && ! grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=1'"
-check "and the link line has no QUIC library" bash -c "! grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q libmid_net_quic"
+check "and the link line has no QUIC library and no --strip-debug" bash -c "! grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q 'libmid_net_quic\\|strip-debug'"
 check "the lock file is taken away even when cargo failed" test ! -e "$T/me/Cargo.lock"
 
 reset_project; run "midnet" FAKE_CARGO=fail TOWER_MIDNET_REQUIRED=1
@@ -132,6 +138,22 @@ run "compile" TOWER_MIDNET=0
 check "compile alone with TOWER_MIDNET=0 ignores a library that is lying around" bash -c "grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=0' && ! grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=1'"
 reset_project; run "midnet"; rm -f "$T/log/cc.log"; run "compile link"
 check "compile and link alone, after an earlier midnet stage, pick the library up" bash -c "test $rc -eq 0 && grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=1' && grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q libmid_net_quic.a"
+
+echo "== llvm-nm older than rustc's LLVM (the first CI run died of this)"
+reset_project; run "midnet compile link" FAKE_NM_ERRORS=1
+check "llvm-nm exits 1 with complaints but lists the symbols: the QUIC library is still built and linked" bash -c "test $rc -eq 0 && test -f '$T/proj/build/android/midnet/libmid_net_quic.a' && ! grep -q 'WITHOUT QUIC' '$T/out.txt' && grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q libmid_net_quic.a"
+check "its complaints are kept in build/android/midnet-nm.log" has "$T/proj/build/android/midnet-nm.log" "Unknown attribute kind"
+reset_project; run "midnet compile link" FAKE_NM_EMPTY=1
+check "llvm-nm gives nothing: a warning, the header check is skipped, the build goes on with QUIC" bash -c "test $rc -eq 0 && grep -q 'could not read the QUIC library' '$T/out.txt' && test -f '$T/proj/build/android/midnet/libmid_net_quic.a'"
+
+echo "== something nobody expected fails inside the QUIC stage"
+reset_project; mkdir -p "$T/proj/build/android/midnet/libmid_net_quic.a"
+run "midnet compile link"
+check "rm cannot delete the library (it is a folder): the stage dies, the build goes on without QUIC" bash -c "test $rc -eq 0 && grep -q 'stopped unexpectedly' '$T/out.txt' && grep -q 'WITHOUT QUIC' '$T/out.txt' && grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=0'"
+check "the log names the command and the line that failed" bash -c "grep -q 'build_android.sh stopped at line [0-9]*: rm -f' '$T/out.txt'"
+reset_project; mkdir -p "$T/proj/build/android/midnet/libmid_net_quic.a"
+run "midnet" TOWER_MIDNET_REQUIRED=1
+check "the same with TOWER_MIDNET_REQUIRED=1 stops the build" bash -c "test $rc -ne 0 && grep -q 'stopped unexpectedly' '$T/out.txt'"
 
 echo "== checks on what was built"
 reset_project; run "midnet" FAKE_NM_MISSING=mid_net_quic_conn_state

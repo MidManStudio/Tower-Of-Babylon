@@ -26,6 +26,9 @@
 # TOWER_MIDNET (1; 0 = never build or link QUIC), TOWER_MIDNET_REQUIRED (0), TOWER_MIDNET_CRYPTO (ring, or aws-lc-rs),
 # TOWER_MIDENGINE_REF (branch or tag to clone, default: the default branch), MID_ENGINE (path to a mid-engine checkout)
 set -euo pipefail
+# If any command stops the script (set -e), say which one and where: a silent exit 1 is what cost the first CI run of the QUIC stage an hour.
+set -E
+trap 'printf "error: %s stopped at line %s: %s\n" "$(basename "$0")" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
@@ -194,9 +197,12 @@ stage_midnet() {
     # that has its own Cargo.lock keeps it).
     local own_lock=0
     if [ ! -f "$me/Cargo.lock" ] && [ -f "$root/android/midnet.Cargo.lock" ]; then
-        cp "$root/android/midnet.Cargo.lock" "$me/Cargo.lock"
-        own_lock=1
-        echo "dependency versions: android/midnet.Cargo.lock"
+        if cp "$root/android/midnet.Cargo.lock" "$me/Cargo.lock"; then
+            own_lock=1
+            echo "dependency versions: android/midnet.Cargo.lock"
+        else
+            warn "could not copy android/midnet.Cargo.lock into $me: cargo takes the newest versions"
+        fi
     fi
 
     local tdir="${TOWER_MIDNET_TARGET_DIR:-$MIDNET_DIR/target}" rc=0
@@ -221,12 +227,19 @@ stage_midnet() {
 
     # Every function the game's header declares must be in the library: a header and a library that disagree (src/net/mid_net_quic.h is a copy of
     # the one in mid-engine) would otherwise show up as a link error far from its cause, or not at all.
+    # The NDK's llvm-nm is older than the LLVM inside rustc, and exits 1 with "Unknown attribute kind" on some of the library's members (the
+    # bitcode rustc embeds in them) while still listing every symbol it can read: its exit status and complaints are ignored (kept in midnet-nm.log).
+    # This run found it out: the exit status stopped the whole script, silently.
     local syms fn missing=""
-    syms="$("$NM" --defined-only "$built" 2>/dev/null)"
-    for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$root/src/net/mid_net_quic.h" | tr -d '(' | sort -u); do
-        if ! grep -qw "$fn" <<<"$syms"; then missing="$missing $fn"; fi
-    done
-    if [ -n "$missing" ]; then midnet_fail "the library lacks functions that src/net/mid_net_quic.h declares:$missing"; return 0; fi
+    syms="$("$NM" --defined-only "$built" 2>"$OUT/midnet-nm.log" || true)"
+    if [ -z "$syms" ]; then
+        warn "llvm-nm could not read the QUIC library (build/android/midnet-nm.log): the check against src/net/mid_net_quic.h is skipped; the link still needs every function the game calls"
+    else
+        for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$root/src/net/mid_net_quic.h" | tr -d '(' | sort -u); do
+            if ! grep -qw "$fn" <<<"$syms"; then missing="$missing $fn"; fi
+        done
+        if [ -n "$missing" ]; then midnet_fail "the library lacks functions that src/net/mid_net_quic.h declares:$missing"; return 0; fi
+    fi
 
     cp "$built" "$MIDNET_LIB"
     ls -la "$MIDNET_LIB"
@@ -277,11 +290,14 @@ stage_compile() {
 # wrapper calls __real_fopen, which only exists when the final link passes this flag. --no-undefined makes missing
 # symbols fail here instead of when the app starts.
 link_so() {
-    local qlib=()
-    if midnet_active; then qlib=("$MIDNET_LIB"); fi
+    # --strip-debug with the QUIC library: the parts of Rust's standard library that rustc ships precompiled carry debug info (the library is 18 MB
+    # before linking on the host). The game itself is built without -g, so this drops only theirs.
+    local qlib=() strip=()
+    if midnet_active; then qlib=("$MIDNET_LIB"); strip=("-Wl,--strip-debug"); fi
     "$CC" -shared -o "$OUT/stage/lib/$ABI/libmain.so" \
         "$OUT"/obj/*.o \
         ${qlib[@]+"${qlib[@]}"} \
+        ${strip[@]+"${strip[@]}"} \
         "$OUT/raylib/src/libraylib.a" \
         -u ANativeActivity_onCreate \
         -Wl,--wrap=fopen \
@@ -393,10 +409,18 @@ stages=("$@")
 if [ "${#stages[@]}" -eq 0 ]; then
     stages=(raylib midnet bake compile link package)
 fi
-summary "### Tower of Babylon, Android armv7 build"
+if [ "${stages[0]}" != "midnet_inner" ]; then summary "### Tower of Babylon, Android armv7 build"; fi
 for s in "${stages[@]}"; do
     case "$s" in
-        raylib|midnet|bake|compile|link|package) "stage_$s" ;;
+        raylib|bake|compile|link|package) "stage_$s" ;;
+        midnet)
+            # The Rust stage runs as a child process, because the shell stops at the first failing command and a command nobody expected to fail
+            # (like llvm-nm above) would take the whole APK down with it. As a child it can only cost the APK its QUIC library.
+            if ! bash "${BASH_SOURCE[0]}" midnet_inner; then
+                rm -f "$MIDNET_LIB" 2>/dev/null || true
+                midnet_fail "the QUIC stage stopped unexpectedly (the failing command is named in the log above)"
+            fi ;;
+        midnet_inner) stage_midnet; exit 0 ;;
         -h|--help) sed -n '2,27p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) die "unknown stage '$s' (raylib midnet bake compile link package)" ;;
     esac
