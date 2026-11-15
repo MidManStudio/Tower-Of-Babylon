@@ -166,6 +166,36 @@ int main(void)
         Check(s.focus == 1 && s.count == 4, "and growing again leaves it where it is");
     }
 
+    printf("\nthe screen: leaving and opening again\n");
+    {
+        CharSelect s; CharSelect_Init(&s, 4);
+        const UiRect bk = CharSelect_Back(), cf = CharSelect_Confirm();
+        const float bx = bk.x + bk.w * 0.5f, by = bk.y + bk.h * 0.5f;
+        Check(!s.back, "it starts with nobody having left");
+        CharSelect_Tap(&s, bx, by);
+        Check(s.back && !s.done, "a tap on BACK leaves without choosing");
+        CharSelect_Move(&s, 1); CharSelect_Press(&s);
+        CharSelect_Tap(&s, CharSelect_Card(1, 4).x + 5.0f, CharSelect_Card(1, 4).y + 5.0f);
+        CharSelect_Tap(&s, cf.x + 5.0f, cf.y + 5.0f);
+        Check(s.back && !s.done && s.focus == 0, "once left, nothing moves, highlights or chooses");
+        CharSelect_Init(&s, 4); CharSelect_Move(&s, 1); CharSelect_Press(&s); CharSelect_Tap(&s, bx, by);
+        Check(s.done && !s.back && s.focus == 1, "once chosen, BACK does nothing");
+        CharSelect_Init(&s, 0); CharSelect_Tap(&s, bx, by);
+        Check(s.back, "BACK works with no characters");
+        CharSelect_Init(&s, 4); CharSelect_Tap(&s, 1.0f, 1.0f); CharSelect_Tap(&s, bk.x - 2.0f, by); CharSelect_Tap(&s, bx, bk.y + bk.h + 1.0f);
+        Check(!s.back, "a tap just outside BACK is not BACK");
+
+        CharSelect_Open(&s, 4, 2);
+        Check(s.focus == 2 && !s.done && !s.back && s.count == 4, "opened again: the highlight on the chosen character, nothing chosen, nobody left");
+        s.done = true; s.back = true;
+        CharSelect_Open(&s, 3, -1);
+        Check(s.focus == 0 && !s.done && !s.back && s.count == 3, "opened with nobody chosen (-1): the first card, and a screen that was done or left is fresh again");
+        CharSelect_Open(&s, 3, 3);
+        Check(s.focus == 0, "opened with a focus past the roster: the first card");
+        CharSelect_Open(&s, 0, 0);
+        Check(s.count == 0 && s.focus == 0 && !s.done, "opened with no characters");
+    }
+
     printf("\nthe layout\n");
     {
         int fits = 1, apart = 1, clear = 1;
@@ -183,6 +213,12 @@ int main(void)
         Check(p.x >= 0 && p.x + p.w <= 800 && p.y + p.h <= 450 && b.x >= 0 && b.x + b.w <= 800 && b.y + b.h <= 450, "the box and the button are on the 800 by 450 screen");
         Check(!UiRect_Overlaps(b, p), "the button is clear of the box");
         Check(b.w >= 120.0f && b.h >= 40.0f, "the button is big enough for a thumb");
+        const UiRect bk = CharSelect_Back();
+        int clearBack = 1;
+        for (int n = 1; n <= CHARACTER_MAX; ++n) for (int i = 0; i < n; ++i) if (UiRect_Overlaps(CharSelect_Card(i, n), bk)) clearBack = 0;
+        Check(bk.x >= 0 && bk.x + bk.w <= 800 && bk.y >= 0 && bk.y + bk.h <= 450, "BACK is on the 800 by 450 screen");
+        Check(bk.w >= 80.0f && bk.h >= 28.0f, "BACK is big enough for a thumb");
+        Check(clearBack && !UiRect_Overlaps(bk, p) && !UiRect_Overlaps(bk, b), "BACK is clear of every card (any roster of 1 to 8), the box and the button");
         Check(sc.x >= p.x && sc.y >= p.y && sc.x + sc.w <= p.x + p.w && sc.y + sc.h <= p.y + p.h && kc.x >= p.x && kc.y >= p.y && kc.x + kc.w <= p.x + p.w && kc.y + kc.h <= p.y + p.h, "both text columns are inside the box");
         Check(!UiRect_Overlaps(sc, kc), "and apart");
         Check((float)(CS_OVERVIEW_LINES * CS_LINE_H + 6 + CS_LABEL_H + CS_BACKSTORY_LINES * CS_LINE_H) <= sc.h, "the story column has room for its overview and backstory lines");

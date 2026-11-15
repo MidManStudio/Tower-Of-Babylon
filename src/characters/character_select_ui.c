@@ -50,6 +50,10 @@ void CharSelectUI_Draw(const CharSelect *s, bool showKeys)
 {
     ClearBackground((Color){ 10, 8, 12, 255 });
     DrawText("CHOOSE YOUR CONDEMNED", 10, 12, 22, YELLOW);
+    const UiRect bk = CharSelect_Back();
+    DrawRectangleRec(R(bk), (Color){ 40, 36, 48, 255 });
+    DrawRectangleLines((int)bk.x, (int)bk.y, (int)bk.w, (int)bk.h, (Color){ 150, 150, 160, 255 });
+    DrawText("BACK", (int)(bk.x + (bk.w - (float)MeasureText("BACK", 16)) / 2.0f), (int)bk.y + 7, 16, WHITE);
     if (s->count < 1) { DrawText("NO CHARACTERS", 10, 60, 16, RED); return; }
 
     for (int i = 0; i < s->count; ++i) {
@@ -86,7 +90,7 @@ void CharSelectUI_Draw(const CharSelect *s, bool showKeys)
     const UiRect b = CharSelect_Confirm();
     DrawRectangleRec(R(b), (Color){ 20, 90, 40, 255 });
     DrawRectangleLines((int)b.x, (int)b.y, (int)b.w, (int)b.h, WHITE);
-    const char *label = c ? TextFormat("PLAY AS %s", c->call) : "PLAY";
+    const char *label = c ? TextFormat("CHOOSE %s", c->call) : "CHOOSE";
     DrawText(label, (int)(b.x + (b.w - (float)MeasureText(label, 22)) / 2.0f), (int)b.y + 11, 22, WHITE);
-    if (showKeys) DrawText("A / D or arrows: choose     ENTER: play", 10, 428, 11, (Color){ 130, 130, 140, 255 });
+    if (showKeys) DrawText("A / D or arrows: look     ENTER: choose     BACK: click it", 10, 428, 11, (Color){ 130, 130, 140, 255 });
 }

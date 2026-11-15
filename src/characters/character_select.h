@@ -9,26 +9,29 @@
 
 #include "../input/ui_rect.h"
 
-// The character selection screen, shown once at launch: a row of cards (one per character), the highlighted character's story and kit
-// below, and a button to play as them. This file is the screen's logic and layout with no raylib in it, so the tests need only a C
+// The character selection screen, opened from the lobby (src/lobby): a row of cards (one per character), the highlighted character's story and kit
+// below, a button to choose them and a BACK button to leave without choosing. This file is the screen's logic and layout with no raylib in it, so the tests need only a C
 // compiler; character_select_ui.c draws it. Everything is in canvas pixels (800 x 450).
 
 typedef struct {
     int  count;       // characters on offer
     int  focus;       // the highlighted one
-    bool done;        // the player chose: play as `focus`
+    bool done;        // the player chose `focus`
+    bool back;        // the player left without choosing
 } CharSelect;
 
 void CharSelect_Init(CharSelect *s, int count);
+void CharSelect_Open(CharSelect *s, int count, int focus);  // open it again (from the lobby): nothing chosen, nobody left; the highlight on `focus` if that is a card, else the first
 void CharSelect_Resync(CharSelect *s, int count);      // the roster changed under the screen (the web build swaps in the real file): keep the focus on a card that exists
 void CharSelect_Move(CharSelect *s, int dir);          // left (-1) or right (+1), wrapping round
-void CharSelect_Tap(CharSelect *s, float x, float y);  // a card highlights it; the button chooses it; anywhere else does nothing
+void CharSelect_Tap(CharSelect *s, float x, float y);  // a card highlights it; the button chooses it; BACK leaves; anywhere else does nothing
 void CharSelect_Press(CharSelect *s);                  // the confirm key
 
 // Layout. A card's width follows the count so any roster of up to CHARACTER_MAX fits in a row.
 UiRect CharSelect_Card(int index, int count);
 UiRect CharSelect_Panel(void);                         // the box holding the highlighted character
-UiRect CharSelect_Confirm(void);                       // the PLAY AS button
+UiRect CharSelect_Confirm(void);                       // the CHOOSE button
+UiRect CharSelect_Back(void);                          // the BACK button, top right (the lobby's BACK is in the same place)
 UiRect CharSelect_StoryColumn(void);                   // the overview and the backstory
 UiRect CharSelect_KitColumn(void);                     // the three parts of the kit
 

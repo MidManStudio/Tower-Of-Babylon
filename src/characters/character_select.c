@@ -9,6 +9,13 @@ void CharSelect_Init(CharSelect *s, int count)
     s->count = count < 0 ? 0 : count;
     s->focus = 0;
     s->done = false;
+    s->back = false;
+}
+
+void CharSelect_Open(CharSelect *s, int count, int focus)
+{
+    CharSelect_Init(s, count);
+    if (focus >= 0 && focus < s->count) s->focus = focus;
 }
 
 void CharSelect_Resync(CharSelect *s, int count)
@@ -19,15 +26,17 @@ void CharSelect_Resync(CharSelect *s, int count)
 
 void CharSelect_Move(CharSelect *s, int dir)
 {
-    if (s->done || s->count < 1 || dir == 0) return;
+    if (s->done || s->back || s->count < 1 || dir == 0) return;
     s->focus = ((s->focus + (dir > 0 ? 1 : -1)) % s->count + s->count) % s->count;
 }
 
-void CharSelect_Press(CharSelect *s) { if (!s->done && s->count > 0) s->done = true; }
+void CharSelect_Press(CharSelect *s) { if (!s->done && !s->back && s->count > 0) s->done = true; }
 
 void CharSelect_Tap(CharSelect *s, float x, float y)
 {
-    if (s->done || s->count < 1) return;
+    if (s->done || s->back) return;
+    if (UiRect_Contains(CharSelect_Back(), x, y)) { s->back = true; return; }     // works with no characters too
+    if (s->count < 1) return;
     for (int i = 0; i < s->count; ++i)
         if (UiRect_Contains(CharSelect_Card(i, s->count), x, y)) { s->focus = i; return; }
     if (UiRect_Contains(CharSelect_Confirm(), x, y)) s->done = true;
@@ -43,6 +52,7 @@ UiRect CharSelect_Card(int index, int count)
 
 UiRect CharSelect_Panel(void)       { return (UiRect){ 8.0f, 106.0f, 784.0f, 286.0f }; }
 UiRect CharSelect_Confirm(void)     { return (UiRect){ 250.0f, 398.0f, 300.0f, 44.0f }; }
+UiRect CharSelect_Back(void)        { return (UiRect){ 698.0f, 8.0f, 94.0f, 30.0f }; }
 UiRect CharSelect_StoryColumn(void) { return (UiRect){ 18.0f, 140.0f, 452.0f, 246.0f }; }
 UiRect CharSelect_KitColumn(void)   { return (UiRect){ 494.0f, 140.0f, 290.0f, 246.0f }; }
 

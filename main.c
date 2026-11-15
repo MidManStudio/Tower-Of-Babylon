@@ -47,6 +47,9 @@
 #include "characters/characters.h"
 #include "characters/character_select.h"
 #include "characters/character_select_ui.h"
+#include "lobby/lobby.h"
+#include "lobby/lobby_ui.h"
+#include "lobby/lobby_net.h"
 #include "swarm/swarm.h"
 #include "swarm/swarm_config.h"
 #include "sim/game_sim.h"
@@ -149,11 +152,63 @@ static void DoInventoryTap(Vector2 tap)
 static FixedStep g_simStep;
 static SimCmd g_simCmd;
 
-// ---- The character selection screen, once, at launch -------------------------------------------------------------
-// Nothing of the game runs behind it (no steps, no monsters, no clock): the screen is only a row of cards, a story and a button.
-// Choosing stores the character's id (characters/characters.h) and the game begins as if it had just been loaded. docs/characters.md.
+// ---- The screens before the game: the lobby, and the character screen it opens -------------------------------------------------------
+// The game starts on the lobby (src/lobby, docs/lobby.md). Nothing of the game runs behind these screens (no steps, no monsters, no clock): they
+// are only buttons, cards and text. The lobby's CHOOSE CHARACTER opens the character screen (src/characters, docs/characters.md); choosing there,
+// or BACK, returns to the lobby; PLAY SOLO starts the game as if it had just been loaded.
+typedef enum { SCREEN_LOBBY = 0, SCREEN_CHARACTER, SCREEN_GAME } AppScreen;
+static AppScreen g_screen = SCREEN_LOBBY;
+static Lobby g_lobby;
+static LobbyBackend g_lobbyNet;
 static CharSelect g_charSel;
-static bool g_selecting = false;
+
+// The sound card opens after a touch or a key, and the first one happens on these screens.
+static void MenuAudio(float dt, bool gesture)
+{
+    float lfx, lfz;
+    GameSim_FlatForward(&g_sim, &lfx, &lfz);
+    Audio_Update(dt, g_sim.player.camera.position, lfx, lfz, gesture);
+}
+
+static void BeginRun(void)
+{
+    g_screen = SCREEN_GAME;
+    FixedStep_Init(&g_simStep, SIM_STEP_SECS, SIM_MAX_STEPS_PER_FRAME);   // the game starts from a clean clock
+    SimCmd_Init(&g_simCmd);
+    fade = 1.0f;                                                          // and fades in, as after a door
+}
+
+static void LobbyFrame(void)
+{
+    float dt = GetFrameTime();
+    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+    GameConfig_Poll();                                    // the web build swaps the real characters.mdix in when the wasm is up
+    Lobby_SetContext(&g_lobby, Characters_Count(), Characters_Selected() >= 0);
+
+    InputMenu menu;
+    Input_Menu(&menu);
+    Vector2 tap = { 0 };
+    if (Input_NewTap(&tap)) Lobby_Tap(&g_lobby, tap.x, tap.y);
+    if (menu.step != 0) Lobby_Move(&g_lobby, menu.step);
+    if (menu.confirm) Lobby_Press(&g_lobby);
+    Lobby_Update(&g_lobby, &g_lobbyNet, GetTime() * 1000.0);
+    MenuAudio(dt, menu.gesture);
+
+    switch (Lobby_TakeWant(&g_lobby)) {
+        case LOBBY_WANT_CHARACTER:
+            CharSelect_Open(&g_charSel, Characters_Count(), Characters_Selected());
+            g_screen = SCREEN_CHARACTER;
+            break;
+        case LOBBY_WANT_PLAY:
+            BeginRun();
+            break;
+        default: break;
+    }
+
+    BeginDrawing();
+        LobbyUI_Draw(&g_lobby, Input_Scheme() == INPUT_SCHEME_KEYBOARD);
+    EndDrawing();
+}
 
 static void SelectFrame(void)
 {
@@ -168,18 +223,14 @@ static void SelectFrame(void)
     if (Input_NewTap(&tap)) CharSelect_Tap(&g_charSel, tap.x, tap.y);
     if (menu.step != 0) CharSelect_Move(&g_charSel, menu.step);
     if (menu.confirm) CharSelect_Press(&g_charSel);
-
-    float lfx, lfz;
-    GameSim_FlatForward(&g_sim, &lfx, &lfz);
-    Audio_Update(dt, g_sim.player.camera.position, lfx, lfz, menu.gesture);     // the sound card opens after a touch or a key, and this is the first one
+    MenuAudio(dt, menu.gesture);
 
     if (g_charSel.done) {
         const CharacterDef *c = Characters_Get(g_charSel.focus);
         if (c) Characters_Select(c->id);
-        g_selecting = false;
-        FixedStep_Init(&g_simStep, SIM_STEP_SECS, SIM_MAX_STEPS_PER_FRAME);   // the game starts from a clean clock
-        SimCmd_Init(&g_simCmd);
-        fade = 1.0f;                                                          // and fades in, as after a door
+        g_screen = SCREEN_LOBBY;
+    } else if (g_charSel.back) {
+        g_screen = SCREEN_LOBBY;
     }
 
     BeginDrawing();
@@ -189,7 +240,8 @@ static void SelectFrame(void)
 
 static void Frame(void)
 {
-    if (g_selecting) { SelectFrame(); return; }
+    if (g_screen == SCREEN_LOBBY) { LobbyFrame(); return; }
+    if (g_screen == SCREEN_CHARACTER) { SelectFrame(); return; }
     const double tFrame0 = GetTime();
     const float rawDt = GetFrameTime();
     float dt = rawDt;
@@ -457,8 +509,9 @@ int main(void)
     Characters_Register();            // and characters.mdix, the roster
     Swarm_Register();                 // and swarm.mdix, the worm swarm
     GameConfig_Init();                // weapon and projectile numbers: the baked copy now, the .mdix files once the wasm is up
-    g_selecting = Characters_Count() > 0;          // the selection screen runs once, before the game (no roster, no screen)
     CharSelect_Init(&g_charSel, Characters_Count());
+    Lobby_Init(&g_lobby);                          // the game starts on the lobby
+    g_lobbyNet = LobbyNet_Backend();
     ScreenFx_Init();
     Highp_Init();
     ViewClip_QueryBuffers(&g_depthBits, &g_msaaSamples);
@@ -487,6 +540,7 @@ int main(void)
     while (!WindowShouldClose()) Frame();
 #endif
 
+    LobbyNet_Shutdown();
     Audio_Shutdown();
     ScreenFx_Unload();
     UnloadProjectilesSystem();
