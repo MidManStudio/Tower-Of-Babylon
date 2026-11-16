@@ -14,6 +14,7 @@
 #include "characters/character_select.h"
 #include "lobby/lobby.h"
 #include "lobby/lobby_net.h"
+#include "lobby/session_ui.h"
 #include "platform/platform.h"
 
 static int g_failures = 0;
@@ -53,13 +54,17 @@ static void Fill(Fake *f, int n)
         f->list[i].players = i % 4; f->list[i].maxPlayers = 4;
         snprintf(f->list[i].transport, sizeof f->list[i].transport, "UDP");
         f->list[i].joinable = true;
+        snprintf(f->list[i].address, sizeof f->list[i].address, "192.168.1.%d", 10 + i);
+        f->list[i].port = (uint16_t)(7777 + i);
+        f->list[i].transportId = i % 2;
     }
 }
 
 static void TapRect(Lobby *l, UiRect r) { Lobby_Tap(l, r.x + r.w * 0.5f, r.y + r.h * 0.5f); }
 
 // A lobby on HOME with a roster of 4 and somebody chosen.
-static void Home(Lobby *l, int roster, bool chosen) { Lobby_Init(l); Lobby_SetContext(l, roster, chosen); }
+static void Home(Lobby *l, int roster, bool chosen) { Lobby_Init(l); Lobby_SetContext(l, roster, chosen, false); }
+static void HomeCanHost(Lobby *l, int roster, bool chosen) { Lobby_Init(l); Lobby_SetContext(l, roster, chosen, true); }
 
 // A lobby on FIND with the backend's games already copied in.
 static void Find(Lobby *l, Fake *f, const LobbyBackend *b, double now)
@@ -77,24 +82,24 @@ int main(void)
         Lobby l; Lobby_Init(&l);
         Check(l.screen == LOBBY_HOME && l.want == LOBBY_WANT_NONE && l.search == LOBBY_SEARCH_OFF, "the lobby starts on HOME, wanting nothing, not searching");
         Check(l.focus == LB_PLAY, "with no roster known yet the focus is on PLAY (CHARACTER is off)");
-        Lobby_SetContext(&l, 4, false);
+        Lobby_SetContext(&l, 4, false, false);
         Check(Lobby_Enabled(&l, LB_CHARACTER) && !Lobby_Enabled(&l, LB_PLAY) && Lobby_Enabled(&l, LB_FIND) && !Lobby_Enabled(&l, LB_HOST), "a roster and nobody chosen: CHARACTER and FIND are on, PLAY and HOST are off");
         Check(l.focus == LB_CHARACTER, "and the focus moves to CHARACTER (the first button that is on)");
-        Lobby_SetContext(&l, 4, true);
+        Lobby_SetContext(&l, 4, true, false);
         Check(Lobby_Enabled(&l, LB_PLAY) && Lobby_Enabled(&l, LB_CHARACTER) && !Lobby_Enabled(&l, LB_HOST), "somebody chosen: PLAY is on, HOST still is not");
         Check(l.focus == LB_PLAY, "choosing moves the focus to PLAY, the next thing to do");
         Lobby_Move(&l, 1);
-        Lobby_SetContext(&l, 4, true);
+        Lobby_SetContext(&l, 4, true, false);
         Check(l.focus == LB_FIND, "but the focus is only moved when somebody was just chosen, not every frame");
-        Lobby_SetContext(&l, 0, false);
+        Lobby_SetContext(&l, 0, false, false);
         Check(Lobby_Enabled(&l, LB_PLAY) && !Lobby_Enabled(&l, LB_CHARACTER), "no characters at all: PLAY is on (the game starts without a choice, as it always did), CHARACTER is off");
-        Lobby_SetContext(&l, -3, false);
+        Lobby_SetContext(&l, -3, false, false);
         Check(l.rosterCount == 0, "a negative roster count is treated as none");
         Check(!Lobby_Enabled(&l, (LobbyButton)99) && !Lobby_Enabled(&l, LB_COUNT), "a button that does not exist is off");
 
         Home(&l, 4, false);
         Check(l.focus == LB_CHARACTER, "[setup] roster of 4, nobody chosen: focus on CHARACTER");
-        Lobby_SetContext(&l, 0, false);
+        Lobby_SetContext(&l, 0, false, false);
         Check(l.focus == LB_PLAY, "the roster vanishing under the focus moves it to a button that is on");
     }
 
@@ -132,7 +137,7 @@ int main(void)
         Check(l.want == LOBBY_WANT_NONE && l.screen == LOBBY_HOME, "a tap on nothing does nothing");
         TapRect(&l, Lobby_Button(LB_CHARACTER));
         Check(Lobby_TakeWant(&l) == LOBBY_WANT_CHARACTER, "a tap on CHARACTER asks for the character screen");
-        Lobby_SetContext(&l, 4, true);
+        Lobby_SetContext(&l, 4, true, false);
         TapRect(&l, Lobby_Button(LB_PLAY));
         Check(Lobby_TakeWant(&l) == LOBBY_WANT_PLAY && l.focus == LB_PLAY, "a tap on PLAY with somebody chosen asks for the run, and puts the focus there");
         TapRect(&l, Lobby_Button(LB_FIND));
@@ -181,11 +186,11 @@ int main(void)
         TapRect(&l, Lobby_Back()); Lobby_Update(&l, &b, 30.0);
         Check(f.stops == 0 && l.search == LOBBY_SEARCH_OFF, "leaving does not stop a search that never started");
 
-        Lobby_Init(&l); Lobby_SetContext(&l, 4, true); TapRect(&l, Lobby_Button(LB_FIND));
+        Lobby_Init(&l); Lobby_SetContext(&l, 4, true, false); TapRect(&l, Lobby_Button(LB_FIND));
         Lobby_Update(&l, NULL, 10.0);
         Check(l.search == LOBBY_SEARCH_UNAVAILABLE && strcmp(l.noSearchWhy, "NO NETWORK") == 0, "no backend at all: unavailable, with a reason of its own");
         LobbyBackend nr = Mk(&f, false, NULL);
-        Lobby_Init(&l); Lobby_SetContext(&l, 4, true); TapRect(&l, Lobby_Button(LB_FIND));
+        Lobby_Init(&l); Lobby_SetContext(&l, 4, true, false); TapRect(&l, Lobby_Button(LB_FIND));
         Lobby_Update(&l, &nr, 10.0);
         Check(strcmp(l.noSearchWhy, "NO NETWORK") == 0, "a backend with no reason given: the same one");
 
@@ -215,7 +220,7 @@ int main(void)
         Lobby_Move(&l, 1);  Check(l.focus == LOBBY_FOCUS_BACK, "right from the last wraps to BACK");
         Lobby_Move(&l, -1); Check(l.focus == 2, "left from BACK: the last game");
         Lobby_Press(&l);
-        Check(l.screen == LOBBY_FIND && l.want == LOBBY_WANT_NONE, "ENTER on a game does nothing: joining is not built");
+        Check(l.screen == LOBBY_FIND && Lobby_TakeWant(&l) == LOBBY_WANT_JOIN, "ENTER on a game that can be joined asks to join it (and stays on FIND until the game says it has started)");
         Lobby_Move(&l, 1);
         Lobby_Press(&l);
         Check(l.screen == LOBBY_HOME, "ENTER on BACK goes back");
@@ -279,10 +284,126 @@ int main(void)
         Check(!UiRect_Contains(Lobby_ScrollUp(), 0, 0), "[layout] the arrows are not in the corner");
     }
 
+    printf("\nHOST\n");
+    {
+        Lobby l;
+        HomeCanHost(&l, 4, false);
+        Check(!Lobby_Enabled(&l, LB_HOST), "a platform that can host, nobody chosen: HOST is off (it hosts as the chosen character)");
+        HomeCanHost(&l, 4, true);
+        Check(Lobby_Enabled(&l, LB_HOST), "somebody chosen: HOST is on");
+        Home(&l, 4, true);
+        Check(!Lobby_Enabled(&l, LB_HOST), "a platform that cannot host (a browser): HOST is off however the rest is");
+        HomeCanHost(&l, 0, false);
+        Check(Lobby_Enabled(&l, LB_HOST), "no roster at all: HOST is on, like PLAY");
+
+        HomeCanHost(&l, 4, true);
+        TapRect(&l, Lobby_Button(LB_HOST));
+        Check(l.want == LOBBY_WANT_HOST && l.focus == LB_HOST, "a tap on HOST asks the game to host, and puts the focus there");
+        Check(Lobby_TakeWant(&l) == LOBBY_WANT_HOST && Lobby_TakeWant(&l) == LOBBY_WANT_NONE, "handed over once");
+        HomeCanHost(&l, 4, true); l.focus = LB_FIND;
+        Lobby_Move(&l, 1);
+        Check(l.focus == LB_HOST, "the keyboard steps from FIND to HOST (it is on now)");
+        Lobby_Press(&l);
+        Check(Lobby_TakeWant(&l) == LOBBY_WANT_HOST, "ENTER on HOST asks the game to host");
+        Lobby_Move(&l, 1);
+        Check(l.focus == LB_CHARACTER, "and one more step wraps to CHARACTER");
+
+        HomeCanHost(&l, 4, false);
+        TapRect(&l, Lobby_Button(LB_HOST));
+        Check(l.want == LOBBY_WANT_NONE && l.focus == LB_CHARACTER, "a tap on HOST with nobody chosen does nothing");
+    }
+
+    printf("\nthe red line\n");
+    {
+        Lobby l; HomeCanHost(&l, 4, true);
+        Lobby_SetNotice(&l, "COULD NOT OPEN A PORT TO HOST ON");
+        Check(strcmp(l.notice, "COULD NOT OPEN A PORT TO HOST ON") == 0, "a notice is kept");
+        Lobby_Update(&l, NULL, 10.0); Lobby_SetContext(&l, 4, true, true); Lobby_Move(&l, 1);
+        Check(l.notice[0] != 0, "frames and steps do not clear it");
+        TapRect(&l, Lobby_Button(LB_HOST));
+        Check(l.notice[0] == 0, "pressing a button that is on does");
+        Lobby_SetNotice(&l, "X"); Lobby_SetNotice(&l, NULL);
+        Check(l.notice[0] == 0, "NULL clears it");
+        char big[200]; memset(big, 'A', sizeof big - 1); big[sizeof big - 1] = 0;
+        Lobby_SetNotice(&l, big);
+        Check(strlen(l.notice) == LOBBY_NOTICE_LEN - 1, "a text that is too long is cut to the room there is");
+        TapRect(&l, Lobby_Button(LB_FIND));
+        Check(l.notice[0] == 0 && l.screen == LOBBY_FIND, "opening FIND clears it");
+        Lobby_SetNotice(&l, "Y");
+        TapRect(&l, Lobby_Back());
+        Check(l.notice[0] == 0 && l.screen == LOBBY_HOME, "BACK clears it");
+        Lobby_SetNotice(&l, "THE HOST LEFT");
+        Lobby_BackHome(&l);
+        Check(strcmp(l.notice, "THE HOST LEFT") == 0 && l.screen == LOBBY_HOME && l.focus == LB_PLAY, "BackHome keeps it (a game that ended says why) and puts the focus on PLAY");
+    }
+
+    printf("\nJOIN\n");
+    {
+        Fake f; Fill(&f, 3);
+        f.list[1].joinable = false; snprintf(f.list[1].why, sizeof f.list[1].why, "FULL");
+        LobbyBackend b = Mk(&f, true, NULL);
+        Lobby l; Find(&l, &f, &b, 10.0);
+        LobbyEntry t;
+        Check(!Lobby_CanJoin(&l) && !Lobby_JoinTarget(&l, &t), "on FIND with the focus on BACK there is nothing to join");
+        TapRect(&l, Lobby_Join());
+        Check(l.want == LOBBY_WANT_NONE, "a tap on JOIN with nothing highlighted does nothing");
+        TapRect(&l, Lobby_Row(1));
+        Check(l.focus == 1 && !Lobby_CanJoin(&l), "a full game can be highlighted but not joined");
+        TapRect(&l, Lobby_Join()); Lobby_Press(&l);
+        Check(l.want == LOBBY_WANT_NONE, "JOIN and ENTER do nothing on it");
+        TapRect(&l, Lobby_Row(2));
+        Check(Lobby_CanJoin(&l), "a game that can be joined: JOIN is on");
+        Lobby_SetNotice(&l, "OLD NEWS");
+        TapRect(&l, Lobby_Join());
+        Check(l.want == LOBBY_WANT_JOIN && l.notice[0] == 0, "a tap on JOIN asks the game to join (and clears the red line)");
+        Check(Lobby_TakeWant(&l) == LOBBY_WANT_JOIN && Lobby_JoinTarget(&l, &t), "the game takes the want and the target");
+        Check(strcmp(t.name, "GAME 2") == 0 && strcmp(t.address, "192.168.1.12") == 0 && t.port == 7779 && t.transportId == 0 && t.joinable, "the target says where and how to connect: its name, address, port and transport");
+        // The list changes under the player's finger: the target stays the game that was asked for.
+        Fill(&f, 3); strcpy(f.list[2].name, "SOMEONE ELSE"); Lobby_Update(&l, &b, 20.0);
+        Check(Lobby_JoinTarget(&l, &t) && strcmp(t.name, "GAME 2") == 0, "the target is a copy, taken when JOIN was pressed: the list changing after does not change it");
+
+        Find(&l, &f, &b, 30.0);
+        TapRect(&l, Lobby_Row(0)); Lobby_Press(&l);
+        Check(Lobby_TakeWant(&l) == LOBBY_WANT_JOIN && Lobby_JoinTarget(&l, &t) && strcmp(t.name, "GAME 0") == 0, "ENTER on a game that can be joined joins it");
+    }
+
+    printf("\nCONNECTING\n");
+    {
+        Fake f; Fill(&f, 2);
+        LobbyBackend b = Mk(&f, true, NULL);
+        Lobby l; Find(&l, &f, &b, 10.0);
+        Check(f.starts == 1 && l.entryCount == 2, "[setup] searching on FIND");
+        Lobby_BeginConnect(&l, "STEVE'S TOWER");
+        Check(l.screen == LOBBY_CONNECTING && strcmp(l.connectName, "STEVE'S TOWER") == 0, "a join has started: CONNECTING, with the game's name");
+        Lobby_Update(&l, &b, 20.0);
+        Check(f.stops == 1 && l.search == LOBBY_SEARCH_OFF && l.entryCount == 0, "the search stops while connecting, and the list is forgotten");
+        Lobby_Move(&l, 1); Lobby_Tap(&l, 5.0f, 5.0f); TapRect(&l, Lobby_Button(LB_PLAY)); TapRect(&l, Lobby_Join()); TapRect(&l, Lobby_Back()); TapRect(&l, Lobby_Row(0));
+        Check(l.screen == LOBBY_CONNECTING && l.want == LOBBY_WANT_NONE, "while connecting, only CANCEL does anything");
+        TapRect(&l, Lobby_Cancel());
+        Check(l.want == LOBBY_WANT_CANCEL && l.screen == LOBBY_FIND && l.focus == LOBBY_FOCUS_BACK, "a tap on CANCEL asks the game to give up, and returns to the list");
+        Lobby_TakeWant(&l);
+        Lobby_Update(&l, &b, 30.0);
+        Check(f.starts == 2 && l.search == LOBBY_SEARCHING, "and the search starts again");
+
+        Lobby_BeginConnect(&l, "X"); Lobby_Press(&l);
+        Check(Lobby_TakeWant(&l) == LOBBY_WANT_CANCEL && l.screen == LOBBY_FIND, "ENTER cancels too");
+
+        Lobby_BeginConnect(&l, "X");
+        Lobby_ConnectFailed(&l, "THE GAME IS FULL");
+        Check(l.screen == LOBBY_FIND && l.focus == LOBBY_FOCUS_BACK && strcmp(l.notice, "THE GAME IS FULL") == 0, "a join that failed: back to the list with the reason in red");
+        Lobby_Update(&l, &b, 40.0);
+        Check(l.search == LOBBY_SEARCHING && l.notice[0] != 0, "the search runs again and the reason stays up");
+        Lobby_BeginConnect(&l, NULL);
+        Check(l.connectName[0] == 0, "a missing name is an empty one");
+        char longName[100]; memset(longName, 'N', sizeof longName - 1); longName[sizeof longName - 1] = 0;
+        Lobby_BeginConnect(&l, longName);
+        Check(strlen(l.connectName) == LOBBY_NAME_MAX, "a long name is cut to the room there is");
+    }
+
     printf("\nlayout\n");
     {
         const UiRect all[] = { Lobby_CharacterPanel(), Lobby_Button(LB_CHARACTER), Lobby_Button(LB_PLAY), Lobby_Button(LB_FIND), Lobby_Button(LB_HOST),
-                               Lobby_StatusBox(), Lobby_Back(), Lobby_ListPanel(), Lobby_Row(0), Lobby_Row(LOBBY_ROWS - 1), Lobby_ScrollUp(), Lobby_ScrollDown() };
+                               Lobby_StatusBox(), Lobby_Back(), Lobby_ListPanel(), Lobby_Row(0), Lobby_Row(LOBBY_ROWS - 1), Lobby_ScrollUp(), Lobby_ScrollDown(), Lobby_Join(), Lobby_Cancel() };
         int on = 1;
         for (size_t i = 0; i < sizeof all / sizeof all[0]; ++i)
             if (all[i].x < 0 || all[i].y < 0 || all[i].x + all[i].w > 800.0f || all[i].y + all[i].h > 450.0f) on = 0;
@@ -308,6 +429,14 @@ int main(void)
         Check(rowsOk, "the rows are inside the list, apart from one another and from the arrows, wide and tall enough for a thumb");
         Check(su.x >= lp.x && su.x + su.w <= lp.x + lp.w && sd.x >= lp.x && sd.y + sd.h <= lp.y + lp.h && !UiRect_Overlaps(su, sd), "the arrows are inside the list and apart");
         Check(!UiRect_Overlaps(bk, lp) && bk.w >= 80.0f && bk.h >= 28.0f, "BACK is clear of the list and big enough for a thumb");
+        const UiRect jn = Lobby_Join(), cn = Lobby_Cancel();
+        int joinClear = !UiRect_Overlaps(jn, lp) && !UiRect_Overlaps(jn, bk) && !UiRect_Overlaps(jn, su) && !UiRect_Overlaps(jn, sd);
+        for (int i = 0; i < LOBBY_ROWS; ++i) if (UiRect_Overlaps(jn, Lobby_Row(i))) joinClear = 0;
+        Check(joinClear && jn.w >= 120.0f && jn.h >= 40.0f, "JOIN is clear of the list, the arrows and BACK, and big enough for a thumb");
+        Check(cn.w >= 120.0f && cn.h >= 40.0f, "CANCEL is big enough for a thumb");
+        const UiRect lv = SessionUI_Leave();
+        Check(lv.x >= 0 && lv.y >= 0 && lv.x + lv.w <= 800.0f && lv.y + lv.h <= 450.0f && lv.w >= 80.0f && lv.h >= 28.0f, "the session screen's LEAVE is on the canvas and big enough for a thumb");
+        Check(lv.x == bk.x && lv.y == bk.y && lv.w == bk.w && lv.h == bk.h, "and in the same place as BACK, so a thumb learns one place");
         const UiRect cbk = CharSelect_Back();
         Check(bk.x == cbk.x && bk.y == cbk.y && bk.w == cbk.w && bk.h == cbk.h, "and in the same place as the BACK of the character screen");
     }
@@ -325,6 +454,12 @@ int main(void)
               "a game this build can join: its name, its numbers, UDP, joinable, no reason");
         n.info.transport = NET_TRANSPORT_QUIC;
         Check(LobbyNet_EntryFromLobby(&n, &e) && strcmp(e.transport, "QUIC") == 0 && e.joinable, "a QUIC game that this build supports: QUIC, joinable");
+        uint32_t ip = 0; NetDisc_ParseIp("192.168.43.1", &ip);
+        n.addr = ip; n.info.port = 7781;
+        Check(LobbyNet_EntryFromLobby(&n, &e) && strcmp(e.address, "192.168.43.1") == 0 && e.port == 7781 && e.transportId == NET_TRANSPORT_QUIC, "where and how to connect: the address it answered from, its port and its transport");
+        n.info.transport = NET_TRANSPORT_UDP;
+        Check(LobbyNet_EntryFromLobby(&n, &e) && e.transportId == NET_TRANSPORT_UDP, "plain UDP is transport 0");
+        n.info.transport = NET_TRANSPORT_QUIC;
         n.transportSupported = false;
         Check(LobbyNet_EntryFromLobby(&n, &e) && !e.joinable && strcmp(e.why, "NEEDS QUIC") == 0, "a QUIC game when this build has no QUIC: not joinable, NEEDS QUIC");
         n.info.transport = NET_TRANSPORT_UDP;
@@ -365,6 +500,8 @@ int main(void)
             Check(l.entryCount == 1, "the host on this machine answered and is listed");
             Check(l.entryCount == 1 && strcmp(l.entries[0].name, "STEVE'S TOWER") == 0 && l.entries[0].players == 1 && l.entries[0].maxPlayers == 4 && strcmp(l.entries[0].transport, "UDP") == 0 && l.entries[0].joinable,
                   "with its name, its players, UDP, and joinable");
+            uint32_t found = 0;
+            Check(l.entryCount == 1 && NetDisc_ParseIp(l.entries[0].address, &found) && l.entries[0].port == 7777 && l.entries[0].transportId == NET_TRANSPORT_UDP, "and where to connect: an address that parses, the game port the host announced, and UDP");
             NetDiscHost_SetInfo(&host, "STEVE'S TOWER", 7777, 4, 4, NET_TRANSPORT_UDP);
             for (int i = 0; i < 100 && !(l.entryCount == 1 && l.entries[0].players == 4); ++i) {
                 now += 2100.0;                                           // a new round of questions is due

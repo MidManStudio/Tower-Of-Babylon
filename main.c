@@ -50,6 +50,8 @@
 #include "lobby/lobby.h"
 #include "lobby/lobby_ui.h"
 #include "lobby/lobby_net.h"
+#include "lobby/session_ui.h"
+#include "net/net_session.h"
 #include "swarm/swarm.h"
 #include "swarm/swarm_config.h"
 #include "sim/game_sim.h"
@@ -156,11 +158,25 @@ static SimCmd g_simCmd;
 // The game starts on the lobby (src/lobby, docs/lobby.md). Nothing of the game runs behind these screens (no steps, no monsters, no clock): they
 // are only buttons, cards and text. The lobby's CHOOSE CHARACTER opens the character screen (src/characters, docs/characters.md); choosing there,
 // or BACK, returns to the lobby; PLAY SOLO starts the game as if it had just been loaded.
-typedef enum { SCREEN_LOBBY = 0, SCREEN_CHARACTER, SCREEN_GAME } AppScreen;
+typedef enum { SCREEN_LOBBY = 0, SCREEN_CHARACTER, SCREEN_NET, SCREEN_GAME } AppScreen;
 static AppScreen g_screen = SCREEN_LOBBY;
 static Lobby g_lobby;
 static LobbyBackend g_lobbyNet;
 static CharSelect g_charSel;
+static NetSession g_session;                 // a hosted or joined game (net/net_session.h); idle until the lobby starts one
+
+// What the player is called in a game they host or join: the chosen character's id ("" when there is no roster), and "STEVE'S TOWER" for the lobby.
+static void ChosenCharacterId(char *out, size_t cap)
+{
+    const CharacterDef *c = Characters_Selected() >= 0 ? Characters_Get(Characters_Selected()) : NULL;
+    snprintf(out, cap, "%s", c ? c->id : "");
+}
+
+static void HostedGameName(char *out, size_t cap)
+{
+    const CharacterDef *c = Characters_Selected() >= 0 ? Characters_Get(Characters_Selected()) : NULL;
+    if (c) snprintf(out, cap, "%.15s'S TOWER", c->call); else snprintf(out, cap, "TOWER");
+}
 
 // The sound card opens after a touch or a key, and the first one happens on these screens.
 static void MenuAudio(float dt, bool gesture)
@@ -183,7 +199,7 @@ static void LobbyFrame(void)
     float dt = GetFrameTime();
     if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
     GameConfig_Poll();                                    // the web build swaps the real characters.mdix in when the wasm is up
-    Lobby_SetContext(&g_lobby, Characters_Count(), Characters_Selected() >= 0);
+    Lobby_SetContext(&g_lobby, Characters_Count(), Characters_Selected() >= 0, NetSession_CanHost());
 
     InputMenu menu;
     Input_Menu(&menu);
@@ -194,6 +210,16 @@ static void LobbyFrame(void)
     Lobby_Update(&g_lobby, &g_lobbyNet, GetTime() * 1000.0);
     MenuAudio(dt, menu.gesture);
 
+    // A join in progress: the host answers (the game is joined), or does not (back to the list, with the reason).
+    const double netNow = NetUdp_NowMs();
+    if (g_lobby.screen == LOBBY_CONNECTING) {
+        NetSession_Update(&g_session, netNow);
+        if (g_session.state == NETS_PLAYING) { Lobby_BackHome(&g_lobby); g_screen = SCREEN_NET; }
+        else if (g_session.state == NETS_FAILED) { Lobby_ConnectFailed(&g_lobby, g_session.error); NetSession_Leave(&g_session); }
+    }
+
+    char who[64], gameName[64];
+    ChosenCharacterId(who, sizeof who);
     switch (Lobby_TakeWant(&g_lobby)) {
         case LOBBY_WANT_CHARACTER:
             CharSelect_Open(&g_charSel, Characters_Count(), Characters_Selected());
@@ -202,11 +228,59 @@ static void LobbyFrame(void)
         case LOBBY_WANT_PLAY:
             BeginRun();
             break;
+        case LOBBY_WANT_HOST: {
+            HostedGameName(gameName, sizeof gameName);
+            uint32_t seed = (uint32_t)netNow * 2654435761u;
+            if (seed == 0) seed = 1;
+            if (NetSession_Host(&g_session, NET_TRANSPORT_UDP, gameName, who, seed, netNow)) g_screen = SCREEN_NET;
+            else { Lobby_SetNotice(&g_lobby, g_session.error); NetSession_Leave(&g_session); }
+            break;
+        }
+        case LOBBY_WANT_JOIN: {
+            LobbyEntry target;
+            if (!Lobby_JoinTarget(&g_lobby, &target)) break;
+            if (NetSession_Join(&g_session, target.transportId, target.address, target.port, target.name, who, netNow)) Lobby_BeginConnect(&g_lobby, target.name);
+            else { Lobby_SetNotice(&g_lobby, g_session.error); NetSession_Leave(&g_session); }
+            break;
+        }
+        case LOBBY_WANT_CANCEL:
+            NetSession_Leave(&g_session);
+            break;
         default: break;
     }
 
     BeginDrawing();
         LobbyUI_Draw(&g_lobby, Input_Scheme() == INPUT_SCHEME_KEYBOARD);
+    EndDrawing();
+}
+
+// A hosted or joined game: the screen that says who is in it (walking together is the next step). The one button is LEAVE; the game ending by
+// itself (the host left, the connection was lost) returns to the lobby with the reason in red.
+static void NetFrame(void)
+{
+    float dt = GetFrameTime();
+    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+    InputMenu menu;
+    Input_Menu(&menu);
+    bool leave = menu.confirm;
+    Vector2 tap = { 0 };
+    if (Input_NewTap(&tap) && UiRect_Contains(SessionUI_Leave(), tap.x, tap.y)) leave = true;
+    MenuAudio(dt, menu.gesture);
+    NetSession_Update(&g_session, NetUdp_NowMs());
+
+    if (leave) {
+        NetSession_Leave(&g_session);
+        Lobby_BackHome(&g_lobby);
+        g_screen = SCREEN_LOBBY;
+    } else if (g_session.state == NETS_FAILED || g_session.state == NETS_ENDED) {
+        Lobby_BackHome(&g_lobby);
+        Lobby_SetNotice(&g_lobby, g_session.error);
+        NetSession_Leave(&g_session);
+        g_screen = SCREEN_LOBBY;
+    }
+
+    BeginDrawing();
+        SessionUI_Draw(&g_session, Input_Scheme() == INPUT_SCHEME_KEYBOARD);
     EndDrawing();
 }
 
@@ -242,6 +316,7 @@ static void Frame(void)
 {
     if (g_screen == SCREEN_LOBBY) { LobbyFrame(); return; }
     if (g_screen == SCREEN_CHARACTER) { SelectFrame(); return; }
+    if (g_screen == SCREEN_NET) { NetFrame(); return; }
     const double tFrame0 = GetTime();
     const float rawDt = GetFrameTime();
     float dt = rawDt;
@@ -540,6 +615,7 @@ int main(void)
     while (!WindowShouldClose()) Frame();
 #endif
 
+    NetSession_Leave(&g_session);
     LobbyNet_Shutdown();
     Audio_Shutdown();
     ScreenFx_Unload();

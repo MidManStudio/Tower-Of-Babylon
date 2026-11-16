@@ -47,6 +47,6 @@ if [ $quic -eq 1 ]; then
   libs=("$lib" -lm -lpthread -ldl)
 fi
 set -e
-$cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_SERVER_MAIN -Isrc -Iraylib/src src/server/server_main.c src/net/net_server.c "${common[@]}" "${libs[@]}" -o "$out/tower_server"
+$cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_SERVER_MAIN -Isrc -Iraylib/src src/server/server_main.c src/net/net_host.c src/net/net_server.c "${common[@]}" "${libs[@]}" -o "$out/tower_server"
 $cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_BOT_MAIN -Isrc -Iraylib/src src/server/bot_main.c src/net/net_client.c "${common[@]}" "${libs[@]}" -o "$out/tower_bot"
 echo "built $out/tower_server and $out/tower_bot$([ $quic -eq 1 ] && echo ' (with QUIC)')"

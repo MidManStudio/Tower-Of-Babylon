@@ -6,6 +6,7 @@
 #define LOBBY_BACKEND_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // What the lobby screen needs from the network, and nothing else: whether searching is possible here, start and stop a search, and the list of games
 // found so far. The screen (lobby.c) never touches a socket: the real backend (lobby_net.c) answers from the LAN discovery of net_discovery.h, and the
@@ -20,6 +21,9 @@ typedef struct {
     char transport[8];               // "UDP", "QUIC"
     bool joinable;                   // this build can connect to it and it has room
     char why[LOBBY_WHY_MAX + 1];     // when not joinable, in capitals: "FULL", "OTHER VERSION", "NEEDS QUIC"
+    char     address[16];            // where to connect: the address the answer came from, dotted (what the host claims about itself is never used)
+    uint16_t port;
+    int      transportId;            // how to connect: the NET_TRANSPORT_* value (0 plain UDP, 1 QUIC)
 } LobbyEntry;
 
 typedef struct {

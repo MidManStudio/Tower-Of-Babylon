@@ -18,7 +18,8 @@ void         LobbyNet_Shutdown(void);                       // closes the search
 void         LobbyNet_UsePort(uint16_t discoveryPort);      // where questions go; NET_DISC_PORT unless a test runs its own host
 
 // One game found, as the screen shows it: false for an entry that is not in use. joinable is: a version this game speaks, a transport this build has,
-// and room for one more; otherwise why says in capitals what is wrong (OTHER VERSION, NEEDS QUIC, CANNOT CONNECT, FULL).
+// and room for one more; otherwise why says in capitals what is wrong (OTHER VERSION, NEEDS QUIC, CANNOT CONNECT, FULL). It also says where and
+// how to connect: the address the answer came from, the game's port, and the transport.
 bool LobbyNet_EntryFromLobby(const NetLobby *found, LobbyEntry *out);
 
 #endif

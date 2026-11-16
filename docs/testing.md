@@ -36,6 +36,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `swarm_headless.c` | the worm swarm: its numbers, spawning, waking, crawling round walls, bodies (links, walls, floor, stairs, player), the health box, melee, the bite, determinism, cost | `swarm.md` |
 | `characters_headless.c` | the roster file and its loader, the choice kept as an id, the selection screen's taps, keys, BACK, reopening and layout, the word wrap, and that every shipped text fits its room | `characters.md` |
 | `lobby_headless.c` | the lobby: the logic and layout of both screens, the keyboard and taps, the search lifecycle and the list of games (with scrolling) against a scripted backend, and the real backend over the LAN discovery with a host answering on this machine | `lobby.md` |
+| `net_session_headless.c` | real hosted and joined games over real UDP on this machine: hosting, joining, the lists of players, a full game, leaving, the host leaving, a join nobody answers, two hosts on one machine; about 5 seconds in real time | `net.md` |
 | `config_headless.c` | the config layer, the baked tables, bad documents | `config.md` |
 | `flashlight_headless.c` | charge, batteries, flicker, the beam's shape | `flashlight.md` |
 

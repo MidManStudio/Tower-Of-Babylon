@@ -13,7 +13,8 @@ bool Lobby_Enabled(const Lobby *l, LobbyButton b)
         case LB_CHARACTER: return l->rosterCount > 0;
         case LB_PLAY:      return l->rosterCount == 0 || l->hasChoice;    // with no roster at all the game starts without a choice, as it always did
         case LB_FIND:      return true;
-        default:           return false;                                  // HOST
+        case LB_HOST:      return l->canHost && (l->rosterCount == 0 || l->hasChoice);   // hosts as the chosen character, like PLAY
+        default:           return false;
     }
 }
 
@@ -52,11 +53,12 @@ void Lobby_Init(Lobby *l)
     FixHomeFocus(l);
 }
 
-void Lobby_SetContext(Lobby *l, int rosterCount, bool hasChoice)
+void Lobby_SetContext(Lobby *l, int rosterCount, bool hasChoice, bool canHost)
 {
     const bool justChose = hasChoice && !l->hasChoice;
     l->rosterCount = rosterCount < 0 ? 0 : rosterCount;
     l->hasChoice = hasChoice;
+    l->canHost = canHost;
     // Coming back from the character screen with somebody chosen, the next thing is to play: the keyboard's focus goes to PLAY.
     if (l->screen == LOBBY_HOME && justChose && Lobby_Enabled(l, LB_PLAY)) l->focus = LB_PLAY;
     FixHomeFocus(l);
@@ -66,23 +68,80 @@ static void GoHome(Lobby *l)
 {
     l->screen = LOBBY_HOME;
     l->focus = LB_FIND;
+    l->notice[0] = 0;
     FixHomeFocus(l);
 }
 
 static void Activate(Lobby *l, LobbyButton b)
 {
     if (!Lobby_Enabled(l, b)) return;
+    l->notice[0] = 0;
     switch (b) {
         case LB_CHARACTER: l->want = LOBBY_WANT_CHARACTER; break;
         case LB_PLAY:      l->want = LOBBY_WANT_PLAY; break;
+        case LB_HOST:      l->want = LOBBY_WANT_HOST; break;
         case LB_FIND:      l->screen = LOBBY_FIND; l->focus = LOBBY_FOCUS_BACK; l->scroll = 0; break;   // the search itself starts in Lobby_Update
         default: break;
     }
 }
 
+bool Lobby_CanJoin(const Lobby *l)
+{
+    return l->screen == LOBBY_FIND && l->focus >= 0 && l->focus < l->entryCount && l->entries[l->focus].joinable;
+}
+
+// JOIN was pressed on a game that can be joined: remember which, as it is now (the list is refreshed every frame, and main.c reads the target a
+// moment later).
+static void AskToJoin(Lobby *l)
+{
+    if (!Lobby_CanJoin(l)) return;
+    l->joinTarget = l->entries[l->focus];
+    l->notice[0] = 0;
+    l->want = LOBBY_WANT_JOIN;
+}
+
+static void CancelConnect(Lobby *l)
+{
+    l->screen = LOBBY_FIND;
+    l->focus = LOBBY_FOCUS_BACK;
+    l->scroll = 0;
+    l->want = LOBBY_WANT_CANCEL;
+}
+
+bool Lobby_JoinTarget(const Lobby *l, LobbyEntry *out)
+{
+    if (!l->joinTarget.joinable) return false;
+    if (out) *out = l->joinTarget;
+    return true;
+}
+
+void Lobby_BeginConnect(Lobby *l, const char *gameName)
+{
+    l->screen = LOBBY_CONNECTING;
+    snprintf(l->connectName, sizeof l->connectName, "%s", gameName ? gameName : "");
+    l->notice[0] = 0;
+}
+
+void Lobby_SetNotice(Lobby *l, const char *text) { snprintf(l->notice, sizeof l->notice, "%s", text ? text : ""); }
+
+void Lobby_ConnectFailed(Lobby *l, const char *why)
+{
+    l->screen = LOBBY_FIND;
+    l->focus = LOBBY_FOCUS_BACK;
+    l->scroll = 0;
+    Lobby_SetNotice(l, why);
+}
+
+void Lobby_BackHome(Lobby *l)
+{
+    l->screen = LOBBY_HOME;
+    l->focus = LB_PLAY;
+    FixHomeFocus(l);
+}
+
 void Lobby_Move(Lobby *l, int dir)
 {
-    if (dir == 0) return;
+    if (dir == 0 || l->screen == LOBBY_CONNECTING) return;
     const int d = dir > 0 ? 1 : -1;
     if (l->screen == LOBBY_HOME) {
         int f = l->focus;
@@ -102,7 +161,9 @@ void Lobby_Move(Lobby *l, int dir)
 void Lobby_Press(Lobby *l)
 {
     if (l->screen == LOBBY_HOME) Activate(l, (LobbyButton)l->focus);
-    else if (l->focus == LOBBY_FOCUS_BACK) GoHome(l);          // a game cannot be joined yet: Enter on one does nothing
+    else if (l->screen == LOBBY_CONNECTING) CancelConnect(l);
+    else if (l->focus == LOBBY_FOCUS_BACK) GoHome(l);
+    else AskToJoin(l);                                         // Enter on a game that can be joined joins it; on one that cannot, nothing
 }
 
 int Lobby_ShownRows(const Lobby *l)
@@ -114,6 +175,7 @@ int Lobby_ShownRows(const Lobby *l)
 
 void Lobby_Tap(Lobby *l, float x, float y)
 {
+    if (l->screen == LOBBY_CONNECTING) { if (UiRect_Contains(Lobby_Cancel(), x, y)) CancelConnect(l); return; }
     if (l->screen == LOBBY_HOME) {
         for (int b = 0; b < LB_COUNT; ++b) {
             if (!UiRect_Contains(Lobby_Button((LobbyButton)b), x, y)) continue;
@@ -123,6 +185,7 @@ void Lobby_Tap(Lobby *l, float x, float y)
         return;
     }
     if (UiRect_Contains(Lobby_Back(), x, y)) { GoHome(l); return; }
+    if (UiRect_Contains(Lobby_Join(), x, y)) { AskToJoin(l); return; }
     if (UiRect_Contains(Lobby_ScrollUp(), x, y))   { --l->scroll; ClampScroll(l); return; }
     if (UiRect_Contains(Lobby_ScrollDown(), x, y)) { ++l->scroll; ClampScroll(l); return; }
     const int shown = Lobby_ShownRows(l);
@@ -189,3 +252,5 @@ UiRect Lobby_ListPanel(void)   { return (UiRect){ 8.0f, 50.0f, 784.0f, 282.0f };
 UiRect Lobby_Row(int i)        { return (UiRect){ 16.0f, 58.0f + (float)i * 54.0f, 700.0f, 48.0f }; }
 UiRect Lobby_ScrollUp(void)    { return (UiRect){ 724.0f, 58.0f, 60.0f, 120.0f }; }
 UiRect Lobby_ScrollDown(void)  { return (UiRect){ 724.0f, 190.0f, 60.0f, 120.0f }; }
+UiRect Lobby_Join(void)        { return (UiRect){ 572.0f, 340.0f, 220.0f, 44.0f }; }
+UiRect Lobby_Cancel(void)      { return (UiRect){ 300.0f, 290.0f, 200.0f, 52.0f }; }

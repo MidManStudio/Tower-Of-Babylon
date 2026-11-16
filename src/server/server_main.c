@@ -18,10 +18,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "../net/net_discovery.h"
-#include "../net/net_mid.h"
-#include "../net/net_server.h"
-#include "../net/net_udp.h"
+#include "../net/net_host.h"
 
 // The player controller draws debug shapes and asks the props where they are; a server does neither. NO PROPS YET: the game's props are
 // a list built while the floor is drawn, and the simulation that owns them has not been moved out of main.c (docs/net.md).
@@ -32,10 +29,7 @@ bool CheckObstacleCollision(Vector3 pos, float radius) { (void)pos; (void)radius
 static volatile sig_atomic_t g_stop = 0;
 static void OnSignal(int sig) { (void)sig; g_stop = 1; }
 
-static NetServer g_srv;
-static NetUdpHost g_host;
-static NetDiscHost g_disc;
-static NetMidHost g_mid;
+static NetHost g_host;       // the server, its socket and its announcer (net/net_host.h: the same loop the game hosts with)
 
 static void SleepMs(double ms) { struct timespec ts; ts.tv_sec = 0; ts.tv_nsec = (long)(ms * 1e6); nanosleep(&ts, NULL); }
 
@@ -69,10 +63,13 @@ int main(int argc, char **argv)
 
     signal(SIGINT, OnSignal);
     signal(SIGTERM, OnSignal);
-    NetServer_Init(&g_srv, seed, floorNumber);
-    const bool listening = useQuic ? NetMidHost_Listen(&g_mid, (uint16_t)port) : NetUdpHost_Listen(&g_host, (uint16_t)port);
-    if (!listening) { fprintf(stderr, "tower_server: cannot listen on UDP port %u (is another server using it?)\n", port); return 2; }
-    const uint16_t gamePort = useQuic ? NetMidHost_Port(&g_mid) : NetUdpHost_Port(&g_host);
+    NetHostConfig cfg;
+    NetHostConfig_Default(&cfg);
+    cfg.seed = seed; cfg.floorNumber = floorNumber; cfg.name = lobbyName; cfg.port = (uint16_t)port; cfg.anyPortIfBusy = false;
+    cfg.transport = useQuic ? NET_TRANSPORT_QUIC : NET_TRANSPORT_UDP;
+    cfg.discoveryPort = (uint16_t)discPort; cfg.discovery = discovery != 0;
+    if (!NetHost_Open(&g_host, &cfg, NetUdp_NowMs())) { fprintf(stderr, "tower_server: %s\n", g_host.error); return 2; }
+    const uint16_t gamePort = g_host.port;
     printf("tower_server: floor %d, seed %u, listening on UDP port %u (%s), %d players at most\n", floorNumber, seed, (unsigned)gamePort, useQuic ? "QUIC, mid-net" : "plain UDP", NET_MAX_PLAYERS);
     {   // where this machine can be reached, best first (a browser player, who cannot search, types one of these)
         NetDiscIface ifs[16];
@@ -82,46 +79,33 @@ int main(int argc, char **argv)
         if (na == 0) printf("  no network address found on this device (is Wi-Fi or the hotspot on?); this device itself can use 127.0.0.1\n");
     }
     if (discovery) {
-        if (NetDiscHost_Open(&g_disc, (uint16_t)discPort)) {
-            NetDiscHost_SetInfo(&g_disc, lobbyName, gamePort, 0, NET_MAX_PLAYERS, useQuic ? NET_TRANSPORT_QUIC : NET_TRANSPORT_UDP);
-            printf("tower_server: announcing \"%s\" on UDP port %u (players on this network can find it; --no-discovery turns this off)\n", g_disc.info.name, (unsigned)NetDiscHost_Port(&g_disc));
-        } else printf("tower_server: discovery is off: UDP port %u could not be opened (is another server announcing on it? give --discovery-port)\n", discPort);
+        if (g_host.discoveryOpen) printf("tower_server: announcing \"%s\" on UDP port %u (players on this network can find it; --no-discovery turns this off)\n", g_host.disc.info.name, (unsigned)NetDiscHost_Port(&g_host.disc));
+        else printf("tower_server: discovery is off: UDP port %u could not be opened (is another server announcing on it? give --discovery-port)\n", discPort);
     }
     fflush(stdout);
 
-    const double tickMs = 1000.0 / (double)NET_TICK_RATE;
     const double start = NetUdp_NowMs();
-    double nextTick = start + tickMs, nextStatus = start + 5000.0;
-    int peak = 0, announced = -1;
+    double nextStatus = start + 5000.0;
     while (!g_stop) {
         const double now = NetUdp_NowMs();
-        NetTransport tp;
-        while (useQuic ? NetMidHost_Accept(&g_mid, &tp) : NetUdpHost_Accept(&g_host, &tp)) {
-            const int slot = NetServer_AddClient(&g_srv, tp, now);
-            if (!quiet) printf("  a connection arrived: %s\n", slot >= 0 ? "given a place" : "refused, the server is full");
-        }
-        NetServer_Poll(&g_srv, now);
-        int ran = 0;
-        while (now >= nextTick && ran < 5) { NetServer_Tick(&g_srv, now); nextTick += tickMs; ++ran; }
-        if (now >= nextTick) nextTick = now + tickMs;                                     // far behind: do not try to catch up
-        const int players = NetServer_PlayerCount(&g_srv);
-        if (players > peak) peak = players;
-        if (g_disc.open) {
-            if (players != announced) { NetDiscHost_SetInfo(&g_disc, lobbyName, gamePort, players, NET_MAX_PLAYERS, useQuic ? NET_TRANSPORT_QUIC : NET_TRANSPORT_UDP); announced = players; }
-            NetDiscHost_Poll(&g_disc, now);
+        const unsigned accepted0 = g_host.accepted, refused0 = g_host.refused;
+        NetHost_Update(&g_host, now);
+        if (!quiet) {
+            for (unsigned i = accepted0; i < g_host.accepted; ++i) printf("  a connection arrived: given a place\n");
+            for (unsigned i = refused0; i < g_host.refused; ++i) printf("  a connection arrived: refused, the server is full\n");
         }
         if (!quiet && now >= nextStatus) {
             nextStatus += 5000.0;
-            printf("  tick %u, %d player%s, %u snapshots sent\n", g_srv.tick, players, players == 1 ? "" : "s", g_srv.snapshotsSent);
+            const int players = NetHost_Players(&g_host);
+            printf("  tick %u, %d player%s, %u snapshots sent\n", g_host.server.tick, players, players == 1 ? "" : "s", g_host.server.snapshotsSent);
             fflush(stdout);
         }
         if (maxSeconds > 0.0 && now - start >= maxSeconds * 1000.0) break;
         SleepMs(1.0);
     }
-    if (g_disc.open) printf("tower_server: discovery answered %u of %u questions\n", g_disc.replies, g_disc.received);
-    printf("tower_server: stopped after %u ticks; peak_players=%d; snapshots_sent=%u\n", g_srv.tick, peak, g_srv.snapshotsSent);
-    NetDiscHost_Close(&g_disc);
-    if (useQuic) NetMidHost_Close(&g_mid); else NetUdpHost_Close(&g_host);
+    if (g_host.discoveryOpen) printf("tower_server: discovery answered %u of %u questions\n", g_host.disc.replies, g_host.disc.received);
+    printf("tower_server: stopped after %u ticks; peak_players=%d; snapshots_sent=%u\n", g_host.server.tick, g_host.peak, g_host.server.snapshotsSent);
+    NetHost_Close(&g_host, 0);
     return 0;
 }
 #endif

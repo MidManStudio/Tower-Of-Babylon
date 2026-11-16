@@ -30,6 +30,9 @@ bool LobbyNet_EntryFromLobby(const NetLobby *n, LobbyEntry *out)
     else if (n->info.players >= n->info.maxPlayers)       why = "FULL";
     if (why) snprintf(out->why, sizeof out->why, "%s", why);
     out->joinable = why == NULL;
+    NetDisc_FormatIp(n->addr, out->address);          // where the answer came from: the one address that is known to be reachable
+    out->port = n->info.port;
+    out->transportId = n->info.transport;
     return true;
 }
 

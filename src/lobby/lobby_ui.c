@@ -112,12 +112,17 @@ static void DrawHome(const Lobby *l, bool showKeys)
     // What the player can do.
     DrawButton(Lobby_Button(LB_PLAY), "PLAY SOLO", 26, Lobby_Enabled(l, LB_PLAY) ? NULL : "CHOOSE A CHARACTER FIRST", COL_GREEN, Lobby_Enabled(l, LB_PLAY), showKeys && l->focus == LB_PLAY);
     DrawButton(Lobby_Button(LB_FIND), "FIND GAMES", 26, "ON THIS NETWORK", COL_FILL, Lobby_Enabled(l, LB_FIND), showKeys && l->focus == LB_FIND);
-    DrawButton(Lobby_Button(LB_HOST), "HOST A GAME", 26, "NOT YET: THE GAME HAS NO SERVER IN IT", COL_FILL, Lobby_Enabled(l, LB_HOST), showKeys && l->focus == LB_HOST);
+    const char *hostSub = !l->canHost ? "NEEDS THE APP, NOT A BROWSER" : (Lobby_Enabled(l, LB_HOST) ? "OTHERS ON THIS NETWORK CAN JOIN" : "CHOOSE A CHARACTER FIRST");
+    DrawButton(Lobby_Button(LB_HOST), "HOST A GAME", 26, hostSub, COL_FILL, Lobby_Enabled(l, LB_HOST), showKeys && l->focus == LB_HOST);
 
     const UiRect s = Lobby_StatusBox();
-    const char *line = l->hasChoice || l->rosterCount == 0 ? "Ready: nobody else is in this lobby." : "Choose a character to play.";
-    DrawText(line, (int)s.x, (int)s.y + 2, 14, COL_TEXT);
-    DrawWrapped("Joining and hosting come with the in-game network, which is not built yet.", (int)s.x, (int)s.y + 22, s.w, 2, 12, 14, COL_DIM);
+    if (l->notice[0]) {
+        DrawWrapped(l->notice, (int)s.x, (int)s.y + 2, s.w, 2, 14, 16, COL_BAD);
+    } else {
+        const char *line = l->hasChoice || l->rosterCount == 0 ? "Ready: nobody else is in this lobby." : "Choose a character to play.";
+        DrawText(line, (int)s.x, (int)s.y + 2, 14, COL_TEXT);
+    }
+    DrawWrapped("Hosting and joining work; walking together is the next step.", (int)s.x, (int)s.y + 34, s.w, 2, 12, 14, COL_DIM);
 
     if (showKeys) DrawText("A / D or arrows: move     ENTER: press", 10, 428, 11, COL_DIM);
 }
@@ -161,15 +166,29 @@ static void DrawFind(const Lobby *l, bool showKeys)
         case LOBBY_SEARCH_FAILED:      status = "COULD NOT START THE SEARCH. IS THERE A NETWORK?"; statusColor = COL_BAD; break;
         default: break;
     }
+    if (l->notice[0]) { status = l->notice; statusColor = COL_BAD; }
     DrawText(status, 16, 342, 18, statusColor);
     DrawText("Games on this Wi-Fi or hotspot appear here by themselves.", 16, 370, 12, COL_DIM);
-    DrawText("Joining is not in the game yet: this list only shows what is found.", 16, 386, 12, COL_DIM);
-    if (showKeys) DrawText("A / D or arrows: move     ENTER: press", 10, 428, 11, COL_DIM);
+    DrawText("Highlight a game, then press JOIN.", 16, 386, 12, COL_DIM);
+    DrawButton(Lobby_Join(), "JOIN", 22, NULL, COL_GREEN, Lobby_CanJoin(l), false);
+    if (showKeys) DrawText("A / D or arrows: move     ENTER: press (on a game: join it)", 10, 428, 11, COL_DIM);
+}
+
+static void DrawConnecting(const Lobby *l)
+{
+    DrawText("JOINING A GAME", 10, 12, 22, YELLOW);
+    const UiRect c = Lobby_Cancel();
+    DrawCentered("CONNECTING TO", c, 140, 18, COL_DIM);
+    DrawCentered(l->connectName, c, 172, 32, WHITE);
+    const int dots = (int)(GetTime() * 2.0) % 4;
+    DrawCentered(TextFormat("WAITING FOR THE HOST%.*s", dots, "..."), c, 226, 16, COL_ACCENT);
+    DrawButton(c, "CANCEL", 22, NULL, COL_FILL, true, false);
 }
 
 void LobbyUI_Draw(const Lobby *l, bool showKeys)
 {
     ClearBackground(COL_BG);
     if (l->screen == LOBBY_HOME) DrawHome(l, showKeys);
+    else if (l->screen == LOBBY_CONNECTING) DrawConnecting(l);
     else DrawFind(l, showKeys);
 }
