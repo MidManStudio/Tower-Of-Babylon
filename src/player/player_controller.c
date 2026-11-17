@@ -134,27 +134,44 @@ static void UpdateAutoLean(PlayerController *player, bool sprintIntent, float dt
     int dir = 0;
     bool looked = false;
     if (allowed) {
+        looked = true;
         const float fx = sinf(player->yaw), fz = cosf(player->yaw);
         const float rx = sinf(player->yaw - 1.5708f), rz = cosf(player->yaw - 1.5708f);
         const float px = player->position.x, pz = player->position.z;
+        player->leanRoom[0] = LeanRoom(map, player->position, -rx, -rz);
+        player->leanRoom[1] = LeanRoom(map, player->position,  rx,  rz);
+
+        // (1) The corner: an opening ahead that leaning shows.
         const float ahead = SightDist(map, px, pz, fx, fz, PLAYER_LEAN_SIGHT);
-        if (ahead <= PLAYER_LEAN_NEAR_LET_GO) {
-            looked = true;
-            player->leanRoom[0] = LeanRoom(map, player->position, -rx, -rz);
-            player->leanRoom[1] = LeanRoom(map, player->position,  rx,  rz);
+        const bool cornerNear = ahead <= PLAYER_LEAN_NEAR_LET_GO;
+        float gl = 0.0f, gr = 0.0f;
+        if (cornerNear) {
             const float sl = fminf(PLAYER_LEAN_SHIFT, player->leanRoom[0]), sr = fminf(PLAYER_LEAN_SHIFT, player->leanRoom[1]);
-            const float gl = sl > 0.10f ? SightDist(map, px - rx * sl, pz - rz * sl, fx, fz, PLAYER_LEAN_SIGHT) - ahead : 0.0f;
-            const float gr = sr > 0.10f ? SightDist(map, px + rx * sr, pz + rz * sr, fx, fz, PLAYER_LEAN_SIGHT) - ahead : 0.0f;
-            dir = player->leanDir;
-            if (dir != 0 && ((dir > 0 ? gr : gl) < PLAYER_LEAN_GAIN_OFF)) dir = 0;        // its opening is gone
-            if (dir != 0) {
-                player->leanDwell = 0.0f;
-            } else if (ahead <= PLAYER_LEAN_NEAR_WALL && (gr >= PLAYER_LEAN_GAIN_ON || gl >= PLAYER_LEAN_GAIN_ON)) {
-                player->leanDwell += dt;
-                if (player->leanDwell >= PLAYER_LEAN_DWELL) dir = gr >= gl ? 1 : -1;
-            } else {
-                player->leanDwell = 0.0f;
-            }
+            gl = sl > 0.10f ? SightDist(map, px - rx * sl, pz - rz * sl, fx, fz, PLAYER_LEAN_SIGHT) - ahead : 0.0f;
+            gr = sr > 0.10f ? SightDist(map, px + rx * sr, pz + rz * sr, fx, fz, PLAYER_LEAN_SIGHT) - ahead : 0.0f;
+        }
+        const bool cornerOn = ahead <= PLAYER_LEAN_NEAR_WALL && (gr >= PLAYER_LEAN_GAIN_ON || gl >= PLAYER_LEAN_GAIN_ON);
+
+        // (2) The wall beside: close on one side and not on the other, so lean away from it (a wall on the left: lean right).
+        const float wallL = SightDist(map, px, pz, -rx, -rz, PLAYER_LEAN_SIDE_REACH);
+        const float wallR = SightDist(map, px, pz,  rx,  rz, PLAYER_LEAN_SIDE_REACH);
+        int sideDir = 0;
+        if (wallL <= PLAYER_LEAN_SIDE_NEAR && wallR > PLAYER_LEAN_SIDE_NEAR && player->leanRoom[1] >= PLAYER_LEAN_SIDE_ROOM) sideDir = 1;
+        else if (wallR <= PLAYER_LEAN_SIDE_NEAR && wallL > PLAYER_LEAN_SIDE_NEAR && player->leanRoom[0] >= PLAYER_LEAN_SIDE_ROOM) sideDir = -1;
+
+        dir = player->leanDir;
+        if (dir != 0) {                                                                  // a lean that has started holds while either reason for it does
+            const bool cornerHolds = cornerNear && (dir > 0 ? gr : gl) >= PLAYER_LEAN_GAIN_OFF;
+            const bool sideHolds = (dir > 0 ? wallL : wallR) <= PLAYER_LEAN_SIDE_LET_GO && (dir > 0 ? player->leanRoom[1] : player->leanRoom[0]) >= PLAYER_LEAN_SIDE_ROOM * 0.5f;
+            if (!cornerHolds && !sideHolds) dir = 0;
+        }
+        if (dir != 0) {
+            player->leanDwell = 0.0f;
+        } else if (cornerOn || sideDir != 0) {
+            player->leanDwell += dt;
+            if (player->leanDwell >= PLAYER_LEAN_DWELL) dir = cornerOn ? (gr >= gl ? 1 : -1) : sideDir;
+        } else {
+            player->leanDwell = 0.0f;
         }
     }
     if (!looked) { player->leanDwell = 0.0f; dir = 0; }
@@ -262,6 +279,7 @@ void InitPlayerController(PlayerController *player, float startX, float startZ) 
     player->lying = false;
     player->lieStick = (Vector2){ 0.0f, 0.0f };
     player->stimLeft = 0.0f;
+    player->shakeClock = 0.0f;       // the camera's shake is sinf(shakeClock * 48): a struct that has not been zeroed gave NaN here and a NaN up vector
 }
 
 float PlayerFatigue(const PlayerController *player)
@@ -327,9 +345,18 @@ static void EndSlide(PlayerController *player)
     player->slideCooldown = PLAYER_SLIDE_COOLDOWN;
 }
 
+bool PlayerSprintingSideways(const PlayerController *player)
+{
+    if (!player->sprinting) return false;
+    const float speed = sqrtf(player->moveVel.x * player->moveVel.x + player->moveVel.z * player->moveVel.z);
+    return speed >= 0.5f && !PlayerSprintingForward(player);      // the same line the slide draws: within 45 degrees of ahead is the slide's
+}
+
 bool PlayerDiveAvailable(const PlayerController *player)
 {
-    return player->health.isAlive && !player->isGrounded && player->jumpedSprinting && !player->diving && !player->rolling;
+    if (!player->health.isAlive || player->diving || player->rolling || player->lying) return false;
+    if (!player->isGrounded) return player->jumpedSprinting;       // in the air after a sprinting jump (forward: the slide, the jump, then the dive)
+    return !player->sliding && PlayerSprintingSideways(player);    // on the ground: straight out of a sprint to the left, to the right or backward
 }
 
 bool PlayerTryDive(PlayerController *player, Vector2 moveDelta)
@@ -347,6 +374,7 @@ bool PlayerTryDive(PlayerController *player, Vector2 moveDelta)
     const float ground = Staircase_GroundHeight(player->position.x, player->position.z, player->position.y);
     const float h = player->position.y > ground ? player->position.y - ground : 0.0f;
     player->velocityY = (0.5f * PLAYER_GRAVITY * PLAYER_DIVE_SECS * PLAYER_DIVE_SECS - h) / PLAYER_DIVE_SECS;
+    player->isGrounded = false;                                        // from the ground this is the take-off: the feet leave the floor now
     player->diving = true;
     player->diveT = 0.0f;
     player->sprinting = false;
@@ -484,7 +512,8 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
         if (aimWanted) { player->aimBlend += rate; if (player->aimBlend > 1.0f) player->aimBlend = 1.0f; }
         else           { player->aimBlend -= rate; if (player->aimBlend < 0.0f) player->aimBlend = 0.0f; }
     }
-    // Leaning, automatic at a wall's corner: a gun in hand, on the ground, not sliding, diving or sprinting; the eye never goes into a wall.
+    // Leaning, automatic at a wall's corner and away from a wall beside the player: a gun in hand, on the ground, not sliding, diving or sprinting;
+    // the eye never goes into a wall.
     UpdateAutoLean(player, player->wantSprint && moving, dt, map);
     const bool leaning = player->leanBlend > 0.05f || player->leanBlend < -0.05f;
 

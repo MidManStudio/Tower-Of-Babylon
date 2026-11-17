@@ -33,16 +33,22 @@
 #define PLAYER_ADS_OUT_SHARE   0.6f
 #define PLAYER_ADS_DEFAULT_SECS 0.20f
 
-// Leaning: automatic, at the corner of a wall. A sight line is cast straight ahead from the body and again from the eye at full lean
-// to either side; if the wall ahead is close and one of the leaned lines gets PLAYER_LEAN_GAIN_ON metres further than the middle one,
-// there is an opening that leaning shows, and the player leans toward it. Facing a flat wall, or a long way from it, nothing happens.
-// The eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
+// Leaning: automatic, never a button, in two cases. (1) At the corner of a wall: a sight line is cast straight ahead from the body and again
+// from the eye at full lean to either side; if the wall ahead is close and one of the leaned lines gets PLAYER_LEAN_GAIN_ON metres further than
+// the middle one, there is an opening that leaning shows, and the player leans toward it. Facing a flat wall, or a long way from it, nothing
+// happens. (2) Beside a wall: a wall within PLAYER_LEAN_SIDE_NEAR of the body on one side, and none on the other, and the player leans away from
+// it (a wall on the left: a lean to the right), facing any way. Between two close walls there is nowhere to lean to, so no lean. A corner
+// opening wins when both are there. The eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
 #define PLAYER_LEAN_NEAR_WALL  1.5f    // metres: the wall ahead is this close or closer for a lean to start
 #define PLAYER_LEAN_NEAR_LET_GO 2.0f   // ...and it lets go when the wall is further than this (so the edge of the range does not flicker)
 #define PLAYER_LEAN_SIGHT      8.0f    // metres: how far the sight lines look
 #define PLAYER_LEAN_GAIN_ON    1.0f    // a lean starts when a leaned line sees this much further than the middle one
 #define PLAYER_LEAN_GAIN_OFF   0.5f    // ...and lets go when it sees less than this
 #define PLAYER_LEAN_DWELL      0.10f   // seconds the above must hold before the lean starts (walking past a corner is not a peek)
+#define PLAYER_LEAN_SIDE_NEAR   0.80f  // metres from the body's centre: a wall this close beside the player (and none on the other side) starts a lean away from it
+#define PLAYER_LEAN_SIDE_LET_GO 1.00f  // ...and it lets go when that wall is further than this (the body is 0.35 m across, a corridor tile 2 m)
+#define PLAYER_LEAN_SIDE_REACH  1.40f  // metres: how far the side lines look
+#define PLAYER_LEAN_SIDE_ROOM   0.20f  // the free side needs this much room for the eye for a side lean to start (half of it to hold)
 #define PLAYER_LEAN_SHIFT      0.40f   // metres the eye moves sideways at full lean
 #define PLAYER_LEAN_ROLL       0.1745f // radians the view tilts at full lean (10 degrees)
 #define PLAYER_LEAN_DIP        0.06f   // metres the eye drops at full lean
@@ -52,7 +58,9 @@
 
 #define PLAYER_GRAVITY         14.0f   // m/s squared
 
-// Diving: only from the air after a sprinting jump ("run, jump, dive"), in any direction (forward, left, right, back) as the stick was
+// Diving: from a sprint that goes left, right or back (the slide is for forward, so the dive button takes its place) straight from the ground,
+// and from the air after a sprinting jump ("run, jump, dive": the way forward, where the slide comes first), in any direction (forward, left,
+// right, back) as the stick was
 // pushed when the DIVE button was tapped. A fixed arc: PLAYER_DIVE_DIST metres in PLAYER_DIVE_SECS whatever height it was asked at,
 // then a roll of PLAYER_ROLL_SECS that runs down from PLAYER_ROLL_SPEED. Placeholder numbers, like the slide's.
 #define PLAYER_DIVE_DIST       3.0f    // metres along the floor, in the air
@@ -123,7 +131,10 @@ bool PlayerTryJump(PlayerController *player);
 bool PlayerTrySlide(PlayerController *player);
 // A sprint that is going within 45 degrees of straight ahead (the velocity's direction against where the player faces): the only kind a slide can start from.
 bool PlayerSprintingForward(const PlayerController *player);
-// Whether a dive can be asked for now: alive, in the air from a jump that began from a sprint (or a slide), not already diving.
+// Whether a sprint is going left, right or back (not within 45 degrees of ahead, which is the slide's): the one the dive can start from on the ground.
+bool PlayerSprintingSideways(const PlayerController *player);
+// Whether a dive can be asked for now: alive, not already diving, rolling or lying, and either on the ground in a sideways or backward sprint, or in
+// the air from a jump that began from a sprint (or a slide).
 // This is when the DIVE button exists, whether or not there is the stamina for it.
 bool PlayerDiveAvailable(const PlayerController *player);
 // Starts a dive: PlayerDiveAvailable, no exhaustion and STAMINA_DIVE_COST in hand (taken). The direction is read now: moveDelta is the stick

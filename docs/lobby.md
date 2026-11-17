@@ -65,6 +65,28 @@ The character screen's own new checks (BACK and opening again, 13) are in `tests
 ### `tests/net_session_headless.c` (43 checks, about 5 seconds in real time)
 Real games over real UDP on this machine's loopback (`net.md`): the words for every disconnect reason; failures that need no network (a way to connect that does not exist, QUIC in a build without it); hosting (the host welcomed as player 0 on the floor of its seed, one player, found and read back by a real searcher with its name, port and one player); joining (both sides see two players; the lists: host and you marked on the right rows, the joiner's character on the host's list; the same floor; the announcement following to two players); filling up to four, a fifth player turned away (FAILED, THE GAME IS FULL) and the game unchanged; a player leaving (the host sees three again, then the other joiner sees two); the host leaving (the joiner's session ENDED, THE HOST LEFT); joining a port nobody answers on (NO ANSWER after the timeout), leaving twice, cancelling while connecting; two hosts on one machine (the second takes a free port, each on its own floor).
 
+## Trying hosting and joining on two devices
+
+1. Both devices on the same Wi-Fi, or one phone's hotspot with the other connected to it, and the **same build** on both (a game of another version is listed as OTHER VERSION and cannot be joined).
+2. On the first device: choose a character, tap **HOST A GAME**. The session screen opens: HOSTING: <NAME>'S TOWER, PLAYERS 1 / 4 (the host is player 1, playing in its own game), and the addresses the device can be reached at, with the port.
+3. On the second: choose a character, tap **FIND GAMES**. The game should be listed within a couple of seconds, with its name, "1 / 4 PLAYERS" and UDP. Highlight it and tap **JOIN**: CONNECTING, then the session screen, JOINED: with PLAYERS 2 / 4 on **both** screens, the host's row tagged HOST and your own tagged YOU. The ping, snapshots and corrections on the right should be moving (snapshots count up; corrections stay at or near 0 standing still).
+4. **LEAVE** on the joiner: the host's list goes back to one player. LEAVE on the host: the joiner's session ends and the lobby shows THE HOST LEFT in red.
+5. If FIND GAMES stays empty: look at the host's session screen for its addresses and port, and try them from the other device with `tower_bot ADDRESS PORT` in Termux (`bash scripts/build_server.sh`, then `build/tower_bot`). A bot that connects proves the host and the network; then only the broadcast is in question (Wi-Fi client isolation, or a hotspot that does not pass broadcasts). Send what each screen says.
+
+## What changed for hosting and joining (a record)
+
+**New modules** (`net.md` has each one's section): `src/net/net_host.c/.h` (a hosted game: the server, its socket and its announcer, opened, updated and closed from any loop), `src/net/net_dial.c/.h` (one outgoing connection over UDP or QUIC), `src/net/net_session.c/.h` (host or joiner as a state machine with reasons in words), `src/lobby/session_ui.c/.h` (the session screen).
+**Changed:** `src/server/server_main.c` now runs the same `NetHost` loop the game does (so there is one implementation; `tests/server_smoke.sh` and the QUIC variant pass unchanged on it) and `scripts/build_server.sh` links `net_host.c` into the server only; `LobbyEntry` gained the address, port and transport to connect with; the lobby logic gained HOST (on when the platform can host and a character is chosen), JOIN, CONNECTING with CANCEL, `Lobby_JoinTarget` (a copy taken at the press), the red notice line, and the wants HOST, JOIN and CANCEL; `main.c` gained `SCREEN_NET`, `NetFrame` and the glue for the three wants, and ends a session on exit. `Lobby_SetContext` gained a fourth argument (`canHost`).
+**What had to be true for it to work, and how each was made so:**
+- *Something has to announce.* The list only shows games that answer the search, and a device running only the app announced nothing. HOST is what makes the device announce (`NetHost` opens the discovery answerer on the discovery port next to the game's own port).
+- *The host is a player of its own game through a real connection to 127.0.0.1*, the same path as everyone else, so there is no second way to play that could differ.
+- *Where to connect is the address the answer came from*, never what the host says about itself: a phone has several addresses (Wi-Fi, hotspot, mobile data), and the one that heard the answer is the one known to work from here.
+- *A busy port is not a failure:* the default 7777 falls back to a free port (a second game on one machine, a `tower_server` left running); the port in use is announced, and the session screen shows it.
+- *The goodbye has to leave the device before the socket closes*, so leaving waits up to 150 ms, and a closing host tells every player (a Disconnect, `THE HOST LEFT`) instead of letting them time out after 5 seconds.
+- *A join that is not answered must not hang*: 6 seconds, then NO ANSWER, back to the list with the reason.
+- *The list changes under the finger*, so the game to join is copied at the press.
+**Tests added:** `tests/net_session_headless.c` (43 checks over real UDP), the lobby test grew from 110 to 156 checks, 34 more deliberate breakages of the code all caught. **Measured, not guessed:** `NetHost` is 598 KB, `NetDial` 578 KB, `NetSession` 1.2 MB.
+
 ## Not verified
 
 - **Nothing here has been seen on a screen.** The drawing (`lobby_ui.c`) compiled for all three platforms and nothing more: whether the text sizes (12 px for the small lines) are comfortable on the phone, whether the two-line buttons, the red reasons and the yellow focus outline look right, and whether the five rows with the arrows are easy to hit.

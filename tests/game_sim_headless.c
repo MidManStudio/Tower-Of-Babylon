@@ -467,6 +467,23 @@ int main(void)
             for (int i = 0; i < 20; ++i) { God(); Stp(back); }
             Check(sim.player.sprinting && !GameSim_SlideButtonShown(&sim), "backwards is the same");
 
+            // The DIVE button takes the slide's place on the ground in a sprint to the side or back: no jump needed.
+            GoTo(start);
+            for (int i = 0; i < 20; ++i) { God(); Stp(side); }
+            Check(sim.player.isGrounded && GameSim_DiveButtonShown(&sim) && !GameSim_SlideButtonShown(&sim), "running sideways the DIVE button is there on the ground, in the slide's place, with no jump");
+            const float sdb = sim.player.stamina;
+            SimCmd gd = side; gd.dive = true;
+            Stp(gd);
+            Check(sim.player.diving && !sim.player.isGrounded && !GameSim_DiveButtonShown(&sim) && Near(sdb - sim.player.stamina, STAMINA_DIVE_COST, 1.0f), "a tap on it dives straight from the ground, off the floor, and costs the stamina");
+            for (int i = 0; i < 4; ++i) { God(); Stp(gd); }
+            Check(sim.player.moveVel.x < -4.0f && fabsf(sim.player.moveVel.z) < 0.5f, "to the side the stick was pushed (right is -x here)");
+            GoTo(start);
+            for (int i = 0; i < 20; ++i) { God(); Stp(back); }
+            Check(sim.player.isGrounded && GameSim_DiveButtonShown(&sim) && !GameSim_SlideButtonShown(&sim), "running backwards: the same, the DIVE button and no SLIDE");
+            GoTo(start);
+            for (int i = 0; i < 20; ++i) { God(); Stp(fwd); }
+            Check(!GameSim_DiveButtonShown(&sim) && GameSim_SlideButtonShown(&sim), "running forward it is still the SLIDE, and the dive waits for a jump");
+
             // Run, jump, dive.
             GoTo(start);
             for (int i = 0; i < 24; ++i) { God(); Stp(fwd); }
