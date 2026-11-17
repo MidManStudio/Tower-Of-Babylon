@@ -704,20 +704,21 @@ int main(void)
         Run(&l, (Vector2){ 0, 0 }, false, PLAYER_LEAN_DWELL + 0.05f);
         Check(l.leanDir == 1 && l.leanBlend > 0.0f, "a moment later: a wall by the left and nothing ahead, and the player leans right, away from it, with no button");
         Run(&l, (Vector2){ 0, 0 }, false, 0.4f);
-        Check(l.leanBlend == 1.0f && fabsf(l.camera.position.x - (22.5f - PLAYER_LEAN_SHIFT)) < 0.01f && fabsf(l.camera.position.z - ZS) < 0.01f, "it goes to full: the eye moves right (away from the wall) by the lean distance, not forward or back");
+        Check(fabsf(l.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f && fabsf(l.camera.position.x - (22.5f - PLAYER_LEAN_SHIFT * PLAYER_LEAN_SIDE_SCALE)) < 0.01f && fabsf(l.camera.position.z - ZS) < 0.01f, "it goes to its full: 20% less than a corner lean (PLAYER_LEAN_SIDE_SCALE 0.8), the eye moving right (away from the wall) by 0.32 m, not forward or back");
         Check(fabsf(l.position.x - 22.5f) < 1e-4f && fabsf(l.position.z - ZS) < 1e-4f, "the body does not move");
         Check(l.camera.up.x < -0.1f && fabsf(l.camera.up.y) > 0.9f, "the view tilts to the right with it");
+        Check(PLAYER_LEAN_SIDE_SCALE > 0.7f && PLAYER_LEAN_SIDE_SCALE < 0.9f && fabsf(l.camera.position.y - (l.eyeY + l.height * 0.35f - PLAYER_LEAN_DIP * PLAYER_LEAN_SIDE_SCALE)) < 0.02f, "the dip is the same 20% less (the lean is one number the shift, the tilt, the dip and the slowdown all follow)");
         Check(l.camera.position.x <= 22.5f && 23.0f - l.camera.position.x >= PLAYER_LEAN_CAM_CLEAR, "the eye is never within PLAYER_LEAN_CAM_CLEAR of the wall (it moved away from it)");
 
         PlayerController r = Place(25.5f, ZS, 0.0f);             // 0.5 m past the slab's far face (x = 25): the slab is on the right
         r.leanAllowed = true;
         Run(&r, (Vector2){ 0, 0 }, false, 0.5f);
-        Check(r.leanDir == -1 && r.leanBlend == -1.0f && r.camera.position.x > 25.5f + PLAYER_LEAN_SHIFT * 0.95f && r.camera.up.x > 0.1f, "a wall by the right: the lean goes left");
+        Check(r.leanDir == -1 && fabsf(r.leanBlend + PLAYER_LEAN_SIDE_SCALE) < 1e-4f && r.camera.position.x > 25.5f + PLAYER_LEAN_SHIFT * PLAYER_LEAN_SIDE_SCALE * 0.95f && r.camera.up.x > 0.1f, "a wall by the right: the lean goes left");
 
         PlayerController back = Place(22.5f, ZS, 3.14159f);      // facing -z: now the slab is on the right
         back.leanAllowed = true;
         Run(&back, (Vector2){ 0, 0 }, false, 0.5f);
-        Check(back.leanDir == -1 && back.leanBlend == -1.0f, "the rule is about the sides, not where the player looks: facing the other way along the wall it is on the right, and the lean goes left");
+        Check(back.leanDir == -1 && fabsf(back.leanBlend + PLAYER_LEAN_SIDE_SCALE) < 1e-4f, "the rule is about the sides, not where the player looks: facing the other way along the wall it is on the right, and the lean goes left");
         PlayerController toward = Place(22.5f, ZS, 1.5708f);      // facing the slab, 0.5 m from it: it is ahead, not beside
         toward.leanAllowed = true;
         Run(&toward, (Vector2){ 0, 0 }, false, 0.5f);
@@ -730,7 +731,7 @@ int main(void)
         // A lean that has started holds a little further out, and lets go past PLAYER_LEAN_SIDE_LET_GO.
         l.position.x = 22.1f;
         Run(&l, (Vector2){ 0, 0 }, false, 0.3f);
-        Check(l.leanDir == 1 && l.leanBlend == 1.0f, "a lean that has started is held a little beyond the distance it took to start (0.9 m)");
+        Check(l.leanDir == 1 && fabsf(l.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f, "a lean that has started is held a little beyond the distance it took to start (0.9 m)");
         l.position.x = 21.9f;
         Run(&l, (Vector2){ 0, 0 }, false, 0.4f);
         Check(l.leanDir == 0 && l.leanBlend == 0.0f && l.camera.up.y == 1.0f, "and lets go when the wall is further than PLAYER_LEAN_SIDE_LET_GO (1.1 m), and the view comes upright");
@@ -744,7 +745,7 @@ int main(void)
         PlayerController off = Place(22.4f, ZS, 0.0f);            // 0.6 m from the left wall, 1.4 m from the right one
         off.leanAllowed = true;
         Run(&off, (Vector2){ 0, 0 }, false, 0.5f);
-        Check(off.leanDir == 1 && off.leanBlend == 1.0f, "off centre in the corridor: away from the near wall");
+        Check(off.leanDir == 1 && fabsf(off.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f, "off centre in the corridor: away from the near wall");
         CornerFloor();
 
         PlayerController sp = Place(22.5f, ZS - 4.0f, 0.0f);      // no lean while sprinting, or with no gun in hand
@@ -762,7 +763,7 @@ int main(void)
         PlayerController free = Place(21.0f, 21.0f, 0.0f);
         free.leanAllowed = true;
         Run(&free, FWD, false, 1.6f);
-        Check(along.leanDir == 1 && along.leanBlend == 1.0f && along.position.z > 24.0f, "walking along a wall keeps the lean, and the player keeps walking");
+        Check(along.leanDir == 1 && fabsf(along.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f && along.position.z > 24.0f, "walking along a wall keeps the lean, and the player keeps walking");
         Check(free.leanDir == 0 && PlayerSpeed(&along) < PlayerSpeed(&free) * 0.8f, "and the lean slows the walk (the free walker beside no wall is not slowed)");
     }
 

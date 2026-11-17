@@ -38,7 +38,7 @@
 // the middle one, there is an opening that leaning shows, and the player leans toward it. Facing a flat wall, or a long way from it, nothing
 // happens. (2) Beside a wall: a wall within PLAYER_LEAN_SIDE_NEAR of the body on one side, and none on the other, and the player leans away from
 // it (a wall on the left: a lean to the right), facing any way. Between two close walls there is nowhere to lean to, so no lean. A corner
-// opening wins when both are there. The eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
+// opening wins when both are there, and it is the full lean: the beside-a-wall one is PLAYER_LEAN_SIDE_SCALE of it. The eye moves sideways and the view tilts, and a lean can never put the eye in a wall.
 #define PLAYER_LEAN_NEAR_WALL  1.5f    // metres: the wall ahead is this close or closer for a lean to start
 #define PLAYER_LEAN_NEAR_LET_GO 2.0f   // ...and it lets go when the wall is further than this (so the edge of the range does not flicker)
 #define PLAYER_LEAN_SIGHT      8.0f    // metres: how far the sight lines look
@@ -48,6 +48,7 @@
 #define PLAYER_LEAN_SIDE_NEAR   0.80f  // metres from the body's centre: a wall this close beside the player (and none on the other side) starts a lean away from it
 #define PLAYER_LEAN_SIDE_LET_GO 1.00f  // ...and it lets go when that wall is further than this (the body is 0.35 m across, a corridor tile 2 m)
 #define PLAYER_LEAN_SIDE_REACH  1.40f  // metres: how far the side lines look
+#define PLAYER_LEAN_SIDE_SCALE  0.80f  // a lean away from a wall beside the player goes this far (shift, tilt, dip and slowdown): 20% less than the corner lean
 #define PLAYER_LEAN_SIDE_ROOM   0.20f  // the free side needs this much room for the eye for a side lean to start (half of it to hold)
 #define PLAYER_LEAN_SHIFT      0.40f   // metres the eye moves sideways at full lean
 #define PLAYER_LEAN_ROLL       0.1745f // radians the view tilts at full lean (10 degrees)

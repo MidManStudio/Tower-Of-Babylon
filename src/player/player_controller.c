@@ -132,6 +132,7 @@ static void UpdateAutoLean(PlayerController *player, bool sprintIntent, float dt
     const bool allowed = player->leanAllowed && player->health.isAlive && player->isGrounded && !player->sliding &&
                          !player->diving && !player->rolling && !player->lying && !sprintIntent;
     int dir = 0;
+    float scale = 1.0f;                      // how far this lean goes: the corner lean in full, the beside-a-wall one PLAYER_LEAN_SIDE_SCALE of it
     bool looked = false;
     if (allowed) {
         looked = true;
@@ -173,11 +174,13 @@ static void UpdateAutoLean(PlayerController *player, bool sprintIntent, float dt
         } else {
             player->leanDwell = 0.0f;
         }
+        // An opening that leaning shows is the whole lean; with only the wall beside as the reason it is less (a lean for both reasons is the full one).
+        if (dir != 0) scale = (cornerNear && (dir > 0 ? gr : gl) >= PLAYER_LEAN_GAIN_OFF) ? 1.0f : PLAYER_LEAN_SIDE_SCALE;
     }
     if (!looked) { player->leanDwell = 0.0f; dir = 0; }
     player->leanDir = dir;
     const float rate = dt / PLAYER_LEAN_SECS;
-    const float target = (float)dir;
+    const float target = (float)dir * scale;
     if (player->leanBlend < target) { player->leanBlend += rate; if (player->leanBlend > target) player->leanBlend = target; }
     else if (player->leanBlend > target) { player->leanBlend -= rate; if (player->leanBlend < target) player->leanBlend = target; }
     if (!looked && player->leanBlend != 0.0f) {                                // easing out: the camera still needs the room to each side
