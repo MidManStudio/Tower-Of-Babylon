@@ -49,6 +49,7 @@ static void OnWelcome(NetClient *c, const NetWelcome *w, double nowMs)
     c->tick = c->startTick;
     c->lastUpdateMs = nowMs; c->accum = 0.0;
     c->lastSnapMs = nowMs;
+    c->prevPos = c->player.position;
     c->state = NETC_PLAYING;
 }
 
@@ -78,6 +79,7 @@ static void Reconcile(NetClient *c, const NetSnapshot *s)
         if (T >= c->tick) c->tick = T + 3;
         c->startTick = c->tick;
         c->errOffset = (Vector3){ 0 };
+        c->prevPos = c->player.position;
         ++c->hardSnaps;
         return;
     }
@@ -100,6 +102,7 @@ static void Reconcile(NetClient *c, const NetSnapshot *s)
     const Vector3 before = c->player.position;
     c->player = st;
     c->errOffset.x += before.x - st.position.x; c->errOffset.y += before.y - st.position.y; c->errOffset.z += before.z - st.position.z;
+    c->prevPos.x -= before.x - st.position.x; c->prevPos.y -= before.y - st.position.y; c->prevPos.z -= before.z - st.position.z;   // the blend between ticks moves with the correction, so the fading jump is the only change on screen
     if (c->errOffset.x * c->errOffset.x + c->errOffset.y * c->errOffset.y + c->errOffset.z * c->errOffset.z > 4.0f) c->errOffset = (Vector3){ 0 };   // over two metres: not worth smoothing
     ++c->corrections;
 }
@@ -143,6 +146,7 @@ void NetClient_Poll(NetClient *c, double nowMs)
 static void RunTick(NetClient *c, NetCmd cmd)
 {
     const int i = (int)(c->tick % NET_HISTORY);
+    c->prevPos = c->player.position;
     NetSim_Step(&c->player, &cmd, &c->map);
     c->hist[i].cmd = cmd; c->hist[i].state = c->player; c->hist[i].tick = c->tick; c->hist[i].valid = true;
     c->errOffset.x *= NET_SMOOTH_KEEP; c->errOffset.y *= NET_SMOOTH_KEEP; c->errOffset.z *= NET_SMOOTH_KEEP;
@@ -191,6 +195,23 @@ void NetClient_Leave(NetClient *c)
 Vector3 NetClient_ViewPos(const NetClient *c)
 {
     return (Vector3){ c->player.position.x + c->errOffset.x, c->player.position.y + c->errOffset.y, c->player.position.z + c->errOffset.z };
+}
+
+float NetClient_Alpha(const NetClient *c)
+{
+    float a = (float)(c->accum / TICK_MS);
+    if (a < 0.0f) a = 0.0f;
+    if (a > 1.0f) a = 1.0f;
+    return a;
+}
+
+Vector3 NetClient_ViewPosAt(const NetClient *c, float alpha)
+{
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    return (Vector3){ c->prevPos.x + (c->player.position.x - c->prevPos.x) * alpha + c->errOffset.x,
+                      c->prevPos.y + (c->player.position.y - c->prevPos.y) * alpha + c->errOffset.y,
+                      c->prevPos.z + (c->player.position.z - c->prevPos.z) * alpha + c->errOffset.z };
 }
 
 static float LerpAngle(float a, float b, float u)                                    // the short way round a turn

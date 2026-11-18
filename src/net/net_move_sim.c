@@ -13,10 +13,11 @@ void NetSim_Step(PlayerController *p, const NetCmd *cmd, const FloorMap *map)
     p->yaw = NetCmd_Yaw(cmd);
     p->pitch = NetCmd_Pitch(cmd);
     PlayerSyncCamera(p);
-    if (cmd->buttons & NET_BTN_SLIDE) PlayerTrySlide(p);                  // the order of GameSim_Step (src/sim/game_sim.c): slide, sprint, step, jump
-    p->wantSprint = (cmd->buttons & NET_BTN_SPRINT) != 0;
     float mx, my;
     NetCmd_Move(cmd, &mx, &my);
+    if (cmd->buttons & NET_BTN_SLIDE) PlayerTrySlide(p);                  // the order of GameSim_Step (src/sim/game_sim.c): slide, dive, sprint, step, jump
+    if (cmd->buttons & NET_BTN_DIVE) PlayerTryDive(p, (Vector2){ mx, my });
+    p->wantSprint = (cmd->buttons & NET_BTN_SPRINT) != 0;
     PlayerStep(p, (Vector2){ mx, my }, NET_TICK_SECS, map);
     if (cmd->buttons & NET_BTN_JUMP) PlayerTryJump(p);
 }
@@ -27,7 +28,9 @@ void NetSim_Capture(const PlayerController *p, NetOwnerState *o)
     o->moveVx = p->moveVel.x; o->moveVz = p->moveVel.z; o->knockX = p->knock.x; o->knockZ = p->knock.z;
     o->stamina = p->stamina; o->staminaDelay = p->staminaDelay;
     o->slideT = p->slideT; o->slideSpeed0 = p->slideSpeed0; o->slideCooldown = p->slideCooldown; o->slideDirX = p->slideDir.x; o->slideDirZ = p->slideDir.z;
-    o->flags = (uint8_t)((p->isGrounded ? NET_OWN_GROUNDED : 0) | (p->exhausted ? NET_OWN_EXHAUSTED : 0) | (p->sprinting ? NET_OWN_SPRINTING : 0) | (p->sliding ? NET_OWN_SLIDING : 0));
+    o->diveT = p->diveT; o->diveDirX = p->diveDir.x; o->diveDirZ = p->diveDir.z; o->lieStickX = p->lieStick.x; o->lieStickY = p->lieStick.y;
+    o->flags = (uint8_t)((p->isGrounded ? NET_OWN_GROUNDED : 0) | (p->exhausted ? NET_OWN_EXHAUSTED : 0) | (p->sprinting ? NET_OWN_SPRINTING : 0) | (p->sliding ? NET_OWN_SLIDING : 0) |
+                         (p->diving ? NET_OWN_DIVING : 0) | (p->rolling ? NET_OWN_ROLLING : 0) | (p->lying ? NET_OWN_LYING : 0) | (p->jumpedSprinting ? NET_OWN_JUMPED_SPRINTING : 0));
 }
 
 void NetSim_Apply(PlayerController *p, const NetOwnerState *o)
@@ -38,6 +41,9 @@ void NetSim_Apply(PlayerController *p, const NetOwnerState *o)
     p->slideT = o->slideT; p->slideSpeed0 = o->slideSpeed0; p->slideCooldown = o->slideCooldown; p->slideDir = (Vector3){ o->slideDirX, 0.0f, o->slideDirZ };
     p->isGrounded = (o->flags & NET_OWN_GROUNDED) != 0; p->exhausted = (o->flags & NET_OWN_EXHAUSTED) != 0;
     p->sprinting = (o->flags & NET_OWN_SPRINTING) != 0; p->sliding = (o->flags & NET_OWN_SLIDING) != 0;
+    p->diveT = o->diveT; p->diveDir = (Vector3){ o->diveDirX, 0.0f, o->diveDirZ }; p->lieStick = (Vector2){ o->lieStickX, o->lieStickY };
+    p->diving = (o->flags & NET_OWN_DIVING) != 0; p->rolling = (o->flags & NET_OWN_ROLLING) != 0; p->lying = (o->flags & NET_OWN_LYING) != 0;
+    p->jumpedSprinting = (o->flags & NET_OWN_JUMPED_SPRINTING) != 0;
 }
 
 float NetSim_Error(const PlayerController *p, const NetOwnerState *o)
@@ -47,7 +53,8 @@ float NetSim_Error(const PlayerController *p, const NetOwnerState *o)
     NetOwnerState mine; NetSim_Capture(p, &mine);
     if (fabsf(mine.stamina - o->stamina) > 1.0f) err += 10.0f;                            // a gap here grows into a different sprint a second from now
     if (fabsf(mine.moveVx - o->moveVx) > 0.1f || fabsf(mine.moveVz - o->moveVz) > 0.1f) err += 10.0f;
-    if ((mine.flags & (NET_OWN_EXHAUSTED | NET_OWN_SLIDING)) != (o->flags & (NET_OWN_EXHAUSTED | NET_OWN_SLIDING))) err += 10.0f;
+    const uint8_t mask = NET_OWN_EXHAUSTED | NET_OWN_SLIDING | NET_OWN_DIVING | NET_OWN_ROLLING | NET_OWN_LYING | NET_OWN_JUMPED_SPRINTING;
+    if ((mine.flags & mask) != (o->flags & mask)) err += 10.0f;                           // a different dive, a different roll or a different jump is a different second from now
     return err;
 }
 

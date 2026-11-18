@@ -99,6 +99,6 @@ void SessionUI_Draw(const NetSession *s, bool showKeys)
     DrawText(TextFormat("CORRECTIONS  %u", c->corrections), 548, y, 14, COL_TEXT); y += 18;
     if (s->hosting && s->host.open) DrawText(TextFormat("SERVER TICK  %u", s->host.server.tick), 548, y, 14, COL_TEXT);
 
-    DrawText("Walking together is the next step. For now this shows who is in the game.", 10, 330, 12, COL_DIM);
+    DrawText("The walk starts as soon as the game answers.", 10, 330, 12, COL_DIM);
     if (showKeys) DrawText("ENTER: leave", 10, 428, 11, COL_DIM);
 }

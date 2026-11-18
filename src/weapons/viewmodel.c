@@ -37,7 +37,9 @@ static Vector3 XfApply(const Xf *x, Vector3 p)
     return V(q.x + x->pivot.x + x->t.x, q.y + x->pivot.y + x->t.y, q.z + x->pivot.z + x->t.z);
 }
 
-typedef struct { const AimFrame *cam; PartList *list; } Ctx;
+// roll: the whole hand-and-gun picture turned about the view's centre line (radians; positive leans the top to the left). The aimed gun's
+// sway to the side. Its sine and cosine are kept so every point is turned the same way.
+typedef struct { const AimFrame *cam; PartList *list; float rollSin, rollCos; } Ctx;
 
 // The hands are authored once, around a wrist at WRIST, then lifted a little into view. Rest() does
 // that, so every part of a hand or held item goes through it first.
@@ -56,13 +58,20 @@ static Vector3 Rest(Vector3 q)
 // side is +1 for the right hand and -1 for the left, which is the right hand mirrored.
 static Vector3 World(const Ctx *c, int side, Vector3 p)
 {
-    const float x = p.x * (float)side;
-    return V(c->cam->eye.x + c->cam->right.x * x + c->cam->up.x * p.y + c->cam->forward.x * p.z,
-             c->cam->eye.y + c->cam->right.y * x + c->cam->up.y * p.y + c->cam->forward.y * p.z,
-             c->cam->eye.z + c->cam->right.z * x + c->cam->up.z * p.y + c->cam->forward.z * p.z);
+    const float hx = p.x * (float)side;
+    const float x = hx * c->rollCos - p.y * c->rollSin, y = hx * c->rollSin + p.y * c->rollCos;     // turned about the view's centre line
+    return V(c->cam->eye.x + c->cam->right.x * x + c->cam->up.x * y + c->cam->forward.x * p.z,
+             c->cam->eye.y + c->cam->right.y * x + c->cam->up.y * y + c->cam->forward.y * p.z,
+             c->cam->eye.z + c->cam->right.z * x + c->cam->up.z * y + c->cam->forward.z * p.z);
 }
 
-static Vector3 UpHint(const Ctx *c) { return c->cam->up; }
+// The cross-sections' flat side follows the turn too (the camera's up, rolled the same way).
+static Vector3 UpHint(const Ctx *c)
+{
+    return V(c->cam->up.x * c->rollCos - c->cam->right.x * c->rollSin,
+             c->cam->up.y * c->rollCos - c->cam->right.y * c->rollSin,
+             c->cam->up.z * c->rollCos - c->cam->right.z * c->rollSin);
+}
 
 // The tip and middle of the pipe in the last pose built.
 static Vector3 g_pipeTip, g_pipeMid;
@@ -223,6 +232,23 @@ static void SlashPose(float p, float *pitch, float *roll, float *yaw, Vector3 *t
 #define ADS_SLIDE_X_LONG     -0.150f
 #define ADS_SLIDE_Y_LONG      0.034f
 #define ADS_SWAY_LEFT         0.30f      // the share of the sway left when aimed
+#define ADS_STRAFE_TILT       0.08f      // radians (4.6 degrees) the aimed gun tilts at a full strafe
+#define VIEWMODEL_STRAFE_EASE_SECS 0.10f // the tilt's time to follow the move
+
+float Viewmodel_StrafeTilt(float strafe01, float ads01)
+{
+    if (strafe01 > 1.0f) strafe01 = 1.0f;
+    if (strafe01 < -1.0f) strafe01 = -1.0f;
+    return -strafe01 * ADS_STRAFE_TILT * Clamp01(ads01);     // moving right (positive): the roll is negative, the top of the gun leans right
+}
+
+float Viewmodel_StrafeSwayStep(float current, float target, float dt)
+{
+    if (target > 1.0f) target = 1.0f;
+    if (target < -1.0f) target = -1.0f;
+    if (dt <= 0.0f) return current;
+    return current + (target - current) * (1.0f - expf(-dt / VIEWMODEL_STRAFE_EASE_SECS));
+}
 
 void Viewmodel_Build(PartList *out, const Arsenal *a, const AimFrame *cam, float walk01, float t)
 {
@@ -231,12 +257,18 @@ void Viewmodel_Build(PartList *out, const Arsenal *a, const AimFrame *cam, float
 
 void Viewmodel_BuildAimed(PartList *out, const Arsenal *a, const AimFrame *cam, float walk01, float t, float ads01)
 {
+    Viewmodel_BuildAimedSway(out, a, cam, walk01, t, ads01, 0.0f);
+}
+
+void Viewmodel_BuildAimedSway(PartList *out, const Arsenal *a, const AimFrame *cam, float walk01, float t, float ads01, float strafe01)
+{
     PartList_Clear(out);
     g_pipeInHand = false;
-    const Ctx ctx = { cam, out };
     const WeaponDef *def = Weapon_Def(a->current);
     const float p = a->attackT >= 0.0f ? Clamp01(a->attackT / def->duration) : -1.0f;
     const float ads = def->kind == WEAPON_KIND_GUN ? Clamp01(ads01) : 0.0f;       // only guns have sights
+    const float roll = Viewmodel_StrafeTilt(strafe01, ads);                       // 0 at the hip and for what has no sights
+    const Ctx ctx = { cam, out, sinf(roll), cosf(roll) };
 
     // Sway and bob, shared by both hands. Aimed, they steady.
     const float phase = t * 8.5f;
@@ -412,8 +444,13 @@ void Viewmodel_Draw(const Arsenal *a, const AimFrame *cam, float walk01, float t
 
 void Viewmodel_DrawAimed(const Arsenal *a, const AimFrame *cam, float walk01, float t, float brightness, float ads01)
 {
+    Viewmodel_DrawAimedSway(a, cam, walk01, t, brightness, ads01, 0.0f);
+}
+
+void Viewmodel_DrawAimedSway(const Arsenal *a, const AimFrame *cam, float walk01, float t, float brightness, float ads01, float strafe01)
+{
     PartList list;
-    Viewmodel_BuildAimed(&list, a, cam, walk01, t, ads01);
+    Viewmodel_BuildAimedSway(&list, a, cam, walk01, t, ads01, strafe01);
 
     // Light from above and to the left of the camera, in world space.
     const Vector3 light = V(-0.40f * cam->right.x + 0.80f * cam->up.x - 0.45f * cam->forward.x,

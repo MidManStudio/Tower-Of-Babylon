@@ -51,7 +51,9 @@
 #include "lobby/lobby_ui.h"
 #include "lobby/lobby_net.h"
 #include "lobby/session_ui.h"
+#include "lobby/play_ui.h"
 #include "net/net_session.h"
+#include "net/net_play.h"
 #include "swarm/swarm.h"
 #include "swarm/swarm_config.h"
 #include "sim/game_sim.h"
@@ -164,6 +166,10 @@ static Lobby g_lobby;
 static LobbyBackend g_lobbyNet;
 static CharSelect g_charSel;
 static NetSession g_session;                 // a hosted or joined game (net/net_session.h); idle until the lobby starts one
+static NetPlay g_netPlay;                    // walking in it: the fingers' commands and the view (net/net_play.h)
+static bool g_walkBegun;                     // the walk's first frame has built the session's lighting
+static bool g_netLightingDirty;              // the lights were built for a session's floor: a new run rebuilds solo's
+static float g_leaveArmed;                   // seconds left of a first press of the keyboard's leave
 
 // What the player is called in a game they host or join: the chosen character's id ("" when there is no roster), and "STEVE'S TOWER" for the lobby.
 static void ChosenCharacterId(char *out, size_t cap)
@@ -189,9 +195,20 @@ static void MenuAudio(float dt, bool gesture)
 static void BeginRun(void)
 {
     g_screen = SCREEN_GAME;
+    if (g_netLightingDirty) { Lighting_BuildForFloor(g_sim.map, g_sim.window.currentFloor); g_netLightingDirty = false; }   // a session's floor was the last one lit
     FixedStep_Init(&g_simStep, SIM_STEP_SECS, SIM_MAX_STEPS_PER_FRAME);   // the game starts from a clean clock
     SimCmd_Init(&g_simCmd);
     fade = 1.0f;                                                          // and fades in, as after a door
+}
+
+// A hosted or joined game starts with the player walking: the commands come from the fingers (net/net_play.h), the view starts facing the way the
+// player does when they appear (yaw 0, as the floor's spawn faces), and the leave key has not been pressed.
+static void BeginNetPlay(void)
+{
+    NetPlay_Init(&g_netPlay, 0.0f);
+    NetSession_SetCommands(&g_session, NetPlay_CmdFn, &g_netPlay);
+    g_leaveArmed = 0.0f;
+    g_walkBegun = false;
 }
 
 static void LobbyFrame(void)
@@ -232,14 +249,14 @@ static void LobbyFrame(void)
             HostedGameName(gameName, sizeof gameName);
             uint32_t seed = (uint32_t)netNow * 2654435761u;
             if (seed == 0) seed = 1;
-            if (NetSession_Host(&g_session, NET_TRANSPORT_UDP, gameName, who, seed, netNow)) g_screen = SCREEN_NET;
+            if (NetSession_Host(&g_session, NET_TRANSPORT_UDP, gameName, who, seed, netNow)) { BeginNetPlay(); g_screen = SCREEN_NET; }
             else { Lobby_SetNotice(&g_lobby, g_session.error); NetSession_Leave(&g_session); }
             break;
         }
         case LOBBY_WANT_JOIN: {
             LobbyEntry target;
             if (!Lobby_JoinTarget(&g_lobby, &target)) break;
-            if (NetSession_Join(&g_session, target.transportId, target.address, target.port, target.name, who, netNow)) Lobby_BeginConnect(&g_lobby, target.name);
+            if (NetSession_Join(&g_session, target.transportId, target.address, target.port, target.name, who, netNow)) { BeginNetPlay(); Lobby_BeginConnect(&g_lobby, target.name); }
             else { Lobby_SetNotice(&g_lobby, g_session.error); NetSession_Leave(&g_session); }
             break;
         }
@@ -254,9 +271,19 @@ static void LobbyFrame(void)
     EndDrawing();
 }
 
-// A hosted or joined game: the screen that says who is in it (walking together is the next step). The one button is LEAVE; the game ending by
-// itself (the host left, the connection was lost) returns to the lobby with the reason in red.
-static void NetFrame(void)
+// A hosted or joined game. Until the game answers (the host's own connection to itself takes a frame or two) the screen says CONNECTING; then the
+// player walks in the session's floor, sees the others, and leaves with the LEAVE button (or Tab twice on a keyboard). The game ending by itself
+// (the host left, the connection was lost) returns to the lobby with the reason in red.
+static void EndNet(bool notice)
+{
+    if (notice) Lobby_SetNotice(&g_lobby, g_session.error);
+    NetSession_Leave(&g_session);
+    Lobby_BackHome(&g_lobby);
+    g_walkBegun = false;
+    g_screen = SCREEN_LOBBY;
+}
+
+static void NetWaitFrame(void)
 {
     float dt = GetFrameTime();
     if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
@@ -268,20 +295,74 @@ static void NetFrame(void)
     MenuAudio(dt, menu.gesture);
     NetSession_Update(&g_session, NetUdp_NowMs());
 
-    if (leave) {
-        NetSession_Leave(&g_session);
-        Lobby_BackHome(&g_lobby);
-        g_screen = SCREEN_LOBBY;
-    } else if (g_session.state == NETS_FAILED || g_session.state == NETS_ENDED) {
-        Lobby_BackHome(&g_lobby);
-        Lobby_SetNotice(&g_lobby, g_session.error);
-        NetSession_Leave(&g_session);
-        g_screen = SCREEN_LOBBY;
-    }
+    if (leave) EndNet(false);
+    else if (g_session.state == NETS_FAILED || g_session.state == NETS_ENDED) EndNet(true);
 
     BeginDrawing();
         SessionUI_Draw(&g_session, Input_Scheme() == INPUT_SCHEME_KEYBOARD);
     EndDrawing();
+}
+
+static void NetWalkFrame(void)
+{
+    float dt = GetFrameTime();
+    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+    if (!g_walkBegun) {                                   // the first frame of the walk: the lights of the session's floor
+        PlayUI_Begin(&g_session);
+        g_netLightingDirty = true;
+        g_walkBegun = true;
+    }
+    const PlayerController *me = &g_session.client.player;
+
+    // What the player wants this frame: the same controls as solo, with the buttons the walk has. LEAVE only takes taps.
+    InputContext ictx = { 0 };
+    ictx.dt = dt;
+    ictx.aimMode = TC_DEFAULT_AIM_MODE;
+    ictx.slideAvailable = NetPlay_SlideShown(me);
+    ictx.diveAvailable = NetPlay_DiveShown(me);
+    { const UiRect lv = SessionUI_Leave(); ictx.blocked[ictx.blockedCount++] = lv; }
+    InputFrame in;
+    Input_Update(&ictx, &in);
+    NetPlay_Input(&g_netPlay, &in, MAX_LOOK_PX);          // the view turns now; the commands go out at the tick
+
+    bool leave = false;
+    Vector2 tap = { 0 };
+    if (Input_NewTap(&tap) && UiRect_Contains(SessionUI_Leave(), tap.x, tap.y)) leave = true;
+    if (in.inventoryToggle) { if (g_leaveArmed > 0.0f) leave = true; else g_leaveArmed = 3.0f; }     // Tab twice (nothing else uses it here)
+    if (g_leaveArmed > 0.0f) g_leaveArmed -= dt;
+
+    const double nowMs = NetUdp_NowMs();
+    NetSession_Update(&g_session, nowMs);                 // runs the ticks that are due, asking NetPlay for each command
+    if (leave) { EndNet(false); return; }
+    if (g_session.state == NETS_FAILED || g_session.state == NETS_ENDED) { EndNet(true); return; }
+
+    Camera3D cam;
+    NetPlay_Camera(&g_netPlay, &g_session.client, &cam);
+    {
+        const float fl = sqrtf((cam.target.x - cam.position.x) * (cam.target.x - cam.position.x) + (cam.target.z - cam.position.z) * (cam.target.z - cam.position.z));
+        const float fx = fl > 0.0001f ? (cam.target.x - cam.position.x) / fl : 0.0f, fz = fl > 0.0001f ? (cam.target.z - cam.position.z) / fl : 1.0f;
+        Audio_Update(dt, cam.position, fx, fz, in.gesture);
+        AudioEvents_Movement(dt, PlayerSpeed(me), me->isGrounded, me->velocityY, me->sprinting, me->sliding, me->exhausted, me->health.isAlive);
+    }
+    Lighting_Update((float)GetTime());
+    BeginDrawing();
+        ClearBackground(BLACK);
+        Highp_Begin();
+        BeginMode3D(cam);
+            ViewClip_Apply(&cam, WORLD_NEAR, WORLD_FAR);
+            PlayUI_Draw3D(&g_session, &cam, nowMs);
+            Highp_FlashlightOff();
+        EndMode3D();
+        PlayUI_DrawTags(&g_session, &cam, nowMs);
+        PlayUI_DrawOverlay(&g_session, Input_Scheme() == INPUT_SCHEME_KEYBOARD, g_leaveArmed > 0.0f);
+        Highp_End();
+    EndDrawing();
+}
+
+static void NetFrame(void)
+{
+    if (g_session.state == NETS_PLAYING) NetWalkFrame();
+    else NetWaitFrame();
 }
 
 static void SelectFrame(void)
@@ -314,6 +395,8 @@ static void SelectFrame(void)
 
 static void Frame(void)
 {
+    // A session has no props yet (the server has none), so while one is on, the player's movement must not meet solo's: see obstacles.h.
+    Obstacles_Suspend(g_session.state == NETS_CONNECTING || g_session.state == NETS_PLAYING);
     if (g_screen == SCREEN_LOBBY) { LobbyFrame(); return; }
     if (g_screen == SCREEN_CHARACTER) { SelectFrame(); return; }
     if (g_screen == SCREEN_NET) { NetFrame(); return; }
@@ -474,8 +557,11 @@ static void Frame(void)
             const double tHands0 = GetTime();
             if (g_sim.player.health.isAlive) {
                 const float walk01 = PlayerSpeed(&g_sim.player) / PLAYER_WALK_SPEED > 1.5f ? 1.5f : PlayerSpeed(&g_sim.player) / PLAYER_WALK_SPEED;
-                Viewmodel_DrawAimed(&g_sim.arsenal, &viewAim, g_sim.player.isGrounded ? walk01 : 0.0f, (float)GetTime(), Lighting_AtPoint(g_sim.player.position),
-                                    PlayerAimEase(aimView));
+                // Aimed and moving left or right, the gun tilts a little toward the move (eased over a tenth of a second).
+                static float strafeSway = 0.0f;
+                strafeSway = Viewmodel_StrafeSwayStep(strafeSway, PlayerStrafe01(&g_sim.player), dt);
+                Viewmodel_DrawAimedSway(&g_sim.arsenal, &viewAim, g_sim.player.isGrounded ? walk01 : 0.0f, (float)GetTime(), Lighting_AtPoint(g_sim.player.position),
+                                        PlayerAimEase(aimView), strafeSway);
             }
             SubNote(SUB_HANDS, tHands0, GetTime());
         EndMode3D();

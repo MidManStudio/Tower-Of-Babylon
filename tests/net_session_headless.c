@@ -2,14 +2,16 @@
 // host module with the host playing as a client of its own game), others join by address, the lobby's announcement is read back by a real
 // searcher, a fifth player is turned away, players leave, the host leaves, and the failures say why. No window, no raylib calls. Takes a few
 // seconds (the clock is the real one). Run from the project root:
-//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
+//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
 #ifdef NET_SESSION_HEADLESS_TEST
 
 #define _POSIX_C_SOURCE 200809L
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
+#include "net/net_play.h"
 #include "net/net_session.h"
 #include "platform/platform.h"
 
@@ -163,6 +165,41 @@ int main(void)
             const int announced = Announced(host.host.port);
             Check(announced == 2, "a searcher is now told two players: the announcement follows the game");
         }
+    }
+
+    printf("\nwalking together\n");
+    {
+        static NetPlay hostPlay, joinPlay;
+        NetPlay_Init(&hostPlay, 0.0f); NetPlay_Init(&joinPlay, 0.0f);
+        NetSession_SetCommands(&host, NetPlay_CmdFn, &hostPlay);
+        NetSession_SetCommands(&a, NetPlay_CmdFn, &joinPlay);
+        Watch(&host, &a, NULL, NULL, NULL);
+        const Vector3 h0 = host.client.player.position, j0 = a.client.player.position;
+        InputFrame fwd; memset(&fwd, 0, sizeof fwd);
+        fwd.move = (Vector2){ 0.0f, -1.0f };
+        InputFrame none; memset(&none, 0, sizeof none);
+        const double start = NetUdp_NowMs();
+        while (NetUdp_NowMs() - start < 2000.0) {                       // 2 s of the host's stick forward, the joiner standing, a 60 Hz screen
+            NetPlay_Input(&hostPlay, &fwd, 90.0f); NetPlay_Input(&joinPlay, &none, 90.0f);
+            const double now = NetUdp_NowMs();
+            NetSession_Update(&host, now); NetSession_Update(&a, now);
+            SleepMs(16);
+        }
+        const Vector3 h1 = host.client.player.position, j1 = a.client.player.position;
+        Check(hypotf(h1.x - h0.x, h1.z - h0.z) > 3.0f, "the host walked: its commands came from NetSession_SetCommands, not from standing still");
+        Check(hypotf(j1.x - j0.x, j1.z - j0.z) < 0.05f, "the joiner, who pushed nothing, stayed");
+        Vector3 seen; float yaw;
+        const bool sees = NetClient_RemoteView(&a.client, 0, NetUdp_NowMs(), &seen, &yaw);
+        Check(sees && hypotf(seen.x - h0.x, seen.z - h0.z) > 2.0f && hypotf(seen.x - h1.x, seen.z - h1.z) < 2.0f, "and the joiner sees the host over there, where it walked to, through a real socket");
+        const bool seesJ = NetClient_RemoteView(&host.client, 1, NetUdp_NowMs(), &seen, &yaw);
+        Check(seesJ && hypotf(seen.x - j1.x, seen.z - j1.z) < 0.3f, "and the host sees the joiner where it stands");
+        Check(host.client.corrections < 3 && a.client.corrections < 3, "with next to no corrections: what each side guessed was what the server did");
+        NetSession_SetCommands(&host, NULL, NULL);
+        NetSession_SetCommands(&a, NULL, NULL);
+        const Vector3 hs = host.client.player.position;
+        const double st2 = NetUdp_NowMs();
+        while (NetUdp_NowMs() - st2 < 1200.0) { const double now = NetUdp_NowMs(); NetSession_Update(&host, now); NetSession_Update(&a, now); SleepMs(16); }
+        Check(hypotf(host.client.player.position.x - hs.x, host.client.player.position.z - hs.z) < 1.5f, "with no one naming the commands again they are stand-still: the player slows to a stop (the default is kept)");
     }
 
     printf("\nfilling up, being turned away, leaving\n");

@@ -956,6 +956,91 @@ int main(void)
         Check(w0.count == w1.count && w0.parts[0].a.x == w1.parts[0].a.x, "Viewmodel_Build is the hip pose of the same function");
     }
 
+    printf("Aimed gun sway to the side\n");
+    {
+        const AimFrame cm = { { 0, 0, 0 }, { 0, 0, -1 }, { 1, 0, 0 }, { 0, 1, 0 } };
+        Check(Viewmodel_StrafeTilt(0.0f, 1.0f) == 0.0f && Viewmodel_StrafeTilt(1.0f, 0.0f) == 0.0f, "no tilt standing still, and none at the hip");
+        Check(Viewmodel_StrafeTilt(1.0f, 1.0f) < 0.0f && Viewmodel_StrafeTilt(-1.0f, 1.0f) > 0.0f && Near(Viewmodel_StrafeTilt(1.0f, 1.0f), -Viewmodel_StrafeTilt(-1.0f, 1.0f), 1e-6f), "moving right turns the roll one way and moving left the other, the same amount");
+        Check(Near(Viewmodel_StrafeTilt(1.0f, 1.0f), -0.08f, 1e-6f) && Near(Viewmodel_StrafeTilt(0.5f, 1.0f), -0.04f, 1e-6f) && Near(Viewmodel_StrafeTilt(1.0f, 0.5f), -0.04f, 1e-6f), "a full strafe aimed is 0.08 rad (4.6 degrees); half the move or half the aim is half the tilt");
+        Check(Near(Viewmodel_StrafeTilt(3.0f, 1.0f), -0.08f, 1e-6f) && Near(Viewmodel_StrafeTilt(-3.0f, 2.0f), 0.08f, 1e-6f), "and it never goes beyond the full one");
+
+        const WeaponId guns[3] = { WEAPON_PISTOL, WEAPON_SHOTGUN, WEAPON_RIFLE };
+        for (int gi = 0; gi < 3; ++gi) {
+            Arsenal hv; PartList flat, right, left, hip, half;
+            Arsenal_Init(&hv); Arsenal_Give(&hv, guns[gi]); hv.equipT = 1.0f;
+            Viewmodel_BuildAimedSway(&flat, &hv, &cm, 0.0f, 1.0f, 1.0f, 0.0f);
+            Viewmodel_BuildAimedSway(&right, &hv, &cm, 0.0f, 1.0f, 1.0f, 1.0f);
+            Viewmodel_BuildAimedSway(&left, &hv, &cm, 0.0f, 1.0f, 1.0f, -1.0f);
+            Viewmodel_BuildAimedSway(&hip, &hv, &cm, 0.0f, 1.0f, 0.0f, 1.0f);
+            Viewmodel_BuildAimedSway(&half, &hv, &cm, 0.0f, 1.0f, 0.5f, 1.0f);
+            PartList hipFlat, halfFlat;
+            Viewmodel_BuildAimedSway(&hipFlat, &hv, &cm, 0.0f, 1.0f, 0.0f, 0.0f);
+            Viewmodel_BuildAimedSway(&halfFlat, &hv, &cm, 0.0f, 1.0f, 0.5f, 0.0f);
+            const float roll = Viewmodel_StrafeTilt(1.0f, 1.0f), c = cosf(roll), s = sinf(roll);
+            int rigid = right.count == flat.count, topRight = 1, bottomLeft = 1, mirrored = left.count == flat.count, sameZ = 1, hipSame = hip.count == hipFlat.count;
+            int upTurns = 1, orientedCount = 0, halfOk = half.count == halfFlat.count;
+            float moved = 0.0f;
+            for (int k = 0; rigid && k < flat.count; ++k) {
+                const Vector3 pts[2][2] = { { flat.parts[k].a, right.parts[k].a }, { flat.parts[k].b, right.parts[k].b } };
+                for (int e = 0; e < 2; ++e) {
+                    const Vector3 f = pts[e][0], r = pts[e][1];
+                    if (!Near(r.x, f.x * c - f.y * s, 1e-5f) || !Near(r.y, f.x * s + f.y * c, 1e-5f)) rigid = 0;
+                    if (!Near(r.z, f.z, 1e-6f)) sameZ = 0;
+                    if (f.y > 0.05f && !(r.x > f.x)) topRight = 0;
+                    if (f.y < -0.05f && !(r.x < f.x)) bottomLeft = 0;
+                    moved += fabsf(r.x - f.x) + fabsf(r.y - f.y);
+                }
+                const Vector3 uf = flat.parts[k].upHint, ur = right.parts[k].upHint;
+                const int oriented = flat.parts[k].sides == 4 || flat.parts[k].flat != 1.0f;            // boxes and flattened blobs: the round ones have no side to turn
+                if (oriented) { orientedCount++; if (!Near(ur.x, uf.x * c - uf.y * s, 1e-5f) || !Near(ur.y, uf.x * s + uf.y * c, 1e-5f)) upTurns = 0; }
+                const Vector3 ml = left.parts[k].a, mf = flat.parts[k].a;
+                if (!Near(ml.x, mf.x * c + mf.y * s, 1e-5f) || !Near(ml.y, -mf.x * s + mf.y * c, 1e-5f)) mirrored = 0;
+            }
+            for (int k = 0; hipSame && k < hip.count; ++k)
+                if (hip.parts[k].a.x != hipFlat.parts[k].a.x || hip.parts[k].a.y != hipFlat.parts[k].a.y || hip.parts[k].b.x != hipFlat.parts[k].b.x) hipSame = 0;
+            const float halfRoll = Viewmodel_StrafeTilt(1.0f, 0.5f);
+            for (int k = 0; halfOk && k < half.count; ++k) {
+                const Vector3 f = halfFlat.parts[k].a, r = half.parts[k].a;
+                if (!Near(r.x, f.x * cosf(halfRoll) - f.y * sinf(halfRoll), 1e-5f) || !Near(r.y, f.x * sinf(halfRoll) + f.y * cosf(halfRoll), 1e-5f)) halfOk = 0;
+            }
+            char what[200];
+            snprintf(what, sizeof what, "%s: moving right, aimed, the whole gun and both hands turn as one about the view's centre line by the tilt (nothing sheared, nothing moved in depth)", Weapon_IdString(guns[gi]));
+            Check(rigid && sameZ && moved > 0.001f, what);
+            Check(topRight && bottomLeft, "the top of it leans toward the move (right) and the bottom the other way");
+            Check(mirrored, "moving left is the same turn the other way");
+            Check(upTurns && orientedCount >= 5, "the cross-sections' flat sides turn with it (the boxes are not left square to the screen)");
+            Check(hipSame, "at the hip a strafe changes nothing");
+            Check(halfOk, "half way into the aim it is half the tilt");
+        }
+        // The point on the centre line (where the sights are) does not move: a part sitting at x = 0, y = 0 stays there.
+        Arsenal pv; PartList p0, p1;
+        Arsenal_Init(&pv); Arsenal_Give(&pv, WEAPON_PIPE); pv.equipT = 1.0f;
+        Viewmodel_BuildAimedSway(&p0, &pv, &cm, 0.0f, 1.0f, 1.0f, 0.0f);
+        Viewmodel_BuildAimedSway(&p1, &pv, &cm, 0.0f, 1.0f, 1.0f, 1.0f);
+        int same = p0.count == p1.count;
+        for (int k = 0; same && k < p0.count; ++k) same = p0.parts[k].a.x == p1.parts[k].a.x && p0.parts[k].a.y == p1.parts[k].a.y && p0.parts[k].b.x == p1.parts[k].b.x;
+        Check(same, "the pipe and the hands have no sights: asking for a strafe tilt changes nothing");
+        Arsenal bv; PartList b0, b1;
+        Arsenal_Init(&bv); Arsenal_Give(&bv, WEAPON_RIFLE); bv.equipT = 1.0f;
+        Viewmodel_BuildAimed(&b0, &bv, &cm, 0.7f, 0.4f, 0.8f);
+        Viewmodel_BuildAimedSway(&b1, &bv, &cm, 0.7f, 0.4f, 0.8f, 0.0f);
+        int same2 = b0.count == b1.count;
+        for (int k = 0; same2 && k < b0.count; ++k) same2 = b0.parts[k].a.x == b1.parts[k].a.x && b0.parts[k].a.y == b1.parts[k].a.y && b0.parts[k].b.z == b1.parts[k].b.z;
+        Check(same2, "Viewmodel_BuildAimed is the same function with no strafe");
+
+        // The easing.
+        Check(Near(Viewmodel_StrafeSwayStep(0.0f, 1.0f, 0.0f), 0.0f, 1e-9f) && Near(Viewmodel_StrafeSwayStep(0.3f, 0.3f, 0.05f), 0.3f, 1e-6f), "no time passes, or already there: no change");
+        Check(Near(Viewmodel_StrafeSwayStep(0.0f, 1.0f, 0.10f), 1.0f - expf(-1.0f), 1e-5f), "after the easing time (0.1 s) it has gone about two thirds of the way");
+        float v = 0.0f; int mono = 1, noOver = 1;
+        for (int i = 0; i < 120; ++i) { const float n = Viewmodel_StrafeSwayStep(v, 1.0f, 1.0f / 60.0f); if (n < v) mono = 0; if (n > 1.0f) noOver = 0; v = n; }
+        Check(mono && noOver && v > 0.99f, "in frames of 1/60 s it climbs steadily to the target and never goes past it (two seconds: over 0.99)");
+        v = 1.0f; for (int i = 0; i < 120; ++i) v = Viewmodel_StrafeSwayStep(v, -1.0f, 1.0f / 60.0f);
+        Check(v < -0.99f && v >= -1.0f, "and swings to the other side the same way");
+        Check(Near(Viewmodel_StrafeSwayStep(0.0f, 5.0f, 10.0f), 1.0f, 1e-4f) && Viewmodel_StrafeSwayStep(0.0f, 5.0f, 0.05f) <= 1.0f, "a target past 1 is held at 1");
+        const float a1 = Viewmodel_StrafeSwayStep(Viewmodel_StrafeSwayStep(0.0f, 1.0f, 0.05f), 1.0f, 0.05f), a2 = Viewmodel_StrafeSwayStep(0.0f, 1.0f, 0.10f);
+        Check(Near(a1, a2, 1e-5f), "two half steps are one whole one (it does not depend on the frame rate)");
+    }
+
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");
     return g_failures ? 1 : 0;
 }

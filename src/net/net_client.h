@@ -55,6 +55,7 @@ typedef struct {
     int             marginN;
 
     Vector3         errOffset;                 // the visible jump of a correction, fading away: draw the player at position + errOffset
+    Vector3         prevPos;                   // where the player was before the newest tick: drawing between the two ticks blends from here
 
     unsigned        corrections, hardSnaps, snapshotsSeen, snapshotsOld, ticksRun, starved;
     float           lastError, maxError;
@@ -67,6 +68,10 @@ int  NetClient_Update(NetClient *c, double nowMs, NetCmdFn fn, void *user);
 void NetClient_Leave(NetClient *c);                                                         // tells the server and closes
 
 Vector3 NetClient_ViewPos(const NetClient *c);                                              // where to draw the player: predicted, plus the fading jump
+// The same, between the last two ticks: alpha is 0 at the older and 1 at the newest (NetClient_Alpha is how far the next tick has got), so
+// a screen faster than the 30 ticks a second still sees smooth movement. A correction does not show as a jump here either.
+Vector3 NetClient_ViewPosAt(const NetClient *c, float alpha);
+float   NetClient_Alpha(const NetClient *c);                                                // 0 to 1: how far the next tick is from the last
 // Where another player is drawn, nowMs; false when no snapshot has had them. Between two snapshots, a little in the past; past the newest, held.
 bool NetClient_RemoteView(const NetClient *c, uint8_t id, double nowMs, Vector3 *pos, float *yaw);
 

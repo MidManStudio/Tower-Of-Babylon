@@ -12,7 +12,7 @@
 #define TWO_PI 6.28318530718f
 #define PITCH_MAX 1.5533430f                 // 89 degrees
 
-NetCmd NetCmd_Make(float moveX, float moveY, float yawRad, float pitchRad, uint8_t buttons)
+NetCmd NetCmd_Make(float moveX, float moveY, float yawRad, float pitchRad, uint16_t buttons)
 {
     NetCmd c;
     if (!(moveX == moveX)) moveX = 0.0f;                                   // NaN to nothing
@@ -46,24 +46,26 @@ void NetCmd_Move(const NetCmd *c, float *x, float *y)
 float NetCmd_Yaw(const NetCmd *c) { return (float)c->yaw / 65536.0f * TWO_PI; }
 float NetCmd_Pitch(const NetCmd *c) { return (float)c->pitch / 32767.0f * PITCH_MAX; }
 
-static void PutCmd(NetW *w, const NetCmd *c) { NetW_I8(w, c->moveX); NetW_I8(w, c->moveY); NetW_U16(w, c->yaw); NetW_I16(w, c->pitch); NetW_U8(w, c->buttons); }
-static void GetCmd(NetR *r, NetCmd *c) { c->moveX = NetR_I8(r); c->moveY = NetR_I8(r); c->yaw = NetR_U16(r); c->pitch = NetR_I16(r); c->buttons = NetR_U8(r); }
+static void PutCmd(NetW *w, const NetCmd *c) { NetW_I8(w, c->moveX); NetW_I8(w, c->moveY); NetW_U16(w, c->yaw); NetW_I16(w, c->pitch); NetW_U16(w, c->buttons); }
+static void GetCmd(NetR *r, NetCmd *c) { c->moveX = NetR_I8(r); c->moveY = NetR_I8(r); c->yaw = NetR_U16(r); c->pitch = NetR_I16(r); c->buttons = NetR_U16(r); }
 
 static void PutOwner(NetW *w, const NetOwnerState *o)
 {
-    const float f[15] = { o->px, o->py, o->pz, o->velY, o->moveVx, o->moveVz, o->knockX, o->knockZ, o->stamina, o->staminaDelay,
-                          o->slideT, o->slideSpeed0, o->slideCooldown, o->slideDirX, o->slideDirZ };
-    for (int i = 0; i < 15; ++i) NetW_F32(w, f[i]);
+    const float f[20] = { o->px, o->py, o->pz, o->velY, o->moveVx, o->moveVz, o->knockX, o->knockZ, o->stamina, o->staminaDelay,
+                          o->slideT, o->slideSpeed0, o->slideCooldown, o->slideDirX, o->slideDirZ,
+                          o->diveT, o->diveDirX, o->diveDirZ, o->lieStickX, o->lieStickY };
+    for (int i = 0; i < 20; ++i) NetW_F32(w, f[i]);
     NetW_U8(w, o->flags);
 }
 static bool GetOwner(NetR *r, NetOwnerState *o)
 {
-    float f[15];
-    for (int i = 0; i < 15; ++i) { f[i] = NetR_F32(r); if (!isfinite(f[i])) return false; }
+    float f[20];
+    for (int i = 0; i < 20; ++i) { f[i] = NetR_F32(r); if (!isfinite(f[i])) return false; }
     o->px = f[0]; o->py = f[1]; o->pz = f[2]; o->velY = f[3]; o->moveVx = f[4]; o->moveVz = f[5]; o->knockX = f[6]; o->knockZ = f[7];
     o->stamina = f[8]; o->staminaDelay = f[9]; o->slideT = f[10]; o->slideSpeed0 = f[11]; o->slideCooldown = f[12]; o->slideDirX = f[13]; o->slideDirZ = f[14];
+    o->diveT = f[15]; o->diveDirX = f[16]; o->diveDirZ = f[17]; o->lieStickX = f[18]; o->lieStickY = f[19];
     o->flags = NetR_U8(r);
-    return (o->flags & ~(NET_OWN_GROUNDED | NET_OWN_EXHAUSTED | NET_OWN_SPRINTING | NET_OWN_SLIDING)) == 0;
+    return true;                                                           // all eight flag bits mean something
 }
 
 static bool CharacterOk(const char *s, size_t n)                          // lowercase letters, digits and _ (a roster id), at most NET_CHARACTER_LEN - 1

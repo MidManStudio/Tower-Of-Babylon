@@ -16,8 +16,7 @@
 // stand in words the lobby can show. HOSTING runs a NetHost (the server, its socket, its announcer) and the host plays as one more client of
 // its own game, over a real connection to 127.0.0.1 (the same path every other player takes, so there is one way to play, not two). JOINING
 // dials a game found in the lobby. The caller calls NetSession_Update once per frame and looks at `state`.
-// Until walking together exists the player's commands are all "stand still": the client runs, the server runs the player where the floor put
-// them, and the players see each other in the list, not in the world (docs/net.md, "what comes next").
+// The player's commands come from whoever NetSession_SetCommands names (the walking screen: net_play.h); until one is named they are all "stand still".
 #define NETS_NAME_MAX           24
 #define NETS_CONNECT_TIMEOUT_MS 6000.0     // a join that has no answer by then fails ("NO ANSWER")
 
@@ -34,6 +33,8 @@ typedef struct {
     NetHost         host;
     NetDial         dial;
     NetClient       client;
+    NetCmdFn        cmdFn;                       // where the player's commands come from (NetSession_SetCommands); stand still when not set
+    void           *cmdUser;
 } NetSession;
 
 bool NetSession_CanHost(void);                   // this platform has UDP (a browser does not)
@@ -41,6 +42,9 @@ bool NetSession_CanHost(void);                   // this platform has UDP (a bro
 bool NetSession_Host(NetSession *s, int transport, const char *lobbyName, const char *character, uint32_t floorSeed, double nowMs);
 // Join the game at address:port. Returns at once with state CONNECTING; the answer shows in later updates (PLAYING, or FAILED with a reason).
 bool NetSession_Join(NetSession *s, int transport, const char *address, uint16_t port, const char *name, const char *character, double nowMs);
+// Who gives the player's command for each tick: NetPlay_CmdFn with a NetPlay walks (net_play.h). Not set (the default after Host and Join), the
+// player stands still. Set it after Host or Join returned: both start the session from nothing.
+void NetSession_SetCommands(NetSession *s, NetCmdFn fn, void *user);
 void NetSession_Update(NetSession *s, double nowMs);            // once per frame
 void NetSession_Leave(NetSession *s);                           // say goodbye and close everything (a moment of waiting for the goodbye to go out); the state is IDLE after; safe to call at any time
 int  NetSession_Slots(const NetSession *s, NetSessionSlot out[NET_MAX_PLAYERS]);   // who is in the game, in id order

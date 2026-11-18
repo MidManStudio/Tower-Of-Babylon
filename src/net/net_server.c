@@ -145,7 +145,7 @@ void NetServer_Tick(NetServer *s, double nowMs)
             cl->lastCmd = cmd; cl->repeats = 0; ++cl->ticksFed;
         } else if (cl->repeats < NET_MAX_REPEAT) {                                           // did not arrive: go on as before, minus one-off presses
             cmd = cl->lastCmd;
-            cmd.buttons = (uint8_t)(cmd.buttons & ~(NET_BTN_JUMP | NET_BTN_USE | NET_BTN_SWAP | NET_BTN_LIGHT | NET_BTN_SLIDE));
+            cmd.buttons = (uint16_t)(cmd.buttons & ~(NET_BTN_JUMP | NET_BTN_USE | NET_BTN_SWAP | NET_BTN_LIGHT | NET_BTN_SLIDE | NET_BTN_DIVE | NET_BTN_RELOAD));
             ++cl->repeats; ++cl->ticksRepeated;
         } else {                                                                              // silent for too long: stop, keeping the aim
             cmd = cl->lastCmd; cmd.moveX = 0; cmd.moveY = 0; cmd.buttons = 0;

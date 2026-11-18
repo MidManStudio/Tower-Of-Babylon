@@ -13,7 +13,7 @@
 // replaced by the next, and the client repeats its last few commands in every Input so that a lost one is rarely missed) and a reliable,
 // ordered channel (Hello, Welcome, Disconnect). Every packet starts with 'T' 'B' and a kind byte. Decoding checks everything (lengths,
 // counts, finite numbers, known flag bits, leftover bytes) and refuses what is wrong; nothing a stranger sends can run off a buffer.
-#define NET_PROTOCOL_VERSION 1
+#define NET_PROTOCOL_VERSION 2             // 2: the buttons are 16 bits (dive, reload) and the owner's state carries a dive
 #define NET_TICK_RATE        30
 #define NET_TICK_SECS        (1.0f / 30.0f)
 #define NET_MAX_PLAYERS      4
@@ -21,26 +21,29 @@
 #define NET_INPUT_REDUNDANCY 4             // an Input carries this many commands: the newest tick and the three before it
 #define NET_CHARACTER_LEN    24            // a character id, as in the roster (characters/characters.h), with its end
 
-enum {                                     // what the player's hands are doing at a tick
+enum {                                     // what the player's hands are doing at a tick (16 bits on the wire: the first eight were full)
     NET_BTN_SPRINT = 1, NET_BTN_USEHELD = 2, NET_BTN_JUMP = 4, NET_BTN_FIRE = 8,
-    NET_BTN_USE = 16, NET_BTN_SWAP = 32, NET_BTN_LIGHT = 64, NET_BTN_SLIDE = 128
+    NET_BTN_USE = 16, NET_BTN_SWAP = 32, NET_BTN_LIGHT = 64, NET_BTN_SLIDE = 128,
+    NET_BTN_DIVE = 256, NET_BTN_RELOAD = 512
 };
 
 // One tick of the player's wishes, already rounded to what the wire carries: both ends run the game from this rounded command, so
 // the client's prediction and the server's simulation start from the same numbers.
-typedef struct { int8_t moveX, moveY; uint16_t yaw; int16_t pitch; uint8_t buttons; } NetCmd;
+typedef struct { int8_t moveX, moveY; uint16_t yaw; int16_t pitch; uint16_t buttons; } NetCmd;
 
-NetCmd NetCmd_Make(float moveX, float moveY, float yawRad, float pitchRad, uint8_t buttons);
+NetCmd NetCmd_Make(float moveX, float moveY, float yawRad, float pitchRad, uint16_t buttons);
 void   NetCmd_Move(const NetCmd *c, float *x, float *y);        // -1 to 1 each, the length held to 1 (a stranger's 127, 127 is not a faster walk)
 float  NetCmd_Yaw(const NetCmd *c);                             // radians, 0 up to a full turn
 float  NetCmd_Pitch(const NetCmd *c);                           // radians, a little short of straight up and down at most
 
 // What the owner is told about their own player: enough to put the movement back exactly (full floats, not rounded: a rounded
 // state could not be run on from).
-enum { NET_OWN_GROUNDED = 1, NET_OWN_EXHAUSTED = 2, NET_OWN_SPRINTING = 4, NET_OWN_SLIDING = 8 };
+enum { NET_OWN_GROUNDED = 1, NET_OWN_EXHAUSTED = 2, NET_OWN_SPRINTING = 4, NET_OWN_SLIDING = 8,
+       NET_OWN_DIVING = 16, NET_OWN_ROLLING = 32, NET_OWN_LYING = 64, NET_OWN_JUMPED_SPRINTING = 128 };
 typedef struct {
     float px, py, pz, velY, moveVx, moveVz, knockX, knockZ;
     float stamina, staminaDelay, slideT, slideSpeed0, slideCooldown, slideDirX, slideDirZ;
+    float diveT, diveDirX, diveDirZ, lieStickX, lieStickY;          // the dive, its roll and lying down after it
     uint8_t flags;
 } NetOwnerState;
 

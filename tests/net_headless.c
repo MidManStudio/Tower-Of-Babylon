@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "dungeon/dungeon_generator.h"
 #include "net/net_client.h"
 #include "net/net_loopback.h"
 #include "net/net_proto.h"
@@ -35,14 +36,14 @@ static int g_nClients, g_slot[NET_MAX_PLAYERS];
 static double g_now, g_nextSrvTick;
 static PlayerController g_srvHist[NET_MAX_PLAYERS][256];       // each player on the server, after every tick (to compare with what a client had predicted)
 static bool g_quiet[NET_MAX_PLAYERS];                          // a client that is made to say nothing
-static unsigned g_airTicks, g_sprintTicks, g_slideTicks;           // what the first player did on the server, to prove the script really jumps, sprints and slides
+static unsigned g_airTicks, g_sprintTicks, g_slideTicks, g_diveTicks;   // what the first player did on the server, to prove the script really jumps, sprints, slides and dives
 static float g_topSpeed, g_topHeight;
 
 static NetCmd Script(void *user, uint32_t t)
 {
     const int k = (int)(intptr_t)user;
     const int phase = (int)((t / 45u) % 10u), at = (int)(t % 45u);
-    float mx = 0.0f, my = 0.0f; uint8_t b = 0;
+    float mx = 0.0f, my = 0.0f; uint16_t b = 0;
     switch (phase) {
     case 0: my = -1.0f; break;
     case 1: my = -1.0f; b |= NET_BTN_SPRINT; break;
@@ -51,11 +52,21 @@ static NetCmd Script(void *user, uint32_t t)
     case 4: my = 1.0f; break;
     case 5: my = -1.0f; if (at == 10) b |= NET_BTN_JUMP; break;
     case 6: break;
-    case 7: mx = 0.7f; my = -0.7f; break;
+    case 7: mx = 1.0f; b |= NET_BTN_SPRINT; if (at == 20 || at == 32 || at == 42) b |= NET_BTN_DIVE; break;      // a sprint to the right, then a dive from the ground (tried a few times, like the slides)
     case 8: my = -1.0f; b |= NET_BTN_SPRINT; if (at == 12) b |= NET_BTN_JUMP; if (at == 30 || at == 42) b |= NET_BTN_SLIDE; break;
     default: my = -1.0f; break;
     }
     return NetCmd_Make(mx, my, 0.7f * (float)k + 0.02f * (float)t, 0.1f * sinf((float)t * 0.05f), b);
+}
+
+static NetCmdFn g_script = Script;                 // what the clients' fingers do (a test may swap it)
+static uint32_t g_oneShotTick;
+static NetCmd OneShot(void *user, uint32_t t)      // walk to the right; at one tick press sprint and dive together, then go quiet for good
+{
+    (void)user;
+    if (t < g_oneShotTick) return NetCmd_Make(1.0f, 0.0f, 0.0f, 0.0f, 0);
+    g_quiet[0] = true;
+    return NetCmd_Make(1.0f, 0.0f, 0.0f, 0.0f, NET_BTN_SPRINT | NET_BTN_DIVE);
 }
 
 static void World(int n, NetLinkCfg cfg, uint32_t seed)
@@ -64,7 +75,7 @@ static void World(int n, NetLinkCfg cfg, uint32_t seed)
     NetServer_Init(&g_srv, 12345u, 1);
     memset(g_srvHist, 0, sizeof g_srvHist);
     g_nextSrvTick = g_now + TICK_MS;
-    g_airTicks = g_sprintTicks = g_slideTicks = 0; g_topSpeed = g_topHeight = 0.0f;
+    g_airTicks = g_sprintTicks = g_slideTicks = g_diveTicks = 0; g_topSpeed = g_topHeight = 0.0f;
     for (int k = 0; k < n; ++k) {
         NetLoopback_Init(&g_lb[k], seed + (uint32_t)k * 77u);
         NetLoopback_SetBoth(&g_lb[k], cfg);
@@ -90,12 +101,13 @@ static void Step1ms(void)
             if (!q->isGrounded) ++g_airTicks;
             if (q->sprinting) ++g_sprintTicks;
             if (q->sliding) ++g_slideTicks;
+            if (q->diving || q->rolling) ++g_diveTicks;
             const float sp = hypotf(q->moveVel.x, q->moveVel.z);
             if (sp > g_topSpeed) g_topSpeed = sp;
             if (q->position.y > g_topHeight) g_topHeight = q->position.y;
         }
     }
-    for (int k = 0; k < g_nClients; ++k) if (!g_quiet[k]) NetClient_Update(&g_cl[k], g_now, Script, (void *)(intptr_t)k);
+    for (int k = 0; k < g_nClients; ++k) if (!g_quiet[k]) NetClient_Update(&g_cl[k], g_now, g_script, (void *)(intptr_t)k);
 }
 static void Run(double ms) { const double end = g_now + ms; while (g_now < end) Step1ms(); }
 
@@ -155,9 +167,9 @@ int main(void)
         msgs[1].kind = NET_MSG_WELCOME; msgs[1].u.welcome = (NetWelcome){ 1, 30, 2, 4, 0xCAFEF00Du, 7, 123456u, 73.5f, 13.5f };
         msgs[2].kind = NET_MSG_DISCONNECT; msgs[2].u.disc.reason = NET_DISC_FULL;
         msgs[3].kind = NET_MSG_INPUT; msgs[3].u.input.tick = 1000; msgs[3].u.input.ackServerTick = 990; msgs[3].u.input.count = 4;
-        for (int i = 0; i < 4; ++i) msgs[3].u.input.cmds[i] = NetCmd_Make(0.5f, -0.5f, (float)i, 0.1f, (uint8_t)(i * 17));
+        for (int i = 0; i < 4; ++i) msgs[3].u.input.cmds[i] = NetCmd_Make(0.5f, -0.5f, (float)i, 0.1f, (uint16_t)(i * 211));
         msgs[4].kind = NET_MSG_SNAPSHOT; msgs[4].u.snap.serverTick = 555; msgs[4].u.snap.started = 1; msgs[4].u.snap.margin = -3;
-        msgs[4].u.snap.owner = (NetOwnerState){ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, NET_OWN_GROUNDED | NET_OWN_SLIDING };
+        msgs[4].u.snap.owner = (NetOwnerState){ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, NET_OWN_GROUNDED | NET_OWN_SLIDING | NET_OWN_DIVING | NET_OWN_LYING | NET_OWN_JUMPED_SPRINTING };
         msgs[4].u.snap.nRemote = 3;
         for (int i = 0; i < 3; ++i) msgs[4].u.snap.remote[i] = (NetRemote){ (uint8_t)(i + 1), 1000 * i, -2000, 30000 + i, (uint16_t)(1000 * i), (int16_t)(-100 * i), NET_REM_SPRINTING };
         msgs[5].kind = NET_MSG_SNAPSHOT; msgs[5].u.snap.owner.px = 1.0f;
@@ -196,9 +208,9 @@ int main(void)
         uint8_t save[NET_MTU]; memcpy(save, buf, lens[4]);
         const float nan = NAN; memcpy(buf + 3 + 4 + 1 + 1, &nan, 4);
         Check(!NetProto_Decode(buf, lens[4], &o), "a Snapshot with a NaN in the owner's state is refused"); memcpy(buf, save, lens[4]);
-        buf[3 + 4 + 1 + 1 + 60] = 0xF0;
-        Check(!NetProto_Decode(buf, lens[4], &o), "unknown flag bits are refused"); memcpy(buf, save, lens[4]);
-        buf[3 + 4 + 1 + 1 + 61] = 9;
+        buf[3 + 4 + 1 + 1 + 80 + 1 + 1 + 1 + 12 + 4] = 0xF0;                           // the first other player's flags byte (the owner's eight flag bits all mean something now)
+        Check(!NetProto_Decode(buf, lens[4], &o), "unknown flag bits on another player are refused"); memcpy(buf, save, lens[4]);
+        buf[3 + 4 + 1 + 1 + 80 + 1] = 9;
         Check(!NetProto_Decode(buf, lens[4], &o), "more remote players than there are slots is refused"); memcpy(buf, save, lens[4]);
         NetMsg bad = msgs[0]; strcpy(bad.u.hello.character, "Steve!");
         Check(NetProto_Encode(&bad, buf, sizeof buf) == 0, "a character id with capitals or marks is not even sent");
@@ -338,6 +350,75 @@ int main(void)
         Check(fifth == -1 && g_cl[0].state == NETC_CLOSED && g_cl[0].closedReason == NET_DISC_FULL, "a fifth client on a four-player server is told it is full");
     }
 
+    printf("\nthe dive in the movement state\n");
+    {
+        static FloorMap fm;
+        GenerateFloorMap(&fm, 1, 4242u);
+        PlayerController a; NetSim_Spawn(&a, fm.startX, fm.startZ);
+        NetCmd go = NetCmd_Make(1.0f, 0.0f, 0.0f, 0.0f, NET_BTN_SPRINT), dive = NetCmd_Make(1.0f, 0.0f, 0.0f, 0.0f, NET_BTN_SPRINT | NET_BTN_DIVE);
+        for (int i = 0; i < 40; ++i) NetSim_Step(&a, &go, &fm);
+        Check(PlayerDiveAvailable(&a), "(a sprint to the right: the dive is there)");
+        NetSim_Step(&a, &dive, &fm);
+        Check(a.diving && !a.isGrounded, "the dive button starts a dive from the ground, on the command alone");
+        for (int i = 0; i < 6; ++i) NetSim_Step(&a, &go, &fm);
+        NetOwnerState o; NetSim_Capture(&a, &o);
+        Check((o.flags & NET_OWN_DIVING) && o.diveT > 0.1f && fabsf(o.diveDirX) > 0.5f, "mid-dive the owner's state says so: diving, how long, and which way");
+        PlayerController b; NetSim_Spawn(&b, 0.0f, 0.0f);
+        NetSim_Apply(&b, &o);
+        float worst = 0.0f;
+        for (int i = 0; i < 80; ++i) {
+            NetSim_Step(&a, &go, &fm); NetSim_Step(&b, &go, &fm);
+            const float d = hypotf(a.position.x - b.position.x, a.position.z - b.position.z) + fabsf(a.position.y - b.position.y);
+            if (d > worst) worst = d;
+        }
+        Check(worst < 1e-5f && a.lying == b.lying && a.rolling == b.rolling, "a player put back from that state goes on exactly like the original: through the landing, the roll and the lying down");
+        Check(NetSim_Error(&a, &o) > 5.0f, "(and a state that differs in the dive is a large error: it is a different second from now)");
+        PlayerController c; NetSim_Spawn(&c, fm.startX, fm.startZ);
+        NetOwnerState oc; NetSim_Capture(&c, &oc);
+        PlayerController d2 = c; d2.lying = true; d2.lieStick = (Vector2){ 0.5f, 0.5f };
+        NetOwnerState od; NetSim_Capture(&d2, &od);
+        PlayerController e; NetSim_Spawn(&e, fm.startX, fm.startZ);
+        NetSim_Apply(&e, &od);
+        Check(e.lying && e.lieStick.x == 0.5f && e.lieStick.y == 0.5f && NetSim_Error(&c, &od) > 5.0f && NetSim_Error(&e, &od) < 1e-4f, "lying down, and the stick it must be moved from, travel too");
+        PlayerController r3; NetSim_Spawn(&r3, fm.startX, fm.startZ);         // put back in the middle of the ROLL: how long it has rolled matters too
+        for (int i = 0; i < 40; ++i) NetSim_Step(&r3, &go, &fm);
+        NetSim_Step(&r3, &dive, &fm);
+        for (int i = 0; i < 200 && !(r3.rolling && r3.diveT > 0.15f); ++i) NetSim_Step(&r3, &go, &fm);
+        NetOwnerState orl; NetSim_Capture(&r3, &orl);
+        PlayerController r4; NetSim_Spawn(&r4, 0.0f, 0.0f);
+        NetSim_Apply(&r4, &orl);
+        float worstRoll = 0.0f; int stateSame = 1;
+        for (int i = 0; i < 60; ++i) {
+            NetSim_Step(&r3, &go, &fm); NetSim_Step(&r4, &go, &fm);
+            const float d = hypotf(r3.position.x - r4.position.x, r3.position.z - r4.position.z);
+            if (d > worstRoll) worstRoll = d;
+            if (r3.rolling != r4.rolling || r3.lying != r4.lying) stateSame = 0;
+        }
+        Check((orl.flags & NET_OWN_ROLLING) && orl.diveT > 0.15f && worstRoll < 1e-5f && stateSame, "put back in the middle of the roll it rolls for as long as the original and gets up (or lies) at the same moment");
+        NetCmd s = NetCmd_Make(0.0f, 0.0f, 0.0f, 0.0f, NET_BTN_DIVE | NET_BTN_RELOAD);
+        Check(s.buttons == (NET_BTN_DIVE | NET_BTN_RELOAD) && s.buttons > 255, "the buttons are 16 bits: dive and reload are past the first eight");
+    }
+
+    printf("\na press that is replayed for a command that did not arrive\n");
+    {
+        World(1, Link(0.0f, 0.0f, 0.0f, 0.0f), 21u);
+        g_script = OneShot;
+        g_oneShotTick = 0xFFFFFFFFu;
+        Run(1500.0);                                                         // joined and started
+        g_oneShotTick = g_cl[0].tick + 45;                                   // walks right for a second and a half (no sprint), then sprint and dive at once, then silence
+        NetServerClient *sc = &g_srv.c[g_slot[0]];
+        bool everDived = false, couldHave = false;
+        for (int i = 0; i < 2500; ++i) {
+            Step1ms();
+            if (g_quiet[0] && PlayerDiveAvailable(&sc->player)) couldHave = true;
+            if (g_quiet[0] && (sc->player.diving || sc->player.rolling || sc->player.lying)) everDived = true;
+        }
+        Check(g_quiet[0] && sc->ticksRepeated >= 3, "(the client went quiet right after that command: the server replayed it)");
+        Check(couldHave, "(and a moment later the player WAS sprinting sideways, where a dive is possible: a stale press would have worked)");
+        Check(!everDived, "the dive was a press: replayed for a command that did not arrive it is not pressed again, so no dive starts on it");
+        g_script = Script;
+    }
+
     printf("\nprediction with no delay at all\n");
     {
         World(1, Link(0.0f, 0.0f, 0.0f, 0.0f), 7u);
@@ -356,6 +437,33 @@ int main(void)
         Check(g_airTicks > 10 && g_topHeight > 0.5f, "the script's jumps really happen on the server");
         Check(g_sprintTicks > 30 && g_topSpeed > PLAYER_WALK_SPEED + 1.0f, "and its sprints (faster than a walk)");
         Check(g_slideTicks > 5, "and its slides");
+        printf("    (and %u ticks diving or rolling)\n", g_diveTicks);
+        Check(g_diveTicks > 10, "and its dives from the ground (the dive is on the wire now, and its state with it)");
+    }
+
+    printf("\nthe view between ticks, through a correction\n");
+    {
+        World(1, Link(0.0f, 0.0f, 0.0f, 0.0f), 11u);
+        Run(1500.0);
+        const unsigned c0 = g_cl[0].corrections;
+        g_srv.c[g_slot[0]].player.position.x += 0.6f;                            // the server moves the player: its answers now differ from the client's guess
+        g_srv.c[g_slot[0]].player.position.z -= 0.4f;
+        float worst = 0.0f; Vector3 last = NetClient_ViewPosAt(&g_cl[0], NetClient_Alpha(&g_cl[0]));
+        for (int i = 0; i < 600; ++i) {
+            Step1ms();
+            if (i % 16 == 0) {
+                const Vector3 v = NetClient_ViewPosAt(&g_cl[0], NetClient_Alpha(&g_cl[0]));
+                const float st = hypotf(hypotf(v.x - last.x, v.y - last.y), v.z - last.z);
+                if (st > worst) worst = st;
+                last = v;
+            }
+        }
+        Check(g_cl[0].corrections > c0, "(the client took the server's word)");
+        printf("    (biggest step of the view in a frame through a 0.72 m correction: %.3f m)\n", (double)worst);
+        Check(worst < 0.30f, "and the view did not jump: the 0.72 m is spread over the next ticks, not seen as one step");
+        const Vector3 end = NetClient_ViewPosAt(&g_cl[0], 1.0f), now = NetClient_ViewPos(&g_cl[0]);
+        Check(fabsf(end.x - now.x) < 1e-5f && fabsf(end.z - now.z) < 1e-5f, "at alpha 1 the blended view is the newest tick's, with the fading jump");
+        Check(fabsf(NetClient_ViewPosAt(&g_cl[0], 0.0f).x - (g_cl[0].prevPos.x + g_cl[0].errOffset.x)) < 1e-6f && NetClient_Alpha(&g_cl[0]) >= 0.0f && NetClient_Alpha(&g_cl[0]) <= 1.0f, "at alpha 0 it is the tick before, and alpha stays between 0 and 1");
     }
 
     printf("\nprediction over a bad network\n");
@@ -364,8 +472,16 @@ int main(void)
         Run(2000.0);
         const unsigned corr0 = g_cl[0].corrections, rep0 = g_srv.c[g_slot[0]].ticksRepeated, fed0 = g_srv.c[g_slot[0]].ticksFed, late0 = g_srv.c[g_slot[0]].cmdsLate;
         float maxView = 0.0f; double sumGap = 0.0; int gaps = 0;
+        float maxFrameStep = 0.0f; Vector3 lastView = NetClient_ViewPosAt(&g_cl[0], NetClient_Alpha(&g_cl[0])); int nonMonotone = 0;       // the view drawn every 16 ms, between the ticks
         for (int i = 0; i < 20000; ++i) {
             Step1ms();
+            if (i % 16 == 0) {
+                const Vector3 v = NetClient_ViewPosAt(&g_cl[0], NetClient_Alpha(&g_cl[0]));
+                const float st = hypotf(hypotf(v.x - lastView.x, v.y - lastView.y), v.z - lastView.z);
+                if (st > maxFrameStep) maxFrameStep = st;
+                if (!isfinite(v.x) || !isfinite(v.z)) nonMonotone = 1;
+                lastView = v;
+            }
             if (i % 33 == 0) {
                 const uint32_t T = g_srv.tick - 6;
                 const float g = PredictionGap(0, T);
@@ -381,6 +497,8 @@ int main(void)
         printf("    (%u server ticks: %.1f%% had no command in time; %u corrections; %u hard snaps; late commands %u; lead now %d ticks; mean gap %.4f m; biggest visible offset %.3f m)\n",
                ticks, starvedShare * 100.0, g_cl[0].corrections - corr0, g_cl[0].hardSnaps, sc->cmdsLate - late0, (int)g_cl[0].tick - (int)g_srv.tick, gaps ? sumGap / gaps : -1.0, (double)maxView);
         Check(g_cl[0].state == NETC_PLAYING && g_cl[0].hardSnaps == 0, "it stays connected, and never has to be put back from scratch");
+        printf("    (the view drawn every 16 ms never stepped more than %.3f m; the player's top speed is 9.5 m/s, 0.152 m per frame)\n", (double)maxFrameStep);
+        Check(maxFrameStep < 0.30f && !nonMonotone, "over a bad network the view between ticks moves smoothly, a step per frame no bigger than the top speed allows");
         Check(starvedShare < 0.02, "with 5% loss, a command is missing at its tick under 2% of the time (the repeats in every packet cover the rest)");
         Check((g_cl[0].corrections - corr0) < ticks / 20, "so the client's guess is wrong, and corrected, in under 5% of the ticks");
         Check(gaps > 100 && sumGap / gaps < 0.15, "on average the client's record of a tick is within 15 cm of the server's");

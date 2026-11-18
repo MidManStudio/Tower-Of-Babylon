@@ -19,9 +19,9 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `lighting_headless.c` | ceiling lights, light map, line of sight | `lighting.md` |
 | `highp_headless.c` | the shaders' text and the beam calls | `lighting.md`, `flashlight.md` |
 | `health_headless.c` | health and damage | `player.md` |
-| `movement_headless.c` | velocity, omni sprint, forward-only slide, stamina, noise, aiming down sights, automatic corner leaning, dive, roll and lying (stays down until the stick is moved; the camera never below the floor), the stim shot | `player.md` |
+| `movement_headless.c` | velocity, omni sprint, forward-only slide, stamina, noise, aiming down sights, automatic corner leaning, sprinting beside a wall (the lean stays), the strafe amount, dive, roll and lying (stays down until the stick is moved; the camera never below the floor), the stim shot | `player.md` |
 | `enemies_headless.c`, `spider_headless.c` | enemy AI and spiders | `enemies.md` |
-| `weapons_headless.c` | arsenal, fire modes, magazines and reloading, melee durability, aiming-down-sights numbers and pose, pickups, models, shots at real enemies | `weapons.md` |
+| `weapons_headless.c` | arsenal, fire modes, magazines and reloading, melee durability, aiming-down-sights numbers and pose (and the gun's strafe tilt), pickups, models, shots at real enemies | `weapons.md` |
 | `projectiles_headless.c` | patterns, falloff, swept hits, piercing, tracers, `Gunfire_Shoot` | `projectiles.md` |
 | `inventory_headless.c` | items (the stim shot included), stacks, the inventory and its touch screen | `inventory.md` |
 | `sim_headless.c` | the input latch (dive included), the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
@@ -37,6 +37,8 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `characters_headless.c` | the roster file and its loader, the choice kept as an id, the selection screen's taps, keys, BACK, reopening and layout, the word wrap, and that every shipped text fits its room | `characters.md` |
 | `lobby_headless.c` | the lobby: the logic and layout of both screens, the keyboard and taps, the search lifecycle and the list of games (with scrolling) against a scripted backend, and the real backend over the LAN discovery with a host answering on this machine | `lobby.md` |
 | `net_session_headless.c` | real hosted and joined games over real UDP on this machine: hosting, joining, the lists of players, a full game, leaving, the host leaving, a join nobody answers, two hosts on one machine; about 5 seconds in real time | `net.md` |
+| `net_play_headless.c` | walking in a networked game: the buttons and the command, the look turned at once, the camera between ticks, and two players on a loopback link walking, turning, sprinting, diving and seeing each other through the real input path | `net.md` |
+| `obstacles_headless.c` | the props' suspend switch (a networked game has no props): collision and drawing off and back on | `net.md` |
 | `config_headless.c` | the config layer, the baked tables, bad documents | `config.md` |
 | `flashlight_headless.c` | charge, batteries, flicker, the beam's shape | `flashlight.md` |
 

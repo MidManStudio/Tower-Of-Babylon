@@ -55,6 +55,7 @@
 #define PLAYER_LEAN_DIP        0.06f   // metres the eye drops at full lean
 #define PLAYER_LEAN_SECS       0.15f   // from upright to full lean
 #define PLAYER_LEAN_MOVE_MUL   0.65f   // walking speed share at full lean
+#define PLAYER_LEAN_SPRINT_MOVE_MUL 1.00f // sprinting speed share at full lean (the side lean stays on while sprinting beside a wall: 1.0 means the sprint is not slowed; 0.65 would slow it like a walk)
 #define PLAYER_LEAN_CAM_CLEAR  0.40f   // the eye stays at least this far from any wall (the near plane is 0.25 and the corners of the view reach about 0.39)
 
 #define PLAYER_GRAVITY         14.0f   // m/s squared
@@ -160,6 +161,10 @@ float PlayerFatigue(const PlayerController *player);
 // when tired or exhausted added. Enemies use it (see enemy_manager.h).
 float PlayerNoise(const PlayerController *player);
 float PlayerSpeed(const PlayerController *player);
+// How fast the player is moving sideways right now, as a share of a full-stick strafe at the gun's aimed speed: +1 moving right, -1 moving
+// left, 0 standing, moving straight ahead or back, in the air, sliding, diving, rolling, lying or dead. The gun's sway when aiming follows it
+// (viewmodel.h). It is read from the real velocity, so it is the same in a networked game.
+float PlayerStrafe01(const PlayerController *player);
 // Puts the player at pos facing yaw, with no vertical speed and the camera snapped to the new height.
 void TeleportPlayer(PlayerController *player, Vector3 pos, float yaw);
 // Hurts the player. from is where the blow came from: the knockback pushes away from it.

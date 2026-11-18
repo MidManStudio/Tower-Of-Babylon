@@ -129,8 +129,9 @@ static float SightDist(const FloorMap *map, float x, float z, float dx, float dz
 // PLAYER_LEAN_DWELL seconds, so walking past a corner does not make the view flap. Then the blend eases toward it.
 static void UpdateAutoLean(PlayerController *player, bool sprintIntent, float dt, const FloorMap *map)
 {
+    // A sprint stops the CORNER lean (running at a corner is not a peek) but not the one beside a wall: that one stays while the wall is near.
     const bool allowed = player->leanAllowed && player->health.isAlive && player->isGrounded && !player->sliding &&
-                         !player->diving && !player->rolling && !player->lying && !sprintIntent;
+                         !player->diving && !player->rolling && !player->lying;
     int dir = 0;
     float scale = 1.0f;                      // how far this lean goes: the corner lean in full, the beside-a-wall one PLAYER_LEAN_SIDE_SCALE of it
     bool looked = false;
@@ -144,7 +145,7 @@ static void UpdateAutoLean(PlayerController *player, bool sprintIntent, float dt
 
         // (1) The corner: an opening ahead that leaning shows.
         const float ahead = SightDist(map, px, pz, fx, fz, PLAYER_LEAN_SIGHT);
-        const bool cornerNear = ahead <= PLAYER_LEAN_NEAR_LET_GO;
+        const bool cornerNear = !sprintIntent && ahead <= PLAYER_LEAN_NEAR_LET_GO;
         float gl = 0.0f, gr = 0.0f;
         if (cornerNear) {
             const float sl = fminf(PLAYER_LEAN_SHIFT, player->leanRoom[0]), sr = fminf(PLAYER_LEAN_SHIFT, player->leanRoom[1]);
@@ -310,6 +311,17 @@ float PlayerNoise(const PlayerController *player)
 float PlayerSpeed(const PlayerController *player)
 {
     return sqrtf(player->moveVel.x * player->moveVel.x + player->moveVel.z * player->moveVel.z);
+}
+
+float PlayerStrafe01(const PlayerController *player)
+{
+    if (!player->health.isAlive || !player->isGrounded || player->sliding || player->diving || player->rolling || player->lying) return 0.0f;
+    const float rx = sinf(player->yaw - 1.5708f), rz = cosf(player->yaw - 1.5708f);          // the player's right, as the movement uses it
+    const float fullAimed = PLAYER_WALK_SPEED * PLAYER_STRAFE_MUL * (player->adsMoveMul > 0.0f ? player->adsMoveMul : 1.0f);
+    float s = (player->moveVel.x * rx + player->moveVel.z * rz) / fullAimed;
+    if (s > 1.0f) s = 1.0f;
+    if (s < -1.0f) s = -1.0f;
+    return s;
 }
 
 bool PlayerSprintingForward(const PlayerController *player)
@@ -515,15 +527,14 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
         if (aimWanted) { player->aimBlend += rate; if (player->aimBlend > 1.0f) player->aimBlend = 1.0f; }
         else           { player->aimBlend -= rate; if (player->aimBlend < 0.0f) player->aimBlend = 0.0f; }
     }
-    // Leaning, automatic at a wall's corner and away from a wall beside the player: a gun in hand, on the ground, not sliding, diving or sprinting;
-    // the eye never goes into a wall.
+    // Leaning, automatic at a wall's corner (not while sprinting) and away from a wall beside the player (also while sprinting): a gun in hand,
+    // on the ground, not sliding or diving; the eye never goes into a wall.
     UpdateAutoLean(player, player->wantSprint && moving, dt, map);
-    const bool leaning = player->leanBlend > 0.05f || player->leanBlend < -0.05f;
 
     // Stamina. Sprinting works in every direction (omni sprint), needs some stamina left and a player who is not exhausted, and does
-    // not go with aiming down sights or leaning.
+    // not go with aiming down sights. A lean does not stop it: a sprint ends a corner lean by itself, and a lean beside a wall goes on.
     // A sprint that is already going carries on until the stamina is gone; starting one takes a little in hand.
-    const bool canSprint = !player->exhausted && player->isGrounded && !player->wantAim && !leaning && !player->diving && !player->rolling && !player->lying &&
+    const bool canSprint = !player->exhausted && player->isGrounded && !player->wantAim && !player->diving && !player->rolling && !player->lying &&
                            (player->sprinting ? player->stamina > 0.0f : player->stamina > STAMINA_SPRINT_MIN);
     player->sprinting = player->wantSprint && wantMove && canSprint;
     // A stim shot adds to the stamina whatever else is happening (before the sprint's drain, so a nearly empty bar is not called exhausted
@@ -554,7 +565,7 @@ void PlayerStep(PlayerController *player, Vector2 moveDelta, float dt, const Flo
     const float fatigue = PlayerFatigue(player);
     float topSpeed = (player->sprinting ? PLAYER_SPRINT_SPEED : PLAYER_WALK_SPEED) * fatigue;
     if (player->adsMoveMul > 0.0f) topSpeed *= 1.0f + (player->adsMoveMul - 1.0f) * PlayerAimAmount(player);   // aimed down sights: slower
-    topSpeed *= 1.0f + (PLAYER_LEAN_MOVE_MUL - 1.0f) * fabsf(player->leanBlend);                               // and leaning
+    topSpeed *= 1.0f + ((player->sprinting ? PLAYER_LEAN_SPRINT_MOVE_MUL : PLAYER_LEAN_MOVE_MUL) - 1.0f) * fabsf(player->leanBlend);   // and leaning
     Vector3 want = { 0.0f, 0.0f, 0.0f };
     if (wantMove) {
         // The stick's direction at its own length (a gentle push walks slowly), then turned into world directions.

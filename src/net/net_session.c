@@ -74,12 +74,15 @@ static void Teardown(NetSession *s)
     NetDial_Close(&s->dial, 0);
 }
 
+void NetSession_SetCommands(NetSession *s, NetCmdFn fn, void *user) { s->cmdFn = fn; s->cmdUser = user; }
+
 void NetSession_Update(NetSession *s, double nowMs)
 {
     if (s->state != NETS_CONNECTING && s->state != NETS_PLAYING) return;
     if (s->hosting) NetHost_Update(&s->host, nowMs);
     NetClient_Poll(&s->client, nowMs);
-    NetClient_Update(&s->client, nowMs, StandStill, NULL);
+    if (s->cmdFn) NetClient_Update(&s->client, nowMs, s->cmdFn, s->cmdUser);
+    else NetClient_Update(&s->client, nowMs, StandStill, NULL);
 
     if (s->client.state == NETC_PLAYING) {
         if (s->state == NETS_CONNECTING) s->state = NETS_PLAYING;

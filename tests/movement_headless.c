@@ -667,6 +667,14 @@ int main(void)
         Check(sp.leanBlend == 1.0f, "(leaning at the corner)");
         Run(&sp, (Vector2){ 0, 1.0f }, true, 0.6f);          // sprint, backwards, away from the wall
         Check(sp.leanDir == 0 && sp.leanBlend == 0.0f && sp.sprinting, "a sprint cancels the lean at once, and then the sprint is not held back by it");
+        PlayerController runInto = Place(21.8f, 38.8f, YAW_E);   // a sprint stops the CORNER lean too: running at the corner, pressed against the wall ahead, is not a peek
+        runInto.leanAllowed = true;
+        Run(&runInto, FWD, true, 1.0f);
+        Check(runInto.leanDir == 0 && runInto.leanBlend == 0.0f && runInto.sprinting, "sprinting at a corner (stopped by the wall ahead, an opening to the side) does not lean: only a wall beside the player keeps the lean while sprinting");
+        PlayerController walkInto = Place(21.8f, 38.8f, YAW_E);  // (the same place, walking: it does lean, so the check above is about the sprint)
+        walkInto.leanAllowed = true;
+        Run(&walkInto, FWD, false, 1.0f);
+        Check(walkInto.leanDir != 0, "(the same corner, walking: leaning)");
         PlayerController air = Place(21.8f, 38.8f, YAW_E);
         air.leanAllowed = true;
         Run(&air, (Vector2){ 0, 0 }, false, 0.5f);
@@ -748,10 +756,35 @@ int main(void)
         Check(off.leanDir == 1 && fabsf(off.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f, "off centre in the corridor: away from the near wall");
         CornerFloor();
 
-        PlayerController sp = Place(22.5f, ZS - 4.0f, 0.0f);      // no lean while sprinting, or with no gun in hand
+        // Sprinting beside a wall (the user: the lean should go off only when the wall is not near, not because of a sprint).
+        PlayerController sp = Place(22.5f, 21.0f, 0.0f);
         sp.leanAllowed = true;
-        Run(&sp, FWD, true, 0.5f);
-        Check(sp.leanDir == 0 && sp.leanBlend == 0.0f, "a sprint along the wall does not lean (the rules that stop a corner lean stop this one)");
+        Run(&sp, FWD, true, 1.6f);
+        PlayerController spFree = Place(21.0f, 21.0f, 0.0f);      // 2 m from the slab
+        spFree.leanAllowed = true;
+        Run(&spFree, FWD, true, 1.6f);
+        Check(sp.sprinting && sp.leanDir == 1 && fabsf(sp.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f && sp.camera.up.x < -0.1f, "a sprint along a wall keeps the lean (all of it, tilted, sprinting): a sprint does not turn it off");
+        Check(spFree.sprinting && spFree.leanDir == 0 && spFree.leanBlend == 0.0f, "a sprint far from any wall does not lean");
+        Check(PlayerSpeed(&sp) > 6.5f && PlayerSpeed(&sp) > PlayerSpeed(&spFree) * 0.97f, "and the lean does not slow the sprint (PLAYER_LEAN_SPRINT_MOVE_MUL 1.0)");
+        PlayerController wk = Place(22.5f, 21.0f, 0.0f);          // a walk beside the wall that turns into a sprint
+        wk.leanAllowed = true;
+        Run(&wk, FWD, false, 1.0f);
+        Check(wk.leanDir == 1 && !wk.sprinting, "(walking along the wall: leaning)");
+        Run(&wk, FWD, true, 0.6f);
+        Check(wk.sprinting && wk.leanDir == 1 && fabsf(wk.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f, "starting a sprint while leaning: the sprint starts at once (the lean does not hold it back) and the lean stays");
+        Run(&wk, (Vector2){ 1.0f, 0.0f }, true, 0.8f);            // sprint to the right, away from the wall on the left
+        Check(wk.sprinting && wk.leanDir == 0 && wk.leanBlend == 0.0f, "sprinting away from the wall (no longer near it) lets the lean go, and the sprint goes on");
+        Run(&wk, (Vector2){ 0.0f, 0.0f }, true, 0.3f);
+        PlayerController spAir = Place(22.5f, 21.0f, 0.0f);       // the other rules still stop it: a jump, a slide
+        spAir.leanAllowed = true;
+        Run(&spAir, FWD, true, 0.8f);
+        Check(spAir.leanDir == 1, "(sprinting beside the wall: leaning)");
+        PlayerTrySlide(&spAir);
+        Run(&spAir, FWD, true, 0.2f);
+        Check(spAir.sliding && spAir.leanDir == 0, "a slide still ends the lean");
+        PlayerController gunless = Place(22.5f, 21.0f, 0.0f);
+        Run(&gunless, FWD, true, 1.0f);
+        Check(gunless.leanDir == 0 && gunless.leanBlend == 0.0f, "with no gun in hand a sprint beside a wall does not lean");
         PlayerController fist = Place(22.5f, ZS, 0.0f);
         Run(&fist, (Vector2){ 0, 0 }, false, 0.5f);
         Check(fist.leanDir == 0 && fist.camera.up.y == 1.0f, "with no gun in hand there is no lean");
@@ -765,6 +798,47 @@ int main(void)
         Run(&free, FWD, false, 1.6f);
         Check(along.leanDir == 1 && fabsf(along.leanBlend - PLAYER_LEAN_SIDE_SCALE) < 1e-4f && along.position.z > 24.0f, "walking along a wall keeps the lean, and the player keeps walking");
         Check(free.leanDir == 0 && PlayerSpeed(&along) < PlayerSpeed(&free) * 0.8f, "and the lean slows the walk (the free walker beside no wall is not slowed)");
+    }
+
+    printf("Strafe amount (what the aimed gun's tilt follows)\n");
+    {
+        OpenFloor(-1);
+        PlayerController r = Place(40.0f, 40.0f, 0.0f);
+        r.adsFov = 45.0f; r.adsSecs = 0.20f; r.adsMoveMul = 0.60f; r.wantAim = true;
+        Run(&r, (Vector2){ 0.0f, 0.0f }, false, 0.5f);
+        Check(PlayerStrafe01(&r) == 0.0f, "standing: 0");
+        Run(&r, (Vector2){ 1.0f, 0.0f }, false, 1.2f);                     // the stick to the right, aimed
+        Check(PlayerStrafe01(&r) > 0.9f && PlayerStrafe01(&r) <= 1.0f, "moving right, aimed, at full stick: about +1 (a full strafe at the gun's aimed speed)");
+        PlayerController l = Place(40.0f, 40.0f, 0.0f);
+        l.adsFov = 45.0f; l.adsSecs = 0.20f; l.adsMoveMul = 0.60f; l.wantAim = true;
+        Run(&l, (Vector2){ -1.0f, 0.0f }, false, 1.2f);
+        Check(PlayerStrafe01(&l) < -0.9f && PlayerStrafe01(&l) >= -1.0f, "moving left: about -1");
+        Run(&l, (Vector2){ -0.5f, 0.0f }, false, 1.2f);
+        Check(PlayerStrafe01(&l) < -0.4f && PlayerStrafe01(&l) > -0.6f, "half a push: about half");
+        PlayerController f = Place(40.0f, 40.0f, 0.0f);
+        f.adsFov = 45.0f; f.adsSecs = 0.20f; f.adsMoveMul = 0.60f; f.wantAim = true;
+        Run(&f, FWD, false, 1.2f);
+        Check(fabsf(PlayerStrafe01(&f)) < 0.01f, "straight ahead: 0");
+        PlayerController b = Place(40.0f, 40.0f, 0.0f);
+        b.adsFov = 45.0f; b.adsSecs = 0.20f; b.adsMoveMul = 0.60f; b.wantAim = true;
+        Run(&b, (Vector2){ 0.0f, 1.0f }, false, 1.2f);
+        Check(fabsf(PlayerStrafe01(&b)) < 0.01f, "straight back: 0");
+        PlayerController turned = Place(40.0f, 40.0f, 1.5708f);            // facing +x: the player's right is now +z... the sign follows where the player faces
+        turned.adsFov = 45.0f; turned.adsSecs = 0.20f; turned.adsMoveMul = 0.60f; turned.wantAim = true;
+        Run(&turned, (Vector2){ 1.0f, 0.0f }, false, 1.2f);
+        Check(PlayerStrafe01(&turned) > 0.9f, "the sign is about the player's own right and left, whichever way the player faces");
+        PlayerController d = r;
+        d.health.isAlive = false;
+        Check(PlayerStrafe01(&d) == 0.0f, "dead: 0");
+        PlayerController air = r;
+        air.isGrounded = false;
+        Check(PlayerStrafe01(&air) == 0.0f, "in the air: 0");
+        PlayerController sl = r;
+        sl.sliding = true;
+        Check(PlayerStrafe01(&sl) == 0.0f, "sliding: 0");
+        PlayerController nz = Place(40.0f, 40.0f, 0.0f);                   // a weapon with no ADS speed set: the walking strafe is the full one
+        Run(&nz, (Vector2){ 1.0f, 0.0f }, false, 1.2f);
+        Check(PlayerStrafe01(&nz) > 0.9f, "with no aimed speed set the walking strafe is the full one");
     }
 
     printf("Diving from the ground: a sprint to the left, to the right or backward\n");

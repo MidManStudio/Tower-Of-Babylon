@@ -2,6 +2,9 @@
 
 #define MAX_OBSTACLES 16
 static Obstacle obstaclePool[MAX_OBSTACLES];
+static bool g_suspended = false;
+
+void Obstacles_Suspend(bool suspended) { g_suspended = suspended; }
 
 void InitObstaclesSystem(void) {
     for (int i = 0; i < MAX_OBSTACLES; i++) {
@@ -17,6 +20,7 @@ void InitObstaclesSystem(void) {
 }
 
 void DrawObstaclesSystem(void) {
+    if (g_suspended) return;
     for (int i = 0; i < MAX_OBSTACLES; i++) {
         if (obstaclePool[i].active) {
             DrawCube(obstaclePool[i].position, obstaclePool[i].size.x, obstaclePool[i].size.y, obstaclePool[i].size.z, DARKPURPLE);
@@ -26,6 +30,7 @@ void DrawObstaclesSystem(void) {
 }
 
 bool CheckObstacleCollision(Vector3 pos, float radius) {
+    if (g_suspended) return false;
     for (int i = 0; i < MAX_OBSTACLES; i++) {
         if (!obstaclePool[i].active) continue;
         // Simple bounding box collision check
