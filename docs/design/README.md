@@ -12,9 +12,13 @@ These are the planning documents for the game. They were written from what you d
 | `05-world-and-lore.md` | The universe, the federation, the tower as a broadcast, the NPCs, how much lore the game itself should carry, and a content note. |
 | `06-multiplayer.md` | How to build the multiplayer in stages, what must be decided by a server, AI contestants, and the spectator idea. |
 | `07-roadmap.md` | Milestones from the solo slice to the betrayal finale, the first thing to build next, a risk register, and the list of decisions I need from you. |
+| `08-floor-generation.md` | The plan for floor generation v2: bigger floors (64 for two teams, never more than 128), a start room per team, cover walls, rare stacked levels (up to four), themes, sockets for missions and special rooms, the safe zone, the determinism rules for multiplayer, the optimisation plan and the build rounds R0 to R5. |
+| `09-floor-generation-research.md` | What the plan rests on: the audit of the generator and what grows with the map, the sources, the free assets and their licences, what mid-engine offers, test vectors for the random numbers, and the measurements of a first prototype. |
 
 ## Where the game is today
 
 Built and tested: a procedural tower of floors with stairs and doors, ceiling lights in patches so that some areas are black, enemies (the cylinder "strides" and the ceiling spiders) that hear you, a velocity-based player with jump, run, a stamina gauge, fatigue and the noise it makes, **slide**, a health system, four weapons (pipe, pistol, shotgun, rifle) with their own ammo and projectiles, an inventory with a touch screen, a **flashlight with batteries** that fails when low, and weapon, projectile and flashlight numbers in DixScript files. See `docs/*.md` for each.
 
 Not built: floors with missions, the stairwell unlock, the countdown and the collapse; points and the shop; the safe floors; teams and multiplayer; characters and their abilities; bosses; most monsters; sight and smell; crouch, wall peeking, dive; the inventory rework; sound; an announcer.
+
+Planned, with a design and its research written but nothing built: floor generation v2 (`08` and `09`).

@@ -57,6 +57,10 @@ More monsters (gliders, brain-tentacle things, ether things, amalgamated, beasts
 
 The betrayal ending, the commentator and the broadcast presentation, sound throughout, the freedom ending.
 
+### F. Floor generation v2 (L, in six rounds; runs beside M3 and M4)
+
+The floors become bigger (64 tiles for two teams, never more than 128), get a start room for each team, low walls to take cover behind, stacked levels (uncommon, up to four), themes (floral, fungal and mechanical on top of the office), a safe zone, and room for the missions and special rooms that are still to be designed. The plan is `08-floor-generation.md`; what it rests on is `09-floor-generation-research.md`. The rounds, each one playable on the phone: **R0** the foundation (an integer-only generator, a floor hash, accessors and a benchmark harness; nothing changes on screen), **R1** bigger floors and a start room for each team, **R2** cover, **R3** sockets, templates and the safe zone, **R4** stacked zones, **R5** themes and props. R1 gives M4 its start rooms; R3 gives M5 the places for the safe zone and the boss arena. Nothing under `src/net/` is touched by it; the multiplayer side is section 12.5 of the plan.
+
 ### Always running
 
 Sound (see below), phone performance (check the diagnostics overlay after each change), tests, and the docs.
@@ -87,6 +91,8 @@ The plan: the game's rules are about noise. Notes from earlier work: the web bui
 | The eliminated are bored for most of a match | high | players leave | the audience mode (`06-multiplayer.md`) |
 | One developer, one phone | certain | slow, and every change is tested by hand | the headless tests; deliveries as tarballs; offline renders; keep the diagnostics line useful |
 | A standoff at the stairs | medium | matches stall | the angry floor and the forced opening |
+| Floors differ between the server and the clients (each builds the layout from the seed on its own platform) | low after R0 | a desync from the first frame | integer-only generation, one random stream per stage, golden hashes natively and in WASM, the hash in the handshake (`08-floor-generation.md`, section 12) |
+| Bigger and stacked floors cost the phone more than it has | medium | unplayable | R0 measures first; the lighting window and the bounded searches in R1; level culling in R4 (`08-floor-generation.md`, section 13) |
 
 ## Decisions I need from you
 
@@ -102,3 +108,7 @@ None of these block the next step (M1) except where noted. I will default as wri
 8. **Dive invulnerability.** *(default: a short window in the middle)* Blocks the dive only.
 9. **Who runs the server** in your first tests: a phone with Termux, or a computer? *(default: a phone)* Blocks M3.
 10. **Targets:** browser only for now, or a native Android build later? *(default: browser only)* Affects networking and sound choices later.
+11. **Floor size for three or four teams.** *(default: 81 tiles; the cap is 128)* Blocks only the size table of F, round R1.
+12. **Holes in a deck:** rails or open edges, and does a 6 m drop hurt? *(default: open edges, no fall damage, a loud landing)* Blocks F, round R4.
+13. **The elevator:** where it goes and what it does when it is active. *(default: a socket beside the stairs, behaviour left out)* Blocks only the elevator, in F round R3.
+14. **A safe floor:** a whole floor, or a safe zone on a normal floor? *(default: a zone on a normal floor)* Blocks F, round R3. The rest of the open questions of F are in `08-floor-generation.md`, section 17.

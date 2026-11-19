@@ -215,3 +215,4 @@ The flight was drawn and walkable for the player but invisible to everything els
 - The stairs were checked headless on x86 with scripted input only. How they look and feel on screen, and the frame rate on the phone, are not checked.
 - Open space is steady around 84 percent. Making floors more maze-like needs a different partition rule, not smaller span targets, because the 3 tile corridor rule is what limits density.
 - `src/world.c` and `src/world.h` are not used by `main.c`.
+- This generator is the 45 by 45 fixed-shell design. Its planned successor (floors up to 128 tiles, a start room per team, cover walls, stacked levels, themes, integer-only layout checked by golden hashes) is in `design/08-floor-generation.md`, with the audit and measurements in `design/09-floor-generation-research.md`. Until a round of it lands, this document is what runs.
