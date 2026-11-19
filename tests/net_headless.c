@@ -3,7 +3,7 @@
 // a server and up to four clients moving players with the game's own movement, client prediction, reconciliation against the server,
 // the clock lead, interpolation of other players, and what the server does with commands that are late, early, doubled, forged or
 // flooding. No window, no raylib calls, no real network. Run from the project root:
-//   cc -O2 -std=c99 -DNET_HEADLESS_TEST -Isrc -Iraylib/src tests/net_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_headless
+//   cc -O2 -std=c99 -DNET_HEADLESS_TEST -Isrc -Iraylib/src tests/net_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_headless
 #ifdef NET_HEADLESS_TEST
 
 #include <math.h>

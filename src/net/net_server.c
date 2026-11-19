@@ -24,6 +24,11 @@ void NetServer_Init(NetServer *s, uint32_t floorSeed, int floorNumber)
     GenerateFloorMap(&s->map, floorNumber, floorSeed);
 }
 
+bool NetServer_RewoundPose(const NetServer *s, uint8_t viewLag, int id, Vector3 *pos, float *yaw)
+{
+    return NetHistory_PoseAt(&s->hist, NetHistory_RewindTick(s->tick, viewLag), id, pos, yaw);
+}
+
 int NetServer_PlayerCount(const NetServer *s) { int n = 0; for (int i = 0; i < NET_MAX_PLAYERS; ++i) if (s->c[i].used && s->c[i].welcomed) ++n; return n; }
 
 int NetServer_AddClient(NetServer *s, NetTransport tp, double nowMs)
@@ -152,6 +157,11 @@ void NetServer_Tick(NetServer *s, double nowMs)
             ++cl->ticksNeutral;
         }
         NetSim_Step(&cl->player, &cmd, &s->map);
+    }
+    NetHistory_Begin(&s->hist, T);                                                          // where everyone is after this tick, for the shots of the next ones
+    for (int i = 0; i < NET_MAX_PLAYERS; ++i) {
+        const NetServerClient *cl = &s->c[i];
+        if (cl->used && cl->welcomed && cl->started) NetHistory_Set(&s->hist, T, i, cl->player.position, cl->player.yaw);
     }
     for (int i = 0; i < NET_MAX_PLAYERS; ++i) {
         NetServerClient *cl = &s->c[i];

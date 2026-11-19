@@ -71,7 +71,10 @@ Vector3 NetClient_ViewPos(const NetClient *c);                                  
 // The same, between the last two ticks: alpha is 0 at the older and 1 at the newest (NetClient_Alpha is how far the next tick has got), so
 // a screen faster than the 30 ticks a second still sees smooth movement. A correction does not show as a jump here either.
 Vector3 NetClient_ViewPosAt(const NetClient *c, float alpha);
-float   NetClient_Alpha(const NetClient *c);                                                // 0 to 1: how far the next tick is from the last
+float   NetClient_Alpha(const NetClient *c);
+// The viewLag a command made now for `tick` carries (net_proto.h): that tick minus the server tick the others are drawn at on this screen right now
+// (the estimated server tick minus NET_INTERP_TICKS), rounded, 0 to 255; 0 before the first snapshot. The server rewinds by it to judge a shot.
+uint8_t NetClient_ViewLag(const NetClient *c, double nowMs, uint32_t tick);                                                // 0 to 1: how far the next tick is from the last
 // Where another player is drawn, nowMs; false when no snapshot has had them. Between two snapshots, a little in the past; past the newest, held.
 bool NetClient_RemoteView(const NetClient *c, uint8_t id, double nowMs, Vector3 *pos, float *yaw);
 

@@ -33,7 +33,7 @@ Two channels, as a QUIC connection gives: **datagrams** that may be lost, double
 | Snapshot | server to client | datagram | 71 to 125 B | the tick, whether the player has started, how early the newest command came, the owner's full movement state, up to three other players (rounded) |
 | Disconnect | either | reliable | 4 B | a reason (normal, version, full, timeout, bad) |
 
-A **command** (`NetCmd`, 8 bytes) is one tick of the player's wishes already rounded to what the wire carries (stick to a 127th, yaw to a 65536th of a turn, pitch to a 32767th of 89 degrees, ten buttons in 16 bits, since protocol version 2): **both ends run the game from the rounded command**, so the client's prediction and the server's simulation start from the same numbers. The buttons already include fire, use, swap and light, which this slice does not use yet.
+A **command** (`NetCmd`, 9 bytes: the stick, yaw, pitch, the buttons and, since version 3, the `viewLag` that lag compensation needs: `net_shots.md`) is one tick of the player's wishes already rounded to what the wire carries (stick to a 127th, yaw to a 65536th of a turn, pitch to a 32767th of 89 degrees, ten buttons in 16 bits, since protocol version 2): **both ends run the game from the rounded command**, so the client's prediction and the server's simulation start from the same numbers. The buttons already include fire, use, swap and light, which this slice does not use yet.
 
 The **owner's state** is sent as full floats (20 of them: the movement, the slide and, since version 2, the dive: `diveT`, `diveDir`, `lieStick`) and not rounded, because a rounded state could not be run on from; other players are told rounded millimetres.
 

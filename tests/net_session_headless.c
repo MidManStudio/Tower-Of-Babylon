@@ -2,7 +2,7 @@
 // host module with the host playing as a client of its own game), others join by address, the lobby's announcement is read back by a real
 // searcher, a fifth player is turned away, players leave, the host leaves, and the failures say why. No window, no raylib calls. Takes a few
 // seconds (the clock is the real one). Run from the project root:
-//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
+//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
 #ifdef NET_SESSION_HEADLESS_TEST
 
 #define _POSIX_C_SOURCE 200809L

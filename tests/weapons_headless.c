@@ -6,7 +6,7 @@
 // are stubbed. Inside a macro so mray's build, which compiles every .c file, does not pick up a
 // second main().
 // Build (one line, from the project root):
-//   cc -O2 -std=c99 -DWEAPONS_HEADLESS_TEST -Isrc -Iraylib/src tests/weapons_headless.c src/weapons/weapons.c src/weapons/parts.c src/weapons/viewmodel.c src/weapons/pickups.c src/weapons/gunfire.c src/projectiles/projectiles.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/projectiles/projectile_simulation.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c src/ui/view_clip.c src/enemies/enemy_manager.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o weapons_headless
+//   cc -O2 -std=c99 -DWEAPONS_HEADLESS_TEST -Isrc -Iraylib/src tests/weapons_headless.c src/weapons/weapons.c src/weapons/parts.c src/weapons/viewmodel.c src/weapons/pickups.c src/weapons/gunfire.c src/net/net_shot.c src/projectiles/projectiles.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/projectiles/projectile_simulation.c src/flashlight/flashlight.c src/config/game_config.c src/config/mdix_doc.c src/config/mdix_web.c src/config/config_baked.c src/ui/view_clip.c src/enemies/enemy_manager.c src/enemies/spider.c src/enemies/spider_ai.c src/enemies/spider_draw.c src/dungeon/dungeon_raycast.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o weapons_headless
 // Run:
 //   ./weapons_headless                      checks only
 //   VM_DUMP=/tmp/vm ./weapons_headless      also writes /tmp/vm_<pose>.txt, the view model triangles of several poses
@@ -25,6 +25,7 @@
 #include "enemies/spider.h"
 #include "projectiles/projectiles.h"
 #include "weapons/gunfire.h"
+#include "net/net_shot.h"
 #include "weapons/pickups.h"
 #include "weapons/viewmodel.h"
 #include "weapons/weapons.h"
@@ -149,6 +150,19 @@ static void DumpPose(const char *prefix, const char *name, const Arsenal *a, flo
                 g_tris[i].c.x, g_tris[i].c.y, g_tris[i].c.z, g_tris[i].col[0].r, g_tris[i].col[0].g, g_tris[i].col[0].b,
                 g_tris[i].col[1].r, g_tris[i].col[1].g, g_tris[i].col[1].b, g_tris[i].col[2].r, g_tris[i].col[2].g, g_tris[i].col[2].b);
     fclose(f);
+}
+
+// One shot from a seed, from a clear pool: the speeds and directions of what came out (for comparing two shots).
+static int ShootFrom(const WeaponDef *w, const AimFrame *aim, const FloorMap *map, uint32_t seed, Vector3 *vel, int max)
+{
+    InitProjectilesSystem();
+    Gunfire_Shoot(w, aim, map, w->spreadDeg, &seed);
+    int n = 0;
+    for (int i = 0; i < MAX_PROJECTILES && n < max; ++i) {
+        const Projectile *p = Projectiles_Get(i);
+        if (p && p->alive) vel[n++] = (Vector3){ p->vx, p->vy, p->vz };
+    }
+    return n;
 }
 
 int main(void)
@@ -887,6 +901,22 @@ int main(void)
             const AimFrame farA = { { foe.x - 6.0f, 1.0f, foe.z }, { 1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } };
             (void)farA;
             Check(Projectile_FalloffDamage(ProjectileConfig_Get(shotgun->projectile), shotgun->damage, 20.0f) < shotgun->damage * 0.3f, "(and at 20 m a pellet does under a third of its damage)");
+
+            // Shots from a seed (net_shot.h): the shooter's screen and the server make one shot from one number, so the pellets must be the same.
+            {
+                Vector3 a[32], b[32], c[32];
+                const uint32_t seedA = NetShot_Seed(2, 150, 0), seedC = NetShot_Seed(2, 151, 0);
+                const int na = ShootFrom(shotgun, &close, &g_floor, seedA, a, 32), nb = ShootFrom(shotgun, &close, &g_floor, seedA, b, 32), nc = ShootFrom(shotgun, &close, &g_floor, seedC, c, 32);
+                int same = na == nb && na == shotgun->pellets, diff = nc == na;
+                for (int i = 0; same && i < na; ++i) same = a[i].x == b[i].x && a[i].y == b[i].y && a[i].z == b[i].z;
+                int differs = 0;
+                for (int i = 0; i < na && i < nc; ++i) differs += (a[i].x != c[i].x || a[i].y != c[i].y || a[i].z != c[i].z);
+                Check(same, "the same seed throws exactly the same pellets (every direction and speed, to the last bit), whenever and wherever it is worked out");
+                Check(diff && differs >= na - 1, "the next tick's seed throws different ones (a shotgun is not the same blast twice)");
+                int fanned = 0;
+                for (int i = 1; i < na; ++i) fanned += (a[i].y != a[0].y || a[i].z != a[0].z);
+                Check(fanned >= na - 2, "(and a blast is a spread, not one pellet eight times)");
+            }
         }
         InitProjectilesSystem();
     }

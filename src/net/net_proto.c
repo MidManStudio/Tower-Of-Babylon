@@ -31,6 +31,7 @@ NetCmd NetCmd_Make(float moveX, float moveY, float yawRad, float pitchRad, uint1
     if (pitchRad < -PITCH_MAX) pitchRad = -PITCH_MAX;
     c.pitch = (int16_t)lroundf(pitchRad / PITCH_MAX * 32767.0f);
     c.buttons = buttons;
+    c.viewLag = 0;
     return c;
 }
 
@@ -46,8 +47,8 @@ void NetCmd_Move(const NetCmd *c, float *x, float *y)
 float NetCmd_Yaw(const NetCmd *c) { return (float)c->yaw / 65536.0f * TWO_PI; }
 float NetCmd_Pitch(const NetCmd *c) { return (float)c->pitch / 32767.0f * PITCH_MAX; }
 
-static void PutCmd(NetW *w, const NetCmd *c) { NetW_I8(w, c->moveX); NetW_I8(w, c->moveY); NetW_U16(w, c->yaw); NetW_I16(w, c->pitch); NetW_U16(w, c->buttons); }
-static void GetCmd(NetR *r, NetCmd *c) { c->moveX = NetR_I8(r); c->moveY = NetR_I8(r); c->yaw = NetR_U16(r); c->pitch = NetR_I16(r); c->buttons = NetR_U16(r); }
+static void PutCmd(NetW *w, const NetCmd *c) { NetW_I8(w, c->moveX); NetW_I8(w, c->moveY); NetW_U16(w, c->yaw); NetW_I16(w, c->pitch); NetW_U16(w, c->buttons); NetW_U8(w, c->viewLag); }
+static void GetCmd(NetR *r, NetCmd *c) { c->moveX = NetR_I8(r); c->moveY = NetR_I8(r); c->yaw = NetR_U16(r); c->pitch = NetR_I16(r); c->buttons = NetR_U16(r); c->viewLag = NetR_U8(r); }
 
 static void PutOwner(NetW *w, const NetOwnerState *o)
 {

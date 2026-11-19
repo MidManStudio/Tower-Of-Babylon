@@ -13,7 +13,7 @@
 // replaced by the next, and the client repeats its last few commands in every Input so that a lost one is rarely missed) and a reliable,
 // ordered channel (Hello, Welcome, Disconnect). Every packet starts with 'T' 'B' and a kind byte. Decoding checks everything (lengths,
 // counts, finite numbers, known flag bits, leftover bytes) and refuses what is wrong; nothing a stranger sends can run off a buffer.
-#define NET_PROTOCOL_VERSION 2             // 2: the buttons are 16 bits (dive, reload) and the owner's state carries a dive
+#define NET_PROTOCOL_VERSION 3             // 3: every command says how far behind the server the player saw the others (viewLag, for lag compensation); 2: the buttons are 16 bits and the owner's state carries a dive
 #define NET_TICK_RATE        30
 #define NET_TICK_SECS        (1.0f / 30.0f)
 #define NET_MAX_PLAYERS      4
@@ -29,7 +29,9 @@ enum {                                     // what the player's hands are doing 
 
 // One tick of the player's wishes, already rounded to what the wire carries: both ends run the game from this rounded command, so
 // the client's prediction and the server's simulation start from the same numbers.
-typedef struct { int8_t moveX, moveY; uint16_t yaw; int16_t pitch; uint16_t buttons; } NetCmd;
+// viewLag: the command's tick minus the server tick the others were drawn at on the player's screen when it was made (0 to 255; the client sets it,
+// NetCmd_Make leaves it 0). The server rewinds the others by it to judge a shot (net_history.h).
+typedef struct { int8_t moveX, moveY; uint16_t yaw; int16_t pitch; uint16_t buttons; uint8_t viewLag; } NetCmd;
 
 NetCmd NetCmd_Make(float moveX, float moveY, float yawRad, float pitchRad, uint16_t buttons);
 void   NetCmd_Move(const NetCmd *c, float *x, float *y);        // -1 to 1 each, the length held to 1 (a stranger's 127, 127 is not a faster walk)

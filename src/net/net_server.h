@@ -5,6 +5,7 @@
 #ifndef NET_SERVER_H
 #define NET_SERVER_H
 
+#include "net_history.h"
 #include "net_move_sim.h"
 #include "net_proto.h"
 #include "net_transport.h"
@@ -46,6 +47,7 @@ typedef struct {
     double      nowMs;
     NetServerClient c[NET_MAX_PLAYERS];
     unsigned    snapshotsSent;
+    NetHistory  hist;                // where everyone was at each of the last ticks (net_history.h)
 } NetServer;
 
 void NetServer_Init(NetServer *s, uint32_t floorSeed, int floorNumber);                 // makes the floor from the seed, the way every client will
@@ -54,5 +56,8 @@ void NetServer_Drop(NetServer *s, int slot, uint8_t reason);                    
 void NetServer_Poll(NetServer *s, double nowMs);                                         // reads what has arrived; drops clients that went quiet
 void NetServer_Tick(NetServer *s, double nowMs);                                         // runs one tick for everyone and sends the snapshots
 int  NetServer_PlayerCount(const NetServer *s);
+// Where player `id` was when a shooter whose command is for the tick being run saw the world `viewLag` ticks before (clamped to NET_REWIND_MAX):
+// the pose a shot is judged against. False if the player was not there. Call it while running that tick's commands (the server's `tick`).
+bool NetServer_RewoundPose(const NetServer *s, uint8_t viewLag, int id, Vector3 *pos, float *yaw);
 
 #endif

@@ -176,7 +176,9 @@ int NetClient_Update(NetClient *c, double nowMs, NetCmdFn fn, void *user)
     while (c->accum >= TICK_MS) {
         c->accum -= TICK_MS;
         if (ran >= 5) { c->accum = 0.0; break; }                                     // a long stall: do not run a burst to catch up
-        RunTick(c, fn(user, c->tick));
+        NetCmd cmd = fn(user, c->tick);
+        cmd.viewLag = NetClient_ViewLag(c, nowMs, c->tick);
+        RunTick(c, cmd);
         ++ran;
     }
     return ran;
@@ -195,6 +197,17 @@ void NetClient_Leave(NetClient *c)
 Vector3 NetClient_ViewPos(const NetClient *c)
 {
     return (Vector3){ c->player.position.x + c->errOffset.x, c->player.position.y + c->errOffset.y, c->player.position.z + c->errOffset.z };
+}
+
+uint8_t NetClient_ViewLag(const NetClient *c, double nowMs, uint32_t tick)
+{
+    if (c->snapCount == 0) return 0;
+    const double est = (double)c->lastServerTick + (nowMs - c->lastSnapMs) / TICK_MS;       // the server's tick, about now (the same as NetClient_RemoteView)
+    const double shown = est - (double)NET_INTERP_TICKS;                                     // the tick the others are drawn at
+    double lag = (double)tick - shown + 0.5;
+    if (lag < 0.0) lag = 0.0;
+    if (lag > 255.0) lag = 255.0;
+    return (uint8_t)lag;
 }
 
 float NetClient_Alpha(const NetClient *c)
