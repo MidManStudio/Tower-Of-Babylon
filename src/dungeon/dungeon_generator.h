@@ -20,4 +20,7 @@ void GenerateFloorMap(FloorMap *outFloor, int floorNum, uint32_t baseSeed);
 // into why (when why is not NULL) and returns false.
 bool ValidateFloorMap(const FloorMap *floor, char *why, size_t whySize);
 
+// Name of a generation stage (GEN_STAGE_*) for reports, or "?" when out of range.
+const char *GenStageName(int stage);
+
 #endif

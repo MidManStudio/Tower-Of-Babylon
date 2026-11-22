@@ -40,6 +40,11 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `net_play_headless.c` | walking in a networked game: the buttons and the command, the look turned at once, the camera between ticks, and two players on a loopback link walking, turning, sprinting, diving and seeing each other through the real input path | `net.md` |
 | `net_shot_headless.c` | the foundations for shooting in a networked game: the shot seed, the server's pose history and its rewind, the view lag a client puts on a command, and on a loopback link that the rewound pose is the pose the shooter's screen showed | `net_shots.md` |
 | `obstacles_headless.c` | the props' suspend switch (a networked game has no props): collision and drawing off and back on | `net.md` |
+| `floorgen_rng_headless.c` | the floor generator's random numbers: PCG32 vectors, SplitMix64, the 32-bit range threshold, stream keys, and each rule broken on purpose | `floorgen.md` |
+| `floorgen_bits_headless.c` | the bit rows and the integer probe rays against plain loops and exact arithmetic, and each rule broken on purpose | `floorgen.md` |
+| `floorgen_hash_headless.c` | 40 golden floors (hash, attempts, counts, route), the same floor after others, what the hash sees, the generation report, and the envelope of the old generator over 500 floors | `floorgen.md` |
+| `floorgen_plain_headless.c` | the same golden floors with the generator built with plain scans (the oracle for the bit scans) | `floorgen.md` |
+| `floorgen_integer_headless.c` | the layout source files contain no float, double, libm or float literal (reads files; run from the project root) | `floorgen.md` |
 | `config_headless.c` | the config layer, the baked tables, bad documents | `config.md` |
 | `flashlight_headless.c` | charge, batteries, flicker, the beam's shape | `flashlight.md` |
 

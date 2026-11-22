@@ -76,6 +76,18 @@ typedef enum {
 // MapCell.flags
 #define CELL_RESERVED 0x01
 
+// The stages of one generation, for the timings in the report (FloorMap.stageMicros).
+typedef enum {
+    GEN_STAGE_SHELL = 0,    // the fixed shell and the bit grid
+    GEN_STAGE_PROTECT,      // the protect mask
+    GEN_STAGE_HALLS,        // choosing the pillar halls
+    GEN_STAGE_PARTITIONS,   // the probe-driven partition pass
+    GEN_STAGE_PILLARS,      // the pillar pass
+    GEN_STAGE_POCKETS,      // connecting or filling the pockets
+    GEN_STAGE_MEASURE,      // measuring and judging the layout
+    GEN_STAGE_COUNT
+} GenStage;
+
 typedef struct {
     TileType type;
     bool     discovered;
@@ -100,7 +112,10 @@ typedef struct {
     int   partitions;
     int   pillars;
     int   pathLength;                   // steps from arrival-below to the up pad
-    float walkableFraction;
+    int   openTiles;                    // tiles that are not walls, on the whole grid. The layout targets compare this
+    float walkableFraction;             // openTiles over the hall area, for display. The layout never reads it
+    uint32_t stageMicros[GEN_STAGE_COUNT]; // microseconds spent in each generation stage, summed over the attempts
+    uint32_t genMicros;                 // microseconds for the whole GenerateFloorMap call
 } FloorMap;
 
 static inline bool Tile_InBounds(int x, int z)

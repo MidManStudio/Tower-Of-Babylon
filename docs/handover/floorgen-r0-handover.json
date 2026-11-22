@@ -1,0 +1,128 @@
+{
+  "handover_for": "Next chat on Tower-Of-Babylon floor generation: finish the rest of round R0 (four items), then R1 (bigger floors). Multiplayer/net is a different chat and src/net must not be edited here unless asked.",
+  "written": "2026-11-21 (Africa/Lagos)",
+  "how_to_use": "Paste or attach this at the start of the new chat. It is a summary written by the previous chat: verify anything that matters against the repo, docs/floorgen.md and docs/design/08 and 09 before building on it.",
+  "user": {
+    "name": "Mid (GitHub Mid-D-Man); an older handover calls the user Tukuruku",
+    "role": "Founder of MidManStudio, software engineer (Rust, C#, JavaScript, TypeScript; Blazor, Svelte, Leptos), writes the C game in Termux",
+    "devices": "Mobile first on a Samsung Galaxy A13 (Android) via GitHub; MacBook Pro mid-2010 (patched macOS Catalina) as the laptop",
+    "github": [
+      "https://github.com/Mid-D-Man",
+      "https://github.com/MidManStudio"
+    ],
+    "how_the_user_ships": "Receives ONE tarball, drops it into .mdix/replacements/ next to the existing replacements.mdix (nested paths need no manifest change), commits to main, builds on the phone, tests, reports in plain words, and says 'pull in latest changes' before the next round.",
+    "how_the_user_wants_the_chat_to_work": "Wants results, not narration. When the user says 'enough', 'pack it up' or 'just give me the tarball', stop testing and deliver immediately with an honest note on what was and was not verified. Prefers short status lines over long silences."
+  },
+  "project": {
+    "name": "Tower-Of-Babylon",
+    "repo": "https://github.com/MidManStudio/Tower-Of-Babylon",
+    "what": "C99 + raylib first-person dungeon game for WASM and Android, 800x450 logical screen. Fixed 30 Hz sim. Floors are built from a 32-bit seed on the server and every client.",
+    "this_chat_covers": "The tower itself, procedural floor generation (plan: docs/design/08-floor-generation.md, research: 09, module doc: docs/floorgen.md) and small gameplay mechanics. Multiplayer is another chat.",
+    "local_clone_used_by_the_previous_chat": "/home/claude/repos/Tower-Of-Babylon (a cloud container: it will not exist in a new session; clone again)"
+  },
+  "standing_rules_from_the_user": [
+    "Never assume Claude Code CLI is used; treat skill files as prompt instructions.",
+    "Start of a chat: clone/inspect https://github.com/Mid-D-Man/mdix-scaffold and https://github.com/Mid-D-Man/everything-claude-code.git and read relevant skills.",
+    "Deliver ONE nested tarball (paths relative to the project root, no top folder) for the replacements workflow; never also present the files individually; never bundle .github/workflows files (give those directly). Overwritten files must be rebuilt from the latest origin/main right before packaging (other chats edit the same files, main.c most of all).",
+    "Docs are updated with every change; every source file has a NOTICE header pointing to a docs section (docs/floorgen.md for src/floorgen and the new tests; docs/dungeon.md for the dungeon files).",
+    "Each headless test is one file inside a -D guard with its build line as the first '//   cc ' line of the header; tools/run_tests.sh picks up tests/*_headless.c by glob. mray's web build compiles EVERY .c file in the project, so any new .c with a main() must be inside a guard (tools/bench/ files are).",
+    "New rules are tested and also broken on purpose in a copy to prove the test would notice (the user's style).",
+    "Rust in the AI environment cannot exceed ~1.75; do not run DixScript-Rust. Pure static analysis for reviews; running the repo's own tests and small throwaway benchmarks is fine.",
+    "Zero assumptions: check APIs and structure first, research on the web when needed, ask when context is missing. Use the mid-engine optimisation techniques that really work, measured (rules in mid-engine docs/platform-optimization.md).",
+    "Skip the 'Anti-Villain King' lore rules: they belong to another project."
+  ],
+  "decisions_from_the_user": {
+    "sizes": "solo 45 tiles per side, two teams 64, absolute maximum 128 for any floor; three or four teams not set (81 proposed, unconfirmed)",
+    "stacked_floors": "uncommon; normally 2 levels, hard limit 4, above 2 extremely rare; a deck mostly has 1 or 2 holes, each with a way back up; the upper level covers most of its zone",
+    "accepted_defaults": "6 m per level; cover walls 0.45 m and 0.85 m; safe zone = a zone with two sentinel gates on random floors; team start rooms on floor 1 and boss arenas; the generator integer-only (every old seed gives a different floor); build rounds R0 to R5",
+    "other": "keep the current colours; themes floral, fungal, mechanical on top of the corporate office; missions and special rooms still to be brainstormed (sockets/templates are the plan); free low-poly assets researched (CC0 first, licence ledger)"
+  },
+  "repo_state": {
+    "base_commit": "7ecc779 (main, includes the earlier docs tarball: design/08, 09, tools/bench)",
+    "delivered": "r0_floorgen_foundation.tar.gz (this handover json is inside it at docs/handover/floorgen-r0-handover.json). Not pushed by the previous chat; the user applies it.",
+    "files_new": [
+      "src/floorgen/fg_fixed.h",
+      "src/floorgen/fg_rng.h",
+      "src/floorgen/fg_clock.h",
+      "src/floorgen/fg_bitrow.h",
+      "src/floorgen/fg_probe.h",
+      "src/floorgen/fg_hash.h",
+      "tests/floorgen_rng_headless.c",
+      "tests/floorgen_bits_headless.c",
+      "tests/floorgen_hash_headless.c",
+      "tests/floorgen_plain_headless.c",
+      "tests/floorgen_integer_headless.c",
+      "docs/floorgen.md",
+      "docs/handover/floorgen-r0-handover.json"
+    ],
+    "files_changed": [
+      "src/dungeon/dungeon_generator.c (rewritten, integer only)",
+      "src/dungeon/dungeon_generator.h (GenStageName)",
+      "src/dungeon/dungeon_probes.h and .c (only the float sight ray left)",
+      "src/dungeon/dungeon_types.h (FloorMap: openTiles, stageMicros[], genMicros; GenStage enum)",
+      "docs/dungeon.md",
+      "docs/testing.md",
+      "docs/design/07-roadmap.md",
+      "docs/design/08-floor-generation.md",
+      "docs/design/09-floor-generation-research.md"
+    ],
+    "main_c_touched": false
+  },
+  "r0_done": [
+    "Integer-only generator on PCG32 streams (halls, partitions, pillars per attempt); no float, no libm; FG_GEN_VERSION 1",
+    "Header-only src/floorgen modules (no new .c files, so no build line changed anywhere)",
+    "Bit-row scans (128-bit rows, rows and columns) with a plain oracle behind -DFG_PLAIN_SCANS",
+    "Integer probe rays: 16 directions as a Q16.16 table, exact grid walk; float Probe_CastRay stays only for monster sight",
+    "FgFloorHash and 40 golden floors; generation report with microseconds per stage (FloorMap.stageMicros, genMicros) and integer openTiles",
+    "One small saving: GenerateFloorMap no longer measures the finished floor twice",
+    "Five new headless suites, each with broken-on-purpose checks; docs/floorgen.md written"
+  ],
+  "r0_left": [
+    "FIRST: tests/weapons_headless.c fails with the new generator (see verification.full_suite). Find out whether the test depends on a seed's layout (then update it and say so in docs/testing.md) or whether the generator broke something; the rest of the suite had passed so far.",
+    "Accessor layer + call-site migration (docs/design/08 section 6.3): Floor_Solid, Floor_WallClass, Floor_WallTopY, Floor_CeilY, dimensions as static inline wrappers; move the 11 source files that read grid[], Tile_IsSolid or WALL_HEIGHT (renderer 8 refs, spider_ai 6, swarm 5, pickups 4, floor_game 4, enemy_manager 3, dungeon_raycast 3, controller 2, lighting 1; WALL_HEIGHT 22 uses in 7 files; 13 test files reference the grid). Tile_IsSolid stays as a wrapper.",
+    "tools/bench_floorgen.c (guarded with -D, build line in the header): N floors, per-stage microseconds, attempts, compiler/arch/optimised banner; so the user can run it in Termux for phone numbers",
+    "HUD: append total generation microseconds to the existing generation report line in main.c (rebuild main.c from latest main, change that one line only)",
+    "tests/floorgen_wasm_check.sh: build tests/floorgen_hash_headless.c for wasm, compare its 'dump' output with native, exit 77 (SKIP) without a toolchain; wire it into tools/run_tests.sh like server_smoke_quic.sh"
+  ],
+  "verification": {
+    "full_suite": "41 PASS lines and 2 FAIL line(s) when packaging; the run had NOT finished because the user asked to stop. The failing test is tests/weapons_headless.c, recorded as: [pass] and swings to the other side the same way | [pass] a target past 1 is held at 1 | [pass] two half steps are one whole one (it does not depend on the frame rate) | FAILED (1 failure) | SKIP  tests/server_smoke_quic.sh (SKIP: cargo is not installed). Not investigated. The generator change makes every floor different, so a check that depends on a particular seed's layout is the first suspect; confirm before fixing (run: cc line in the test header, from the project root).",
+    "passed_before_packaging": "dungeon_headless (statistics match the old generator), the five new floorgen suites (fast and plain scans), 40 golden hashes identical in 8 native builds (-O0, -O2, -O3, plain, -Os -ffast-math, -march=native -ffp-contract=fast, ASan+UBSan clean) and in a wasm32-wasi build run under wasmtime",
+    "equivalence_with_old_generator": "5,000 floors each: means equal, KS distances 0.007 to 0.023 against 0.027 critical; 40,000 floors: fallbacks 4 old vs 7 new, first attempt 65.9 vs 65.5 percent; speed 35.5 s vs 110 s for 40,000 floors (sandbox x86, -O2)",
+    "not_verified": "phone, browser/Emscripten build, ARM or 32-bit execution (aarch64, arm, riscv64, windows only cross-compiled), per-stage timings (no harness yet), mid-math's Pcg32 itself (algorithm re-implemented in C and Python only)"
+  },
+  "findings": [
+    "Emscripten >= 3.1.27 default stack is 64 KB; swarm.c FlowUpdate puts 128 KB of queue arrays on the stack at 128x128 (must move to static in R1).",
+    "Lighting_Update walks every tile every frame: 19 us at 45x45, 217 us at 128x128 on the sandbox; a 37x37 window is about 9 us at any size (window it in R1).",
+    "The pocket pass (CarveToReachable) is an O(n^2) Dijkstra per carve: fine at 45x45, will not scale to 128x128; a heap or bucket queue is an R1 item (keep ties by lowest index if exact equality matters, it does not for statistics).",
+    "mid-math Pcg32::range_u32 uses a 64-bit threshold (2^64 mod n) instead of 2^32 mod n; harmless statistically, breaks bit-exact parity with exact Lemire.",
+    "mid-math Pcg32 streams of one seed share their first output with seq 1 and 2 (20,000 of 20,000); FgStream derives state and increment separately to avoid it. Docs say 'completely independent'.",
+    "Bit rows win clearly on spans (1.7-2.7x), bands (2.4-5.9x) and 3x3 pattern fits (2.1-5.7x); flood fill by bit wavefront only wins at 128 or with hardware popcount; a wide 4-lane hash is 1.4-2.7x but saves microseconds (docs/design/09 section 5).",
+    "Diagonal probe rays pass exactly through tile corners; the integer walk breaks the tie z first at all four diagonals (the old float code differed at 225 degrees)."
+  ],
+  "sandbox_notes": [
+    "pip install ziglang wasmtime --break-system-packages works (PyPI is reachable). Zig C compiler: python3 -m ziglang cc -target wasm32-wasi -O2 -std=c99 -D_WASI_EMULATED_PROCESS_CLOCKS -I src file.c ... -lwasi-emulated-process-clocks -o x.wasm; run with the wasmtime Python module (Linker.define_wasi, WasiConfig.stdout_file, instance.exports(store)['_start']).",
+    "No clang, no emcc, no cargo>1.75 in the sandbox; gcc 13.3 only. The 'time' keyword does not exist in /bin/sh: use bash -c 'time ...'. ${PIPESTATUS} is bash only.",
+    "Never put two calls of a random function in one printf argument list (evaluation order).",
+    "run_tests.sh takes about 3-4 minutes in the sandbox; start it in the background (nohup) and poll."
+  ],
+  "next_steps": [
+    "Reproduce the tests/weapons_headless.c failure on the applied tarball before anything else.",
+    "Pull latest main, apply nothing until the user confirms r0_floorgen_foundation.tar.gz is committed (ask for the commit or re-clone).",
+    "Finish the four r0_left items (accessors and migration first; it is mechanical and every round after depends on it).",
+    "Run the bench in Termux on the phone and read the per-stage times; decide from them whether the Dijkstra pocket pass or the probe passes dominate.",
+    "Then R1 (design/08 section 15): MAP_MAX 128, sizes 45/64/(81), stair shell scaled, zone skeleton and graph, start rooms with fairness, the section 13.4 fixes (swarm stack arrays, lighting window, bounded nav and flow, stair table offset)."
+  ],
+  "open_items": [
+    "Size for three or four teams (default 81, cap 128).",
+    "Hole edges and 6 m drops (rails? fall damage?), elevator behaviour, safe floor vs safe zone, collapse on stacked floors (docs/design/08 section 17).",
+    "docs/design/README.md 'Where the game is today' is stale (unlock, countdown, collapse and dive are built); left alone.",
+    "If the user wants the new RNG fix reported to mid-engine: the two Pcg32 findings are written up in docs/floorgen.md and design/09."
+  ],
+  "where_to_read_more": {
+    "plan": "docs/design/08-floor-generation.md",
+    "research_and_measurements": "docs/design/09-floor-generation-research.md",
+    "module_doc_and_r0_status": "docs/floorgen.md",
+    "generator_description": "docs/dungeon.md",
+    "tests": "docs/testing.md"
+  }
+}

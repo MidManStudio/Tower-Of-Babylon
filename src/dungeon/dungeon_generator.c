@@ -5,12 +5,18 @@
 #include "dungeon_generator.h"
 
 #include <limits.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "dungeon_probes.h"
+#include "../floorgen/fg_bitrow.h"
+#include "../floorgen/fg_clock.h"
+#include "../floorgen/fg_fixed.h"
+#include "../floorgen/fg_probe.h"
+#include "../floorgen/fg_rng.h"
+
+// Integer only: no float, no double and no libm in this file (docs/floorgen.md). The one float, the display fraction in the
+// report, carries the allow marker and is never read by the layout. tests/floorgen_integer_headless.c keeps it that way.
 
 #define GEN_MAX_ATTEMPTS 8
 #define MAX_PARTITIONS   56
@@ -21,28 +27,30 @@
 
 // A probe's open span is cut when it exceeds a target. The target is large near
 // the stair doors and shrinks toward the middle of the floor, so the tower gets
-// tighter the further you are from where you arrived.
-#define SPAN_NEAR  17.0f
-#define SPAN_FAR   9.0f
-#define RAMP_TILES 30.0f
+// tighter the further you are from where you arrived. Distances are Q16.16 tiles.
+#define SPAN_NEAR  FX_FROM_INT(17)
+#define SPAN_FAR   FX_FROM_INT(9)
+#define RAMP_TILES 30
 
-#define PILLAR_OPEN_MEAN 5.5f
-#define PILLAR_MIN_SPAN  8.0f
-#define PILLAR_CHANCE    0.7f
+#define PILLAR_OPEN_MEAN (FX_FROM_INT(11) / 2)   // 5.5 tiles
+#define PILLAR_MIN_SPAN  FX_FROM_INT(8)
+#define PILLAR_CHANCE_PM 700                      // per mille
 
 // Pillar halls: open squares reserved before partitioning.
 #define HALL_RADIUS      5
-#define HALL_MIN_DIST    14.0f
+#define HALL_MIN_DIST_SQ (14 * 14)
 #define POCKET_KEEP_MIN  20
 
-#define ROUTE_MIN     52
-#define ROUTE_MAX    260
-#define WALKABLE_MIN 0.55f
-#define WALKABLE_MAX 0.90f
+#define ROUTE_MIN        52
+#define ROUTE_MAX        260
+#define WALKABLE_MIN_PCT 55
+#define WALKABLE_MAX_PCT 90
 
 #define TILE_COUNT (MAP_WIDTH * MAP_HEIGHT)
+#define HALL_AREA  ((HALL_X1 - HALL_X0 + 1) * (HALL_Z1 - HALL_Z0 + 1))
 
-typedef struct { uint32_t s; } Rng;
+#define PROBE_COLS_NOW (((MAP_WIDTH  - 1 - FG_PROBE_ORIGIN) / FG_PROBE_STRIDE) + 1)
+#define PROBE_ROWS_NOW (((MAP_HEIGHT - 1 - FG_PROBE_ORIGIN) / FG_PROBE_STRIDE) + 1)
 
 static uint32_t Hash32(uint32_t x)
 {
@@ -54,46 +62,56 @@ static uint32_t Hash32(uint32_t x)
 
 static uint32_t MixSeed(uint32_t a, uint32_t b) { return Hash32(a ^ Hash32(b + 0x9e3779b9U)); }
 
-static void RngInit(Rng *r, uint32_t seed) { r->s = seed ? seed : 0x6d2b79f5U; }
-
-static uint32_t RngNext(Rng *r)
-{
-    uint32_t x = r->s;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    r->s = x;
-    return x;
-}
-
-static int RngRange(Rng *r, int lo, int hi)
-{
-    if (hi <= lo) return lo;
-    return lo + (int)(RngNext(r) % (uint32_t)(hi - lo + 1));
-}
-
-static float RngFloat(Rng *r) { return (float)(RngNext(r) >> 8) * (1.0f / 16777216.0f); }
-
 uint32_t DungeonFloorSeed(uint32_t towerSeed, int floorNum)
 {
     return MixSeed(towerSeed, (uint32_t)floorNum * 0x9e3779b1U);
 }
 
+const char *GenStageName(int stage)
+{
+    static const char *const names[GEN_STAGE_COUNT] = { "shell", "protect", "halls", "partitions", "pillars", "pockets", "measure" };
+    return stage >= 0 && stage < GEN_STAGE_COUNT ? names[stage] : "?";
+}
+
 typedef struct {
-    FloorMap  *f;
-    Rng        rng;
-    ProbeField pf;
-    bool       prot[MAP_HEIGHT][MAP_WIDTH];  // tiles the generator must leave alone
-    bool       hall[MAP_HEIGHT][MAP_WIDTH];  // kept open of partitions, filled with pillars
-    int        hallX[4], hallZ[4], hallCount;
+    FloorMap    *f;
+    FgPcg32      rng;
+    FgBitGrid    solid;                           // the walls of f, kept in step with it by SetWall and SetOpen
+    FgProbeField pf;
+    bool         prot[MAP_HEIGHT][MAP_WIDTH];     // tiles the generator must leave alone
+    bool         hall[MAP_HEIGHT][MAP_WIDTH];     // kept open of partitions, filled with pillars
+    int          hallX[4], hallZ[4], hallCount;
 } Ctx;
 
 static inline bool IsReserved(const FloorMap *f, int x, int z) { return f->grid[z][x].flags & CELL_RESERVED; }
 
-static void SetWall(FloorMap *f, int x, int z, uint8_t variant)
+// Used before there is a Ctx, to stamp the fixed shell.
+static void StampWall(FloorMap *f, int x, int z, uint8_t variant)
 {
     f->grid[z][x].type    = TILE_WALL;
     f->grid[z][x].variant = variant;
+}
+
+// The two ways a tile changes during generation. Both keep the bit grid in step with the floor.
+static void SetWall(Ctx *c, int x, int z, uint8_t variant)
+{
+    StampWall(c->f, x, z, variant);
+    FgBitGrid_Set(&c->solid, x, z, true);
+}
+
+static void SetOpen(Ctx *c, int x, int z)
+{
+    c->f->grid[z][x].type    = TILE_FLOOR;
+    c->f->grid[z][x].variant = 0;
+    FgBitGrid_Set(&c->solid, x, z, false);
+}
+
+static void SyncBits(Ctx *c)
+{
+    FgBitGrid_Init(&c->solid, MAP_WIDTH, MAP_HEIGHT);
+    for (int z = 0; z < MAP_HEIGHT; ++z)
+        for (int x = 0; x < MAP_WIDTH; ++x)
+            if (c->f->grid[z][x].type == TILE_WALL) FgBitGrid_Set(&c->solid, x, z, true);
 }
 
 // The part of every floor that never changes.
@@ -111,10 +129,10 @@ static void StampShell(FloorMap *f)
     for (int z = HALL_Z0; z <= HALL_Z1; ++z)
         for (int x = HALL_X0; x <= HALL_X1; ++x) f->grid[z][x].type = TILE_FLOOR;
 
-    for (int z = UP_ALCOVE_Z0; z <= UP_ALCOVE_Z1; ++z) SetWall(f, STAIR_WALL_X, z, WALL_SHELL);
-    for (int x = STAIR_WALL_X; x <= HALL_X1; ++x) SetWall(f, x, UP_ALCOVE_Z1, WALL_SHELL);
-    for (int z = DOWN_ALCOVE_Z0; z <= DOWN_ALCOVE_Z1; ++z) SetWall(f, STAIR_WALL_X, z, WALL_SHELL);
-    for (int x = STAIR_WALL_X; x <= HALL_X1; ++x) SetWall(f, x, DOWN_ALCOVE_Z0, WALL_SHELL);
+    for (int z = UP_ALCOVE_Z0; z <= UP_ALCOVE_Z1; ++z) StampWall(f, STAIR_WALL_X, z, WALL_SHELL);
+    for (int x = STAIR_WALL_X; x <= HALL_X1; ++x) StampWall(f, x, UP_ALCOVE_Z1, WALL_SHELL);
+    for (int z = DOWN_ALCOVE_Z0; z <= DOWN_ALCOVE_Z1; ++z) StampWall(f, STAIR_WALL_X, z, WALL_SHELL);
+    for (int x = STAIR_WALL_X; x <= HALL_X1; ++x) StampWall(f, x, DOWN_ALCOVE_Z0, WALL_SHELL);
 
     for (int z = UP_DOOR_Z0; z <= UP_DOOR_Z1; ++z) f->grid[z][STAIR_WALL_X].type = TILE_FLOOR;
     for (int z = DOWN_DOOR_Z0; z <= DOWN_DOOR_Z1; ++z) f->grid[z][STAIR_WALL_X].type = TILE_FLOOR;
@@ -134,7 +152,7 @@ static void StampShell(FloorMap *f)
     f->startZ = Tile_ToWorld(ARRIVE_BELOW_Z);
     f->stairsX = Tile_ToWorld(UP_PAD_X);
     f->stairsZ = Tile_ToWorld(UP_PAD_Z);
-    f->elevatorX = f->elevatorZ = 0.0f;
+    f->elevatorX = f->elevatorZ = 0;
     f->downX = Tile_ToWorld(DOWN_PAD_X);
     f->downZ = Tile_ToWorld(DOWN_PAD_Z);
     f->arriveAboveX = Tile_ToWorld(ARRIVE_ABOVE_X);
@@ -155,19 +173,31 @@ static void BuildProtectMask(Ctx *c)
         }
 }
 
-static float DistToApproach(int x, int z)
+// Squared distance from a tile to the nearer of the two approach points.
+static int DistToApproachSq(int x, int z)
 {
-    const float a = hypotf((float)(x - UP_APPROACH_X), (float)(z - UP_APPROACH_Z));
-    const float b = hypotf((float)(x - DOWN_APPROACH_X), (float)(z - DOWN_APPROACH_Z));
+    const int ax = x - UP_APPROACH_X, az = z - UP_APPROACH_Z;
+    const int bx = x - DOWN_APPROACH_X, bz = z - DOWN_APPROACH_Z;
+    const int a = ax * ax + az * az, b = bx * bx + bz * bz;
     return a < b ? a : b;
 }
 
-// Number of free tiles from (x, z) in direction (dx, dz), not counting the start.
-static int ScanFree(const FloorMap *f, int x, int z, int dx, int dz)
+// The span a probe may have at this tile, Q16.16 tiles: SPAN_NEAR at the approach points, falling in a straight line to SPAN_FAR
+// at RAMP_TILES away or more.
+static Fx SpanTarget(int tileX, int tileZ)
 {
-    int n = 0;
-    while (!Tile_IsSolid(f, x + dx * (n + 1), z + dz * (n + 1))) ++n;
-    return n;
+    Fx t = FgDistFx2(DistToApproachSq(tileX, tileZ)) / RAMP_TILES;
+    if (t > FX_ONE) t = FX_ONE;
+    return SPAN_NEAR - (Fx)(((int64_t)(SPAN_NEAR - SPAN_FAR) * t) >> FX_SHIFT);
+}
+
+// Number of free tiles from (x, z) in direction (dx, dz), not counting the start.
+static int ScanFree(const Ctx *c, int x, int z, int dx, int dz)
+{
+    if (dx > 0) return FgBitGrid_RunE(&c->solid, x, z);
+    if (dx < 0) return FgBitGrid_RunW(&c->solid, x, z);
+    if (dz > 0) return FgBitGrid_RunS(&c->solid, x, z);
+    return FgBitGrid_RunN(&c->solid, x, z);
 }
 
 // Wall segment on column `line` (vertical, runs along z) or row `line`
@@ -180,10 +210,7 @@ static bool SegmentFits(const Ctx *c, bool vertical, int line, int a, int b)
         const int x = vertical ? line : i;
         const int z = vertical ? i : line;
         if (!Tile_InBounds(x, z) || c->prot[z][x] || c->hall[z][x] || c->f->grid[z][x].type != TILE_FLOOR) return false;
-        for (int d = -MIN_CORRIDOR_TILES; d <= MIN_CORRIDOR_TILES; ++d) {
-            if (d == 0) continue;
-            if (Tile_IsSolid(c->f, vertical ? x + d : x, vertical ? z : z + d)) return false;
-        }
+        if (!FgBitGrid_SidesFree(&c->solid, vertical, line, i, MIN_CORRIDOR_TILES)) return false;
     }
     return true;
 }
@@ -192,8 +219,8 @@ static bool PlacePartition(Ctx *c, int px, int pz, bool vertical)
 {
     const int dx = vertical ? 1 : 0;
     const int dz = vertical ? 0 : 1;
-    const int lo = ScanFree(c->f, px, pz, -dx, -dz);
-    const int hi = ScanFree(c->f, px, pz, dx, dz);
+    const int lo = ScanFree(c, px, pz, -dx, -dz);
+    const int hi = ScanFree(c, px, pz, dx, dz);
     const int coord = vertical ? px : pz;
     const int cmin = coord - lo + MIN_CORRIDOR_TILES;
     const int cmax = coord + hi - MIN_CORRIDOR_TILES;
@@ -202,15 +229,15 @@ static bool PlacePartition(Ctx *c, int px, int pz, bool vertical)
 
     for (int attempt = 0; attempt < 12; ++attempt) {
         int line;
-        const float pick = RngFloat(&c->rng);
-        if (pick < 0.2f)      line = cmin + RngRange(&c->rng, 0, 1);   // narrow lane against one wall
-        else if (pick < 0.4f) line = cmax - RngRange(&c->rng, 0, 1);
-        else                  line = RngRange(&c->rng, cmin, cmax);
+        const uint32_t pick = FgPcg32_Range(&c->rng, 0u, 1000u);
+        if (pick < 200u)      line = cmin + FgRng_Int(&c->rng, 0, 1);   // narrow lane against one wall
+        else if (pick < 400u) line = cmax - FgRng_Int(&c->rng, 0, 1);
+        else                  line = FgRng_Int(&c->rng, cmin, cmax);
 
         int a = origin, b = origin;
         if (!SegmentFits(c, vertical, line, a, b)) continue;
 
-        const int target = RngRange(&c->rng, SEGMENT_MIN + 2, SEGMENT_MAX);
+        const int target = FgRng_Int(&c->rng, SEGMENT_MIN + 2, SEGMENT_MAX);
         bool growA = true, growB = true;
         while (b - a + 1 < target && (growA || growB)) {
             if (growB) { if (SegmentFits(c, vertical, line, b + 1, b + 1)) ++b; else growB = false; }
@@ -221,10 +248,10 @@ static bool PlacePartition(Ctx *c, int px, int pz, bool vertical)
         if (len < SEGMENT_MIN) continue;
 
         int gap0 = -1;
-        if (len >= DOOR_MIN_LENGTH) gap0 = RngRange(&c->rng, a + 2, b - DOOR_WIDTH - 1);
+        if (len >= DOOR_MIN_LENGTH) gap0 = FgRng_Int(&c->rng, a + 2, b - DOOR_WIDTH - 1);
         for (int i = a; i <= b; ++i) {
             if (gap0 >= 0 && i >= gap0 && i < gap0 + DOOR_WIDTH) continue;
-            SetWall(c->f, vertical ? line : i, vertical ? i : line, WALL_PARTITION);
+            SetWall(c, vertical ? line : i, vertical ? i : line, WALL_PARTITION);
         }
         return true;
     }
@@ -233,36 +260,32 @@ static bool PlacePartition(Ctx *c, int px, int pz, bool vertical)
 
 static int PartitionPass(Ctx *c)
 {
-    bool exhausted[PROBE_COUNT];
+    bool exhausted[FG_PROBE_MAX];
     memset(exhausted, 0, sizeof exhausted);
     int placed = 0;
 
     while (placed < MAX_PARTITIONS) {
-        ProbeField_Analyze(c->f, &c->pf, false);
+        FgProbeField_Analyze(&c->solid, &c->pf, false);
 
         int best = -1;
-        float bestExcess = 0.0f;
+        Fx bestExcess = 0;
         bool bestVertical = true;
-        for (int i = 0; i < PROBE_COUNT; ++i) {
-            const Probe *p = &c->pf.probes[i];
+        for (int i = 0; i < c->pf.count; ++i) {
+            const FgProbe *p = &c->pf.probes[i];
             if (!p->active || exhausted[i]) continue;
-            float t = DistToApproach(p->tileX, p->tileZ) / RAMP_TILES;
-            if (t > 1.0f) t = 1.0f;
-            const float target = SPAN_NEAR + (SPAN_FAR - SPAN_NEAR) * t;
-            const float exX = p->spanX - target;
-            const float exZ = p->spanZ - target;
-            const float ex = exX > exZ ? exX : exZ;
+            const Fx target = SpanTarget(p->tileX, p->tileZ);
+            const Fx exX = p->spanX - target;
+            const Fx exZ = p->spanZ - target;
+            const Fx ex = exX > exZ ? exX : exZ;
             if (ex > bestExcess) { bestExcess = ex; best = i; bestVertical = exX >= exZ; }
         }
         if (best < 0) break;
 
-        const Probe *p = &c->pf.probes[best];
+        const FgProbe *p = &c->pf.probes[best];
         bool ok = PlacePartition(c, p->tileX, p->tileZ, bestVertical);
         if (!ok) {
-            float t = DistToApproach(p->tileX, p->tileZ) / RAMP_TILES;
-            if (t > 1.0f) t = 1.0f;
-            const float target = SPAN_NEAR + (SPAN_FAR - SPAN_NEAR) * t;
-            const float other = bestVertical ? p->spanZ : p->spanX;
+            const Fx target = SpanTarget(p->tileX, p->tileZ);
+            const Fx other = bestVertical ? p->spanZ : p->spanX;
             if (other > target) ok = PlacePartition(c, p->tileX, p->tileZ, !bestVertical);
         }
         if (ok) ++placed; else exhausted[best] = true;
@@ -270,18 +293,10 @@ static int PartitionPass(Ctx *c)
     return placed;
 }
 
-static bool Open3x3(const FloorMap *f, int x, int z)
-{
-    for (int dz = -1; dz <= 1; ++dz)
-        for (int dx = -1; dx <= 1; ++dx)
-            if (Tile_IsSolid(f, x + dx, z + dz)) return false;
-    return true;
-}
-
 static bool TryPillar(Ctx *c, int x, int z)
 {
-    if (!Tile_InBounds(x, z) || c->prot[z][x] || !Open3x3(c->f, x, z)) return false;
-    SetWall(c->f, x, z, WALL_PILLAR);
+    if (!Tile_InBounds(x, z) || c->prot[z][x] || !FgBitGrid_Open3x3(&c->solid, x, z)) return false;
+    SetWall(c, x, z, WALL_PILLAR);
     return true;
 }
 
@@ -289,11 +304,11 @@ static void PickHalls(Ctx *c)
 {
     memset(c->hall, 0, sizeof c->hall);
     c->hallCount = 0;
-    const int want = RngRange(&c->rng, 2, 4);
+    const int want = FgRng_Int(&c->rng, 2, 4);
     for (int tries = 0; tries < 60 && c->hallCount < want; ++tries) {
-        const int cx = PROBE_ORIGIN + PROBE_STRIDE * RngRange(&c->rng, 1, PROBE_COLS - 2);
-        const int cz = PROBE_ORIGIN + PROBE_STRIDE * RngRange(&c->rng, 1, PROBE_ROWS - 2);
-        if (DistToApproach(cx, cz) < HALL_MIN_DIST) continue;
+        const int cx = FG_PROBE_ORIGIN + FG_PROBE_STRIDE * FgRng_Int(&c->rng, 1, PROBE_COLS_NOW - 2);
+        const int cz = FG_PROBE_ORIGIN + FG_PROBE_STRIDE * FgRng_Int(&c->rng, 1, PROBE_ROWS_NOW - 2);
+        if (DistToApproachSq(cx, cz) < HALL_MIN_DIST_SQ) continue;
         if (cx - HALL_RADIUS < HALL_X0 || cx + HALL_RADIUS > HALL_X1) continue;
         if (cz - HALL_RADIUS < HALL_Z0 || cz + HALL_RADIUS > HALL_Z1) continue;
         bool clash = false;
@@ -317,18 +332,18 @@ static int PillarPass(Ctx *c)
 {
     int placed = 0;
     for (int h = 0; h < c->hallCount; ++h)
-        for (int oz = -PROBE_STRIDE; oz <= PROBE_STRIDE; oz += PROBE_STRIDE)
-            for (int ox = -PROBE_STRIDE; ox <= PROBE_STRIDE; ox += PROBE_STRIDE)
+        for (int oz = -FG_PROBE_STRIDE; oz <= FG_PROBE_STRIDE; oz += FG_PROBE_STRIDE)
+            for (int ox = -FG_PROBE_STRIDE; ox <= FG_PROBE_STRIDE; ox += FG_PROBE_STRIDE)
                 if (TryPillar(c, c->hallX[h] + ox, c->hallZ[h] + oz)) ++placed;
 
-    ProbeField_Analyze(c->f, &c->pf, true);
-    for (int i = 0; i < PROBE_COUNT; ++i) {
-        const Probe *p = &c->pf.probes[i];
+    FgProbeField_Analyze(&c->solid, &c->pf, true);
+    for (int i = 0; i < c->pf.count; ++i) {
+        const FgProbe *p = &c->pf.probes[i];
         if (!p->active || p->meanReach < PILLAR_OPEN_MEAN) continue;
         if (p->spanX < PILLAR_MIN_SPAN || p->spanZ < PILLAR_MIN_SPAN) continue;
-        for (int oz = -PROBE_STRIDE / 2; oz <= PROBE_STRIDE / 2; oz += PROBE_STRIDE)
-            for (int ox = -PROBE_STRIDE / 2; ox <= PROBE_STRIDE / 2; ox += PROBE_STRIDE) {
-                if (RngFloat(&c->rng) > PILLAR_CHANCE) continue;
+        for (int oz = -FG_PROBE_STRIDE / 2; oz <= FG_PROBE_STRIDE / 2; oz += FG_PROBE_STRIDE)
+            for (int ox = -FG_PROBE_STRIDE / 2; ox <= FG_PROBE_STRIDE / 2; ox += FG_PROBE_STRIDE) {
+                if (!FgRng_Chance(&c->rng, PILLAR_CHANCE_PM)) continue;
                 if (TryPillar(c, p->tileX + ox, p->tileZ + oz)) ++placed;
             }
     }
@@ -412,8 +427,7 @@ static bool CarveToReachable(Ctx *c)
             for (int dx = -1; dx <= 1; ++dx) {
                 const int x = cx + dx, z = cz + dz;
                 if (!Tile_InBounds(x, z) || IsReserved(f, x, z)) continue;
-                f->grid[z][x].type = TILE_FLOOR;
-                f->grid[z][x].variant = 0;
+                SetOpen(c, x, z);
             }
     }
     return true;
@@ -461,7 +475,7 @@ static void ConnectPockets(Ctx *c)
         }
         for (int i = 0; i < tail; ++i) {
             const int x = g_pocketList[i] % MAP_WIDTH, z = g_pocketList[i] / MAP_WIDTH;
-            if (!IsReserved(f, x, z)) SetWall(f, x, z, WALL_PARTITION);
+            if (!IsReserved(f, x, z)) SetWall(c, x, z, WALL_PARTITION);
         }
     }
 }
@@ -472,7 +486,7 @@ typedef struct {
     bool  arriveAboveReached;
     int   pathLength;
     int   pockets;
-    float walkable;
+    int   openTiles;
 } Metrics;
 
 static void Measure(const FloorMap *f, Metrics *m)
@@ -502,67 +516,105 @@ static void Measure(const FloorMap *f, Metrics *m)
         for (int x = 0; x < MAP_WIDTH; ++x)
             if (!Tile_IsSolid(f, x, z)) ++open;
     m->pockets = open - reached;
-    m->walkable = (float)open / (float)((HALL_X1 - HALL_X0 + 1) * (HALL_Z1 - HALL_Z0 + 1));
+    m->openTiles = open;
 }
 
-// Rules every floor must satisfy, including the fallback layout.
+// The rules every floor must satisfy, including the fallback layout. NULL when they hold.
+static const char *MetricsError(const Metrics *m)
+{
+    if (!m->reservedIntact)             return "fixed shell or stair alcoves were changed";
+    if (!m->upPadReached)               return "up pad not reachable from arrival";
+    if (!m->arriveAboveReached)         return "arrival from above not reachable";
+    if (m->pockets != 0)                return "walkable pockets cut off from arrival";
+    if (m->pathLength > ROUTE_MAX)      return "route to the stairs is too long";
+    return NULL;
+}
+
 bool ValidateFloorMap(const FloorMap *f, char *why, size_t whySize)
 {
     Metrics m;
     Measure(f, &m);
-    const char *err = NULL;
-    if (!m.reservedIntact)            err = "fixed shell or stair alcoves were changed";
-    else if (!m.upPadReached)         err = "up pad not reachable from arrival";
-    else if (!m.arriveAboveReached)   err = "arrival from above not reachable";
-    else if (m.pockets != 0)          err = "walkable pockets cut off from arrival";
-    else if (m.pathLength > ROUTE_MAX) err = "route to the stairs is too long";
+    const char *err = MetricsError(&m);
     if (err && why && whySize) snprintf(why, whySize, "%s", err);
     return err == NULL;
 }
 
 // Quality targets. A generated layout that misses them is thrown away and
-// rebuilt from the next sub-seed.
+// rebuilt from the next sub-stream. Whole-number comparisons: open tiles against the hall area.
 static bool MeetsTargets(const FloorMap *f)
 {
-    return f->pathLength >= ROUTE_MIN && f->walkableFraction >= WALKABLE_MIN && f->walkableFraction <= WALKABLE_MAX;
+    return f->pathLength >= ROUTE_MIN
+        && f->openTiles * 100 >= WALKABLE_MIN_PCT * HALL_AREA
+        && f->openTiles * 100 <= WALKABLE_MAX_PCT * HALL_AREA;
 }
 
-static void BuildAttempt(FloorMap *f, uint32_t seed, bool fallback)
+static void StageEnd(FloorMap *f, GenStage s, uint32_t t0) { f->stageMicros[s] += FgClockMicros() - t0; }
+
+// One attempt. Every random choice comes from a stream of its own (the zone's halls, partitions and pillars), keyed by the floor's
+// seed and the attempt number, so the stages do not disturb each other.
+static void BuildAttempt(FloorMap *f, uint32_t floorSeed, uint32_t attempt, bool fallback, Metrics *m)
 {
     static Ctx c;
+    const uint64_t seed64 = FgFloorSeed64(floorSeed);
     c.f = f;
-    RngInit(&c.rng, seed);
+    uint32_t t = FgClockMicros();
 
     StampShell(f);
+    SyncBits(&c);
+    StageEnd(f, GEN_STAGE_SHELL, t);
+
+    t = FgClockMicros();
     BuildProtectMask(&c);
+    StageEnd(f, GEN_STAGE_PROTECT, t);
+
+    t = FgClockMicros();
+    FgStream(&c.rng, seed64, FG_STREAM_ZONE, FG_ZONE_HALLS, attempt);
     PickHalls(&c);
+    StageEnd(f, GEN_STAGE_HALLS, t);
 
+    t = FgClockMicros();
+    FgStream(&c.rng, seed64, FG_STREAM_ZONE, FG_ZONE_PARTITIONS, attempt);
     f->partitions = fallback ? 0 : PartitionPass(&c);
-    f->pillars = PillarPass(&c);
-    ConnectPockets(&c);
+    StageEnd(f, GEN_STAGE_PARTITIONS, t);
 
-    Metrics m;
-    Measure(f, &m);
-    f->pathLength = m.pathLength;
-    f->walkableFraction = m.walkable;
+    t = FgClockMicros();
+    FgStream(&c.rng, seed64, FG_STREAM_ZONE, FG_ZONE_PILLARS, attempt);
+    f->pillars = PillarPass(&c);
+    StageEnd(f, GEN_STAGE_PILLARS, t);
+
+    t = FgClockMicros();
+    ConnectPockets(&c);
+    StageEnd(f, GEN_STAGE_POCKETS, t);
+
+    t = FgClockMicros();
+    Measure(f, m);
+    f->pathLength = m->pathLength;
+    f->openTiles = m->openTiles;
+    f->walkableFraction = (float)m->openTiles / (float)HALL_AREA;   // FLOAT-OK: display only, never read by the layout
+    StageEnd(f, GEN_STAGE_MEASURE, t);
 }
 
 void GenerateFloorMap(FloorMap *outFloor, int floorNum, uint32_t baseSeed)
 {
+    const uint32_t started = FgClockMicros();
     const uint32_t floorSeed = DungeonFloorSeed(baseSeed, floorNum);
     outFloor->floorNumber = floorNum;
     outFloor->seed = floorSeed;
+    memset(outFloor->stageMicros, 0, sizeof outFloor->stageMicros);
 
+    Metrics m;
     for (int attempt = 0; attempt < GEN_MAX_ATTEMPTS; ++attempt) {
-        BuildAttempt(outFloor, MixSeed(floorSeed, (uint32_t)attempt), false);
-        if (ValidateFloorMap(outFloor, NULL, 0) && MeetsTargets(outFloor)) {
+        BuildAttempt(outFloor, floorSeed, (uint32_t)attempt, false, &m);
+        if (MetricsError(&m) == NULL && MeetsTargets(outFloor)) {
             outFloor->attempts = attempt + 1;
             outFloor->usedFallback = false;
+            outFloor->genMicros = FgClockMicros() - started;
             return;
         }
     }
     // Pillar hall with no partitions. It always passes, so the player is never stuck.
-    BuildAttempt(outFloor, floorSeed, true);
+    BuildAttempt(outFloor, floorSeed, GEN_MAX_ATTEMPTS, true, &m);
     outFloor->attempts = GEN_MAX_ATTEMPTS;
     outFloor->usedFallback = true;
+    outFloor->genMicros = FgClockMicros() - started;
 }

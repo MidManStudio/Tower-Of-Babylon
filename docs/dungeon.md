@@ -34,7 +34,7 @@ Walls are `TILE_WALL` with a `variant`: `WALL_SHELL`, `WALL_PARTITION` or `WALL_
 
 ### `dungeon_probes.h` and `dungeon_probes.c`
 
-Sparse probe lattice (every 4 tiles from tile 2, 11 by 11 probes) and the ray caster. `Probe_CastRay` is a grid DDA that accepts any direction. `ProbeField_Analyze` always measures the four axis reaches and spans; with `fullRays` it also casts 16 evenly spaced rays and stores the mean and maximum reach. Tile units, rays start at tile centres.
+`Probe_CastRay` is a grid DDA (float) that accepts any direction; tile units, rays start at tile centres. The monsters use it for line of sight. It is NOT used by the generator: since round R0 (2026-11-21) the probe lattice (every 4 tiles from tile 2, 11 by 11 probes), the four axis reaches and the 16 rays that decide a layout are integer only and live in `src/floorgen/fg_probe.h` (see `floorgen.md`).
 
 ### `dungeon_raycast.h` and `dungeon_raycast.c`
 
@@ -51,6 +51,8 @@ The flight of stairs in the up alcove is solid too: all three queries also ask `
 Quality targets are separate and only apply to generated layouts: route to the stairs at least 52 steps, open space between 55% and 90% of the hall. A segment may only be placed where the band of `MIN_CORRIDOR_TILES` tiles on both sides is free of walls, which is what keeps corridors at least 3 tiles wide. Partitions longer than 8 tiles get a 3 tile doorway.
 
 The generator keeps its working buffers in static storage to stay clear of the small WASM stack, so it is not re-entrant. Tunables are the `#define`s at the top of the file.
+
+Since round R0 (2026-11-21) the layout code is integer only, its random numbers come from PCG32 streams (halls, partitions and pillars, per attempt), free runs and fits use bit rows, and `FloorMap` carries a time per generation stage (`stageMicros`, `genMicros`) and the integer open count (`openTiles`). Where older text in this document speaks of float distances, `hypotf`, `cosf` or `sinf`, or of one random sequence, `floorgen.md` is the current description. The floors are different for every seed; their statistics are the same.
 
 ### `floor_window.h` and `floor_window.c`
 
