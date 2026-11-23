@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../dungeon/dungeon_probes.h"
+#include "../dungeon/floor_access.h"
 #include "../dungeon/stair_collision.h"
 #include "../dungeon/staircase.h"
 #include "spider.h"
@@ -33,8 +34,8 @@ static int TileOf(float world) { return (int)floorf((world + TILE_SIZE * 0.5f) /
 // square lies in a solid tile.
 static bool Blocked(const FloorMap *map, float x, float z, float r)
 {
-    return Tile_IsSolid(map, TileOf(x - r), TileOf(z - r)) || Tile_IsSolid(map, TileOf(x + r), TileOf(z - r)) ||
-           Tile_IsSolid(map, TileOf(x - r), TileOf(z + r)) || Tile_IsSolid(map, TileOf(x + r), TileOf(z + r));
+    return Floor_Solid(map, 0, TileOf(x - r), TileOf(z - r)) || Floor_Solid(map, 0, TileOf(x + r), TileOf(z - r)) ||
+           Floor_Solid(map, 0, TileOf(x - r), TileOf(z + r)) || Floor_Solid(map, 0, TileOf(x + r), TileOf(z + r));
 }
 
 // One ray along the line between the two points, cast with the same DDA the
@@ -55,9 +56,9 @@ static float DistTiles(int x, int z, int ax, int az)
 
 static bool SpawnCandidate(const FloorMap *map, int x, int z)
 {
-    const MapCell *c = &map->grid[z][x];
-    if (c->flags & CELL_RESERVED) return false;
-    if (c->type != TILE_FLOOR && c->type != TILE_CORRIDOR) return false;
+    if (Floor_Reserved(map, x, z)) return false;
+    const TileType type = Floor_Type(map, 0, x, z);
+    if (type != TILE_FLOOR && type != TILE_CORRIDOR) return false;
     if (DistTiles(x, z, ARRIVE_BELOW_X, ARRIVE_BELOW_Z) < ENEMY_SAFE_TILES) return false;
     if (DistTiles(x, z, ARRIVE_ABOVE_X, ARRIVE_ABOVE_Z) < ENEMY_SAFE_TILES) return false;
     return true;

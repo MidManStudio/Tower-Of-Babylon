@@ -3,13 +3,14 @@
 // live in docs/dungeon.md, section "dungeon_raycast.c"
 // ============================================================================
 #include "dungeon_raycast.h"
+#include "floor_access.h"
 #include "stair_collision.h"
 
 #include <math.h>
 
 #define HALF (TILE_SIZE * 0.5f)
 
-static int TileOfWorld(float w) { return (int)floorf((w + HALF) / TILE_SIZE); }
+static int TileOfWorld(float w) { return Floor_TileOfWorld(w); }
 
 bool Dungeon_HasCeiling(int tx, int tz)
 {
@@ -17,9 +18,9 @@ bool Dungeon_HasCeiling(int tx, int tz)
     return !(tx >= STAIR_WALL_X && (tz <= UP_ALCOVE_Z1 || tz >= DOWN_ALCOVE_Z0));
 }
 
-static bool InsideMapXZ(float x, float z)
+static bool InsideMapXZ(const FloorMap *f, float x, float z)
 {
-    return x >= -HALF && x <= ((float)MAP_WIDTH - 0.5f) * TILE_SIZE && z >= -HALF && z <= ((float)MAP_HEIGHT - 0.5f) * TILE_SIZE;
+    return x >= -HALF && x <= ((float)Floor_Width(f) - 0.5f) * TILE_SIZE && z >= -HALF && z <= ((float)Floor_Depth(f) - 0.5f) * TILE_SIZE;
 }
 
 // Slab test. Reports the entry distance and the face normal. A ray that starts
@@ -57,13 +58,14 @@ bool Dungeon_Raycast(const FloorMap *f, Vector3 o, Vector3 d, float maxDist, Dun
 
     if (d.y < -1e-6f && o.y >= -1e-4f) {
         const float t = -o.y / d.y;
-        if (t >= 0.0f && t < bestT && InsideMapXZ(o.x + d.x * t, o.z + d.z * t)) {
+        if (t >= 0.0f && t < bestT && InsideMapXZ(f, o.x + d.x * t, o.z + d.z * t)) {
             bestT = t; bestN = (Vector3){ 0.0f, 1.0f, 0.0f }; found = true;
         }
     }
-    if (d.y > 1e-6f && o.y <= WALL_HEIGHT + 1e-4f) {
-        const float t = (WALL_HEIGHT - o.y) / d.y;
-        if (t >= 0.0f && t < bestT && Dungeon_HasCeiling(TileOfWorld(o.x + d.x * t), TileOfWorld(o.z + d.z * t))) {
+    const float roofY = Floor_RoofY(f);
+    if (d.y > 1e-6f && o.y <= roofY + 1e-4f) {
+        const float t = (roofY - o.y) / d.y;
+        if (t >= 0.0f && t < bestT && Floor_HasCeiling(f, TileOfWorld(o.x + d.x * t), TileOfWorld(o.z + d.z * t))) {
             bestT = t; bestN = (Vector3){ 0.0f, -1.0f, 0.0f }; found = true;
         }
     }
@@ -73,14 +75,14 @@ bool Dungeon_Raycast(const FloorMap *f, Vector3 o, Vector3 d, float maxDist, Dun
     int z0 = TileOfWorld(fminf(o.z, ez)), z1 = TileOfWorld(fmaxf(o.z, ez));
     if (x0 < 0) x0 = 0;
     if (z0 < 0) z0 = 0;
-    if (x1 >= MAP_WIDTH) x1 = MAP_WIDTH - 1;
-    if (z1 >= MAP_HEIGHT) z1 = MAP_HEIGHT - 1;
+    if (x1 >= Floor_Width(f)) x1 = Floor_Width(f) - 1;
+    if (z1 >= Floor_Depth(f)) z1 = Floor_Depth(f) - 1;
 
     for (int tz = z0; tz <= z1; ++tz)
         for (int tx = x0; tx <= x1; ++tx) {
-            if (f->grid[tz][tx].type != TILE_WALL) continue;
+            if (!Floor_Solid(f, 0, tx, tz)) continue;
             const Vector3 bmin = { (float)tx * TILE_SIZE - HALF, 0.0f, (float)tz * TILE_SIZE - HALF };
-            const Vector3 bmax = { (float)tx * TILE_SIZE + HALF, WALL_HEIGHT, (float)tz * TILE_SIZE + HALF };
+            const Vector3 bmax = { (float)tx * TILE_SIZE + HALF, Floor_WallTopY(f, 0, tx, tz), (float)tz * TILE_SIZE + HALF };
             float t; Vector3 n;
             if (RayBox(o, d, bmin, bmax, &t, &n) && t < bestT) { bestT = t; bestN = n; found = true; }
         }
@@ -108,16 +110,17 @@ static bool PushOutPass(const FloorMap *f, Vector3 *c, float r)
     int x1 = TileOfWorld(c->x + r), z1 = TileOfWorld(c->z + r);
     if (x0 < 0) x0 = 0;
     if (z0 < 0) z0 = 0;
-    if (x1 >= MAP_WIDTH) x1 = MAP_WIDTH - 1;
-    if (z1 >= MAP_HEIGHT) z1 = MAP_HEIGHT - 1;
+    if (x1 >= Floor_Width(f)) x1 = Floor_Width(f) - 1;
+    if (z1 >= Floor_Depth(f)) z1 = Floor_Depth(f) - 1;
 
     for (int tz = z0; tz <= z1; ++tz)
         for (int tx = x0; tx <= x1; ++tx) {
-            if (f->grid[tz][tx].type != TILE_WALL) continue;
+            if (!Floor_Solid(f, 0, tx, tz)) continue;
+            const float topY = Floor_WallTopY(f, 0, tx, tz);
             const float mnx = (float)tx * TILE_SIZE - HALF, mxx = (float)tx * TILE_SIZE + HALF;
             const float mnz = (float)tz * TILE_SIZE - HALF, mxz = (float)tz * TILE_SIZE + HALF;
             const float px = fminf(fmaxf(c->x, mnx), mxx);
-            const float py = fminf(fmaxf(c->y, 0.0f), WALL_HEIGHT);
+            const float py = fminf(fmaxf(c->y, 0.0f), topY);
             const float pz = fminf(fmaxf(c->z, mnz), mxz);
             const float dx = c->x - px, dy = c->y - py, dz = c->z - pz;
             const float d2 = dx * dx + dy * dy + dz * dz;
@@ -127,7 +130,7 @@ static bool PushOutPass(const FloorMap *f, Vector3 *c, float r)
                 c->x += dx * k; c->y += dy * k; c->z += dz * k;
             } else {
                 // Centre is inside the box: leave through the nearest face.
-                const float exits[5] = { c->x - mnx, mxx - c->x, c->z - mnz, mxz - c->z, WALL_HEIGHT - c->y };
+                const float exits[5] = { c->x - mnx, mxx - c->x, c->z - mnz, mxz - c->z, topY - c->y };
                 int best = 0;
                 for (int i = 1; i < 5; ++i) if (exits[i] < exits[best]) best = i;
                 switch (best) {
@@ -135,7 +138,7 @@ static bool PushOutPass(const FloorMap *f, Vector3 *c, float r)
                     case 1: c->x = mxx + r; break;
                     case 2: c->z = mnz - r; break;
                     case 3: c->z = mxz + r; break;
-                    default: c->y = WALL_HEIGHT + r; break;
+                    default: c->y = topY + r; break;
                 }
             }
             moved = true;
@@ -151,7 +154,8 @@ bool Dungeon_PushOutSphere(const FloorMap *f, Vector3 *c, float r)
         bool m = PushOutPass(f, c, r);
         if (Stair_PushOutSphere(c, r)) m = true;
         if (c->y < r) { c->y = r; m = true; }
-        if (Dungeon_HasCeiling(TileOfWorld(c->x), TileOfWorld(c->z)) && c->y > WALL_HEIGHT - r) { c->y = WALL_HEIGHT - r; m = true; }
+        const float ceilY = Floor_CeilY(f, c->x, c->z, c->y);        // FLOOR_NO_CEILING (huge) over the alcoves, so nothing is clamped there
+        if (c->y > ceilY - r) { c->y = ceilY - r; m = true; }
         if (!m) break;
         moved = true;
     }
@@ -161,14 +165,15 @@ bool Dungeon_PushOutSphere(const FloorMap *f, Vector3 *c, float r)
 float Dungeon_SurfaceDistance(const FloorMap *f, Vector3 p)
 {
     float best = fabsf(p.y);
-    if (Dungeon_HasCeiling(TileOfWorld(p.x), TileOfWorld(p.z))) best = fminf(best, fabsf(WALL_HEIGHT - p.y));
+    if (Floor_HasCeiling(f, TileOfWorld(p.x), TileOfWorld(p.z))) best = fminf(best, fabsf(Floor_RoofY(f) - p.y));
 
     const int x0 = TileOfWorld(p.x) - 2, x1 = TileOfWorld(p.x) + 2, z0 = TileOfWorld(p.z) - 2, z1 = TileOfWorld(p.z) + 2;
-    for (int tz = z0 < 0 ? 0 : z0; tz <= z1 && tz < MAP_HEIGHT; ++tz)
-        for (int tx = x0 < 0 ? 0 : x0; tx <= x1 && tx < MAP_WIDTH; ++tx) {
-            if (f->grid[tz][tx].type != TILE_WALL) continue;
+    for (int tz = z0 < 0 ? 0 : z0; tz <= z1 && tz < Floor_Depth(f); ++tz)
+        for (int tx = x0 < 0 ? 0 : x0; tx <= x1 && tx < Floor_Width(f); ++tx) {
+            if (!Floor_Solid(f, 0, tx, tz)) continue;
+            const float topY = Floor_WallTopY(f, 0, tx, tz);
             const float px = fminf(fmaxf(p.x, (float)tx * TILE_SIZE - HALF), (float)tx * TILE_SIZE + HALF);
-            const float py = fminf(fmaxf(p.y, 0.0f), WALL_HEIGHT);
+            const float py = fminf(fmaxf(p.y, 0.0f), topY);
             const float pz = fminf(fmaxf(p.z, (float)tz * TILE_SIZE - HALF), (float)tz * TILE_SIZE + HALF);
             const float d = sqrtf((p.x - px) * (p.x - px) + (p.y - py) * (p.y - py) + (p.z - pz) * (p.z - pz));
             if (d < best) best = d;

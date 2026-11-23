@@ -24,6 +24,10 @@ bash tests/server_smoke_quic.sh >/tmp/smoke_quic_out.txt 2>&1; qrc=$?
 if [ $qrc -eq 77 ]; then echo "SKIP  tests/server_smoke_quic.sh ($(head -1 /tmp/smoke_quic_out.txt))"
 elif [ $qrc -eq 0 ]; then echo "PASS  tests/server_smoke_quic.sh  (the server and bots over mid-net's QUIC, with discovery)"
 else echo "FAIL  tests/server_smoke_quic.sh"; tail -8 /tmp/smoke_quic_out.txt; fail=1; fi
+bash tests/floorgen_wasm_check.sh >/tmp/floorgen_wasm_out.txt 2>&1; wrc=$?
+if [ $wrc -eq 77 ]; then echo "SKIP  tests/floorgen_wasm_check.sh ($(head -1 /tmp/floorgen_wasm_out.txt))"
+elif [ $wrc -eq 0 ]; then echo "PASS  tests/floorgen_wasm_check.sh  ($(head -1 /tmp/floorgen_wasm_out.txt | sed 's/^floorgen_wasm_check: //'))"
+else echo "FAIL  tests/floorgen_wasm_check.sh"; tail -8 /tmp/floorgen_wasm_out.txt; fail=1; fi
 if bash tests/platform_check.sh >/tmp/platform_out.txt 2>&1; then echo "PASS  tests/platform_check.sh  (web, android and desktop all compile and agree with platform.h)"; else echo "FAIL  tests/platform_check.sh"; tail -8 /tmp/platform_out.txt; fail=1; fi
 if bash tests/android_script_check.sh >/tmp/android_script_out.txt 2>&1; then echo "PASS  tests/android_script_check.sh  (the Android build script against a fake NDK and cargo: QUIC stage, fallback, link checks)"; else echo "FAIL  tests/android_script_check.sh"; grep FAIL /tmp/android_script_out.txt | head -8; fail=1; fi
 if command -v node >/dev/null 2>&1; then

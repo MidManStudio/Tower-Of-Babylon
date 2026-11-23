@@ -10,6 +10,7 @@
 #include "../config/game_config.h"
 #include "../core/fixed_step.h"
 #include "../dungeon/dungeon_probes.h"
+#include "../dungeon/floor_access.h"
 #include "../dungeon/staircase.h"
 #include "../enemies/enemy_manager.h"
 #include "../sim/sim_events.h"
@@ -35,8 +36,8 @@ void FloorGame_Register(void) { GameConfig_RegisterExtra("assets/config/floor.md
 static int TileOf(float world) { return (int)floorf((world + TILE_SIZE * 0.5f) / TILE_SIZE); }
 static bool Blocked(const FloorMap *map, float x, float z, float r)
 {
-    return Tile_IsSolid(map, TileOf(x - r), TileOf(z - r)) || Tile_IsSolid(map, TileOf(x + r), TileOf(z - r)) ||
-           Tile_IsSolid(map, TileOf(x - r), TileOf(z + r)) || Tile_IsSolid(map, TileOf(x + r), TileOf(z + r));
+    return Floor_Solid(map, 0, TileOf(x - r), TileOf(z - r)) || Floor_Solid(map, 0, TileOf(x + r), TileOf(z - r)) ||
+           Floor_Solid(map, 0, TileOf(x - r), TileOf(z + r)) || Floor_Solid(map, 0, TileOf(x + r), TileOf(z + r));
 }
 
 static uint32_t Mix(uint32_t h) { h ^= h >> 16; h *= 0x7feb352dU; h ^= h >> 15; h *= 0x846ca68bU; h ^= h >> 16; return h; }
@@ -51,7 +52,7 @@ static void PlaceConsole(const FloorMap *map, int floorNumber, float *outX, floa
         int n = 0;
         for (int z = 1; z < MAP_HEIGHT - 1; ++z)
             for (int x = 1; x < MAP_WIDTH - 1; ++x) {
-                if (map->grid[z][x].type == TILE_WALL) continue;
+                if (Floor_Solid(map, 0, x, z)) continue;
                 if (x >= 36 && x <= 44 && (z <= 8 || z >= 36)) continue;                       // the alcoves
                 if (hypotf((float)(x - 35), (float)(z - 4)) < minFromStairs) continue;         // tiles from the foot of the up stairs
                 if (hypotf((float)(x - 38), (float)(z - 40)) < 8.0f) continue;                 // and from where the player arrives
@@ -82,7 +83,7 @@ void FloorGame_NewFloor(const FloorMap *map, int floorNumber, bool cleared)
     float far = 0.0f;
     for (int z = 0; z < MAP_HEIGHT; ++z)
         for (int x = 0; x < MAP_WIDTH; ++x) {
-            if (map->grid[z][x].type == TILE_WALL) continue;
+            if (Floor_Solid(map, 0, x, z)) continue;
             const float d = hypotf((float)x * TILE_SIZE - g_doorX, (float)z * TILE_SIZE - g_doorZ);
             if (d > far) far = d;
         }

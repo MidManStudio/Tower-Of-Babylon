@@ -6,13 +6,15 @@
 
 #include <math.h>
 
+#include "floor_access.h"
+
 #define FAR_T 1e30f
 
 float Probe_CastRay(const FloorMap *f, float ox, float oz, float dx, float dz, float maxDist)
 {
     int cx = (int)floorf(ox);
     int cz = (int)floorf(oz);
-    if (Tile_IsSolid(f, cx, cz)) return 0.0f;
+    if (Floor_Solid(f, 0, cx, cz)) return 0.0f;
 
     const int stepX = dx > 0.0f ? 1 : -1;
     const int stepZ = dz > 0.0f ? 1 : -1;
@@ -33,6 +35,6 @@ float Probe_CastRay(const FloorMap *f, float ox, float oz, float dx, float dz, f
             tMaxZ += tDeltaZ;
         }
         if (t >= maxDist) return maxDist;
-        if (Tile_IsSolid(f, cx, cz)) return t;
+        if (Floor_Solid(f, 0, cx, cz)) return t;
     }
 }

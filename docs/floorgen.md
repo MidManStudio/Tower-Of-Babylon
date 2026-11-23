@@ -1,6 +1,6 @@
 # Floor generation: the foundation (round R0)
 
-The module documentation for `src/floorgen/` and for what changed in the generator. The plan this belongs to is `design/08-floor-generation.md`; the research and measurements behind it are `design/09-floor-generation-research.md`. Status on 2026-11-21: **R0 is partly built.** The core (an integer-only generator on PCG32 streams, bit-row scans, a floor hash, a generation report with a time per stage, and five new test suites) is in and verified. Four things the plan lists for R0 are **not** built yet and are handed to the next chat: see "What is left of R0".
+The module documentation for `src/floorgen/` and for what changed in the generator. The plan this belongs to is `design/08-floor-generation.md`; the research and measurements behind it are `design/09-floor-generation-research.md`. Status on 2026-11-22: **R0 is built.** The core went in on 2026-11-21 (an integer-only generator on PCG32 streams, bit-row scans, a floor hash, a generation report with a time per stage, five test suites). The rest followed on 2026-11-22: the `tests/weapons_headless.c` failure explained and fixed, the accessor layer (`src/dungeon/floor_access.h`) with ten source files moved onto it, the benchmark harness, the generation time on the HUD, and the WebAssembly check. What no sandbox could do (the phone, the browser, ARM) is under "Not verified"; round R1 starts from "Where R1 starts".
 
 ## Overview
 
@@ -93,17 +93,39 @@ The same file built with `-DFG_PLAIN_SCANS`: the generator with every scan done 
 
 Reads the seven layout source files and fails on a `float` or `double`, a libm function, `math.h` or a float literal in code; comments are not code, and one marker is allowed per file in a line's comment. Exactly one such marked line may exist (the display fraction). The detector is tried on ten lines that must and must not be caught.
 
+### `floor_access_headless.c`
+
+The accessor layer and the guard that keeps the moved source files off the grid. It belongs with the dungeon files and is described in `dungeon.md`, section "floor_access_headless.c".
+
+### `bench_floorgen.c` (in `tools/`, not run by `run_tests.sh`)
+
+Builds N floors and prints, per generation stage, the microseconds a floor takes (mean, median, 95th percentile, worst) and the stage's share of the total, the attempts a floor needed, the open tiles, the processor time for the whole run, the compiler, architecture and optimisation (it says so when the build is not optimised: such numbers are not a benchmark), and a **checksum of every floor's hash**. The checksum is the determinism contract in one number: for the same floors, seed and generator version it must be the same on the phone and on a computer. Build line and options are in the file header. On the phone, in Termux (`pkg install clang` once), from the project root:
+
+    cc -O2 -std=c99 -DFLOORGEN_BENCH -Isrc tools/bench_floorgen.c src/dungeon/dungeon_generator.c -lm -o /tmp/bench_floorgen && /tmp/bench_floorgen
+
+With no arguments it builds 300 floors from tower seed `0x12345678`; `/tmp/bench_floorgen 1000 0x9E3779B9 rows` builds 1,000 from another seed and prints one CSV line per floor as well. The times come from `clock()` (processor time, plain C99, the same code on the phone, the server and the browser); the line "smallest time seen" says what the clock can resolve. The whole file sits inside `-DFLOORGEN_BENCH` so mray's build, which compiles every `.c` file, does not see a second `main()`.
+
+First numbers, **x86_64 sandbox, gcc 13.3, `-O2`, 300 floors, 45 by 45, not the phone**: a floor takes 974 us on average (median 681, 95th percentile 2,125, worst 4,254), about 1,000 floors a second. By stage (mean us, share): partitions 644 (66.1%), pockets 206 (21.1%), pillars 59 (6.0%), measure 49 (5.0%), shell 10 (1.0%), protect 3 (0.3%), halls 1 (0.1%), time no stage covers 3 (0.3%). 1.49 attempts a floor, 66.3 percent first time, no fallbacks, 1,549 open tiles on average. Checksum **7292c894**; it is the same in six builds (`-O0`, `-O2`, `-O3`, `-Os -ffast-math`, `-march=native -ffp-contract=fast`, and `-O1` under the address and undefined behaviour sanitizers with no report). So on x86 the probe-driven partition pass is two thirds of the time and the pocket pass a fifth. The pocket pass is the one the audit expects to grow fastest with the floor (it is an O(n squared) search per carve); that cannot be measured until R1 makes floors bigger, and which of the two dominates **on the phone** is still unknown: run the bench there with no arguments, check that the checksum is 7292c894, and read the share column.
+
+The harness itself was checked: the rows it prints equal floors generated directly, the checksum does not move with the compiler or flags, a build without the define has no symbols, and out-of-range arguments are refused.
+
+### `floorgen_wasm_check.sh` (in `tests/`)
+
+Builds `tests/floorgen_hash_headless.c` natively and as WebAssembly, runs both with `dump` (the 40 golden floors: hash, attempts, counts, route) and fails if the two outputs differ by one byte. `run_tests.sh` runs it like `server_smoke_quic.sh`: PASS, FAIL, or SKIP when the script exits 77 because there is no wasm toolchain. The toolchain is Emscripten with node when both are installed (the real web build's, with its default 64 KB stack), otherwise Zig's C compiler and wasmtime from PyPI (`pip install ziglang wasmtime`), built for wasm32-wasi **with a 64 KB stack** to match Emscripten 3.1.27 and later, so the check also fails if the generator ever needs more stack than the web build gives it (it does not: the 40 floors are identical).
+
+Checked in the sandbox with Zig and wasmtime: it passes in about 20 seconds (the first Zig run fills its cache); with the toolchain absent it exits 77; with one extra line added to the native output in a copy it fails with exit 1 and a diff; with the stack cut to 1 KB in a copy the wasm run traps (so the stack flag is honoured). **The Emscripten branch has never run** (no `emcc` in the sandbox). On GitHub the check SKIPs until the workflow installs a toolchain; adding `python3 -m pip install --break-system-packages ziglang wasmtime` as a step of `.github/workflows/tests.yml` before "Run the tests" would make it run there (not tried on GitHub's runner; workflow files are not part of a replacements archive).
+
 ## Verified so far
 
 - The existing `dungeon_headless` test passes on the new generator, and its statistics match: route to the stairs 59.7 (old 60.1), open space 84%, partitions 31.1 (31.2), pillars 29.4 (29.3).
 - 5,000 floors per generator: the means of route length, open space, partitions and pillars are equal to within a few percent, and a two-sample Kolmogorov-Smirnov distance of 0.007 to 0.023 on each of five measures, against the 0.027 that separates two samples of 5,000 at the 5 percent level, so the distributions are not told apart. 40,000 floors per generator: fallback layouts 7 (new) against 4 (old), first attempt 65.5 against 65.9 percent.
 - The 40 golden lines are identical in eight native builds (`-O0`, `-O2`, `-O3`, plain scans at `-O0` and `-O2`, `-Os -ffast-math`, `-march=native -ffp-contract=fast`, and `-O1` under the address and undefined behaviour sanitizers with no report) and in a **WebAssembly build** (wasm32-wasi, made with Zig's C compiler and run under wasmtime): byte for byte the same output as native x86-64. The generator also compiles for aarch64, 32-bit ARM, riscv64 and Windows (Zig cross compile; compile only, not run).
-- The whole of `tools/run_tests.sh` was started on the final code but **not waited for**: when it was packed, 41 lines had passed and **one existing test failed, `tests/weapons_headless.c`**. It was not investigated (see the handover file for the recorded lines). Everything else printed up to that point passed.
+- The whole of `tools/run_tests.sh` at the end of round R0 (2026-11-22), on the final code: **44 PASS, 0 FAIL, 1 SKIP (tests/server_smoke_quic.sh)**. The one failure recorded when the first part was packed, `tests/weapons_headless.c`, was not the generator (see "Fixes and problems found on the way"). Before the accessor migration the same suite gave 42 PASS, 0 FAIL, 1 SKIP with the weapons test fixed; the new `floor_access_headless.c` made it 43.
 
 ## Not verified
 
-- Nothing was run on the phone, in the browser build, or on a 32-bit or ARM machine (the 32-bit x86 build could not run in the sandbox). The WASM check used WASI, not Emscripten.
-- The per-stage timings (`stageMicros`) have not been looked at yet: the benchmark harness is not written. The pocket pass still runs an O(n squared) search per carve, which will not scale to 128 by 128; the timings will say how much it costs now.
+- Nothing was run on the phone, in the browser build, or on a 32-bit or ARM machine (the 32-bit x86 build could not run in the sandbox). The WASM check used WASI, not Emscripten. The same holds for the accessor migration, checked on x86 by the suites and by a bit-for-bit comparison of the old and new `dungeon_raycast.c` (`dungeon.md`, "floor_access.h"). The Emscripten branch of `floorgen_wasm_check.sh` has never run, and the new HUD line has not been seen on a screen (its width was computed from raylib's default font table: about 296 px typical, 312 px busy, against 314 px of room).
+- The per-stage timings (`stageMicros`) have been read on x86 only (`bench_floorgen.c`, above). The phone has not been measured, and nothing bigger than 45 by 45 exists to measure until R1.
 - Mid-math's `Pcg32` itself was not run; its algorithm was read and re-implemented twice.
 
 ## Findings about mid-engine (not changed there)
@@ -113,17 +135,23 @@ Reads the seven layout source files and fails on a `float` or `double`, a libm f
 
 ## Fixes and problems found on the way
 
+- **`tests/weapons_headless.c` failed with the new generator: found, fixed (2026-11-22).** Not the generator. The pickup test asked for every pickup to be 10 tiles from the arrival point in a straight line (a Manhattan distance), but the rule in `weapons.md` and in `pickups.c` is 10 steps of walking, found by a flood fill. Walking is never shorter than the straight-line count, so a pickup behind a wall can be 6 tiles away and still 14 steps away, and the test called that a failure. It passed on its 25 seeds with the old generator by luck: over 2,000 floors the old generator has such a pickup on 195 floors and the integer one on 198, about one in ten under either. The test now runs its own flood fill and checks the walking distance and that every pickup is reachable. Checked by breaking `pickups.c` in a copy twice (the rule loosened from 10 to 4 steps; unreachable tiles allowed): both fail the test; the unbroken copy passes. See `testing.md`, "Tests that follow a seed".
 - The integer-only test caught two things in the new generator at once: a `0.0f` literal (now an integer zero assigned to the float fields) and a comment that contained the allow marker (it counted as a second marked line).
 - A first version of the stream check expected two stream numbers of one seed to start differently; they do not (finding 2). The check now documents the property and tests `FgStream` instead.
 - The first comparison of the 16 rays against the old float walk reported 2.9 percent of rays a tile or more off. All of it was the 225 degree diagonal tie described under `floorgen_bits_headless.c`; the integer walk is exact. The test now compares against exact arithmetic and, separately, the non-diagonal rays against the old directions.
 - `printf` with several `Next()` calls in one argument list printed the values in reverse order (argument evaluation order): rule 3 above.
 
-## What is left of R0
+## The rest of R0 (done 2026-11-22)
 
-0. **`tests/weapons_headless.c` fails with the new generator.** Cause not found. Every floor is different now, so a check that depends on a particular seed's layout is the first suspect; confirm before changing the test or the generator.
-1. **The accessor layer and the call-site migration** (`design/08`, section 6.3): `Floor_Solid`, `Floor_WallClass`, `Floor_WallTopY`, `Floor_CeilY` (and the dimensions) as `static inline` wrappers, then the 11 source files outside the generator that read `grid[]`, `Tile_IsSolid` or `WALL_HEIGHT` moved onto them (renderer, spider, swarm, pickups, floor_game, enemy_manager, raycast, controller, lighting, and the 22 `WALL_HEIGHT` uses in 7 files). The counts are in `design/09`, section 1.2.
-2. **The benchmark harness** `tools/bench_floorgen.c` (guarded by a `-D` define, like `tools/bench/`): generate N floors and print the per-stage microseconds and the attempts, with the compiler, architecture and optimisation banner, so the phone can be measured in Termux.
-3. **The generation line in the HUD** (`main.c`): append the total microseconds to the existing generation report line. `main.c` is edited by several chats, so rebuild it from the latest main and change that one line only.
-4. **A WebAssembly check in the repository** (`tests/floorgen_wasm_check.sh`): build `tests/floorgen_hash_headless.c` for wasm and compare its `dump` output with the native one; exit 77 (SKIP) when there is no toolchain. The way it was done in the sandbox is in the handover file (Zig and wasmtime from PyPI); with Emscripten it is `emcc ... -o x.js` and `node x.js dump`.
+1. **The weapons test**: explained and fixed (above).
+2. **The accessor layer and the call-site migration** (`design/08`, section 6.3): `src/dungeon/floor_access.h`, and ten source files moved onto it (renderer, raycast, probes, spider_ai, enemy_manager, swarm, pickups, floor_game, player_controller, lighting). Behaviour is unchanged: the old and new raycast, push-out and surface-distance functions agree bit for bit on 720,000 random queries. What it is, what stayed on purpose and what R1 still has to move is in `dungeon.md`, "floor_access.h". Note what this is and is not: the accessors are built; the `FloorMap` v2 storage behind them (a floor of its own size, wall classes, levels) is not, and starts in R1.
+3. **The benchmark harness** `tools/bench_floorgen.c` (above), with first x86 numbers.
+4. **The generation time on the HUD**: the stats popup's generator line now ends `gen 981us` (the microseconds `GenerateFloorMap` took on this device). To make it fit the panel the labels are shorter: "try" for attempt, one space between fields (`main.c`, that one `snprintf`).
+5. **The WebAssembly check** `tests/floorgen_wasm_check.sh` (above), wired into `run_tests.sh`.
 
-Then R1 (bigger floors) can start. The fixes it needs first are listed in `design/08`, section 13.4.
+## Where R1 starts
+
+- **First, the phone's numbers**: run `bench_floorgen` in Termux, check the checksum (7292c894 for the defaults) and read which stage dominates there; that decides whether the pocket search or the probe passes are tackled first.
+- **Move the sizes**: `MAP_MAX 128`; sizes 45, 64 (and 81 if three or four teams are confirmed); the stair shell scaled. The 62 uses of `MAP_WIDTH`, `MAP_HEIGHT` and `Tile_InBounds` outside the generator (list by file in `dungeon.md`, "floor_access.h") become `Floor_Width`/`Floor_Depth` or `MAP_MAX`; `staircase.c` keeps its fixed-shell constants until the shell scales.
+- **The fixes `design/08` section 13.4 says must come before 128 tiles**: `swarm.c`'s 128 KB of queue arrays on the stack at 128 by 128 (move to static; Emscripten's stack is 64 KB), `Lighting_Update` windowed (217 us at 128 by 128 against about 9 us for a 37 by 37 window), bounded nav and flow, the pocket pass's O(n squared) search, the stair table offset.
+- **Still open from the plan** (`design/08` section 17): the size for three or four teams (81 proposed, cap 128), hole edges and 6 m drops, elevator behaviour, safe floor against safe zone, collapse on stacked floors.

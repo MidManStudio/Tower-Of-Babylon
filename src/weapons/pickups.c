@@ -4,6 +4,7 @@
 // ============================================================================
 #include "pickups.h"
 
+#include "../dungeon/floor_access.h"
 #include "../flashlight/flashlight.h"
 
 #include <math.h>
@@ -104,14 +105,14 @@ void Pickups_SpawnForFloor(const FloorMap *f, int floorNumber, unsigned owned)
     for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) dist[z][x] = -1;
     const int sx = (int)(f->startX / TILE_SIZE + 0.5f), sz = (int)(f->startZ / TILE_SIZE + 0.5f);
     int head = 0, tail = 0;
-    if (!Tile_IsSolid(f, sx, sz)) { dist[sz][sx] = 0; queue[tail++] = sz * MAP_WIDTH + sx; }
+    if (!Floor_Solid(f, 0, sx, sz)) { dist[sz][sx] = 0; queue[tail++] = sz * MAP_WIDTH + sx; }
     while (head < tail) {
         const int cz = queue[head] / MAP_WIDTH, cx = queue[head] % MAP_WIDTH;
         ++head;
         const int dx[4] = { 1, -1, 0, 0 }, dz[4] = { 0, 0, 1, -1 };
         for (int k = 0; k < 4; ++k) {
             const int nx = cx + dx[k], nz = cz + dz[k];
-            if (Tile_IsSolid(f, nx, nz) || dist[nz][nx] >= 0) continue;
+            if (Floor_Solid(f, 0, nx, nz) || dist[nz][nx] >= 0) continue;
             dist[nz][nx] = dist[cz][cx] + 1;
             queue[tail++] = nz * MAP_WIDTH + nx;
         }
@@ -153,7 +154,7 @@ void Pickups_SpawnForFloor(const FloorMap *f, int floorNumber, unsigned owned)
         for (int tries = 0; tries < 400; ++tries) {
             const int tx = 1 + (int)(Rand() % (uint32_t)(MAP_WIDTH - 2)), tz = 1 + (int)(Rand() % (uint32_t)(MAP_HEIGHT - 2));
             if (dist[tz][tx] < 10) continue;
-            if (f->grid[tz][tx].flags & CELL_RESERVED) continue;
+            if (Floor_Reserved(f, tx, tz)) continue;
             bool apart = true;
             for (int k = 0; k < placed; ++k)
                 if (abs(placedX[k] - tx) + abs(placedZ[k] - tz) < 6) { apart = false; break; }
@@ -177,7 +178,7 @@ bool Pickups_Drop(const FloorMap *f, Vector3 from, float fx, float fz, PickupKin
     for (int s = 0; s < 4; ++s) {
         const float x = from.x + fx * steps[s], z = from.z + fz * steps[s];
         const int tx = (int)floorf(x / TILE_SIZE + 0.5f), tz = (int)floorf(z / TILE_SIZE + 0.5f);
-        if (Tile_IsSolid(f, tx, tz)) continue;
+        if (Floor_Solid(f, 0, tx, tz)) continue;
         for (int i = 0; i < MAX_PICKUPS; ++i) {
             if (g_pickups[i].active) continue;
             g_pickups[i].active = true;

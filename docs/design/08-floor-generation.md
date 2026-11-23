@@ -1,6 +1,6 @@
 # Floor generation v2
 
-**Status:** plan accepted on 2026-11-18. Round R0 is partly built (2026-11-21; `floorgen.md` says what is in and what is left); the rest of the plan is not built. The research behind it (the repository audit, the sources, the free assets, the mid-engine toolbox and the measurements) is in `09-floor-generation-research.md`. Marks, as in the other design documents: **yours** (from your notes and answers), **built** (in the game today), **proposal** (mine, overrule freely) and **measured** (a number from a run, with where it ran).
+**Status:** plan accepted on 2026-11-18. Round R0 is built (2026-11-22; `floorgen.md` says what is in; the `FloorMap` v2 storage behind the accessors is not, it starts in R1); the rest of the plan is not built. The research behind it (the repository audit, the sources, the free assets, the mid-engine toolbox and the measurements) is in `09-floor-generation-research.md`. Marks, as in the other design documents: **yours** (from your notes and answers), **built** (in the game today), **proposal** (mine, overrule freely) and **measured** (a number from a run, with where it ran).
 
 ## 1. What this is for
 
@@ -170,6 +170,8 @@ int   Floor_Sockets(const FloorMap *f, int kind, const Socket **out);
 ```
 
 `Staircase_GroundHeight` and `Staircase_Blocked` become the stair part of `Floor_GroundY` and `Floor_Blocked`. `Tile_IsSolid` stays as a thin wrapper while call sites are moved, so every round compiles and passes the tests.
+
+Built in R0 (2026-11-22) as `src/dungeon/floor_access.h` on today's storage, with `level` and the `y` of `Floor_CeilY` accepted and not read until R4; the size accessors are `Floor_Width` and `Floor_Depth` (a height is metres here), and two more were needed: `Floor_RoofY` (code that clamps under the roof without asking whether the column has a ceiling) and `Floor_Type`, `Floor_Variant`, `Floor_Flags`, `Floor_Reserved` (what a tile is). `dungeon.md`, "floor_access.h", has the list of what moved and what is left.
 
 ### 6.4 The API
 
@@ -367,7 +369,7 @@ Sizes as in the roadmap: S a few small changes, M one delivery like the last one
 
 | Round | What | Size | Done when |
 |---|---|---|---|
-| R0 | **Foundation, nothing changes on screen.** *(Partly built 2026-11-21: see `floorgen.md`, "What is left of R0".)* `src/floorgen/` with `Pcg32`, SplitMix64, the bit rows, the floor hash. The current generator ported to integer only (the 16 probe directions become a table of integer vectors). `FloorMap` v2 behind the accessors; call sites moved. The benchmark harness and per-stage timers in the generation report. | M | all existing suites pass; the new suites pass; golden hashes equal natively and in WASM; the equivalence check passes; the report shows microseconds per stage |
+| R0 | **Foundation, nothing changes on screen.** *(Built 2026-11-22: see `floorgen.md`. "`FloorMap` v2 behind the accessors" is built as far as the accessors: `src/dungeon/floor_access.h` over today's storage, ten source files moved onto it. The v2 storage (a floor's own size, wall classes, levels) and `Floor_GroundY`, `Floor_Blocked`, `Floor_LevelAt`, `Floor_StartPoint` and `Floor_Sockets` of section 6.3 come with R1 to R4.)* `src/floorgen/` with `Pcg32`, SplitMix64, the bit rows, the floor hash. The current generator ported to integer only (the 16 probe directions become a table of integer vectors). `FloorMap` v2 behind the accessors; call sites moved. The benchmark harness and per-stage timers in the generation report. | M | all existing suites pass; the new suites pass; golden hashes equal natively and in WASM; the equivalence check passes; the report shows microseconds per stage |
 | R1 | **Bigger floors.** `MAP_MAX 128`; sizes 45, 64 (81); the stair shell scaled; skeleton and zone graph; start, console and elevator sockets; `Floor_StartPoint`; the lighting window, bounded nav and flow, the swarm stack fix. | L | 1,000 seeds at every size pass every invariant; floor 1 has one start room per team inside the fairness ratio; the frame time at 64 by 64 on the phone is no worse than at 45 by 45 |
 | R2 | **Cover.** The wall classes end to end (collision, shots, sight, light, drawing); the cluster library; the cubicle farm and lounge zone types. | M | you can take cover behind a low wall and shoot over it, and a mid wall hides you; the tests of section 14 pass |
 | R3 | **Sockets and templates.** The template format and registry; the safe zone with two gates and sentinel spots; the boss arena recipe; mission-site and special-room sockets as stubs; the offices and storage zone types. | L | a template can be added by data only; a safe zone appears on the planned floors; a boss floor builds |

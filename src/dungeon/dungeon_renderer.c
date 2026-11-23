@@ -9,6 +9,7 @@
 
 #include "rlgl.h"
 #include "dungeon_raycast.h"
+#include "floor_access.h"
 #include "../lighting/lighting.h"
 
 #define DRAW_RADIUS_TILES 18
@@ -82,13 +83,13 @@ static void EmitQuad(const Vector3 p[4], const Color c[4], Vector3 outward)
 
 static bool Exposed(const FloorMap *f, int x, int z)
 {
-    return !Tile_IsSolid(f, x + 1, z) || !Tile_IsSolid(f, x - 1, z) || !Tile_IsSolid(f, x, z + 1) || !Tile_IsSolid(f, x, z - 1);
+    return !Floor_Solid(f, 0, x + 1, z) || !Floor_Solid(f, 0, x - 1, z) || !Floor_Solid(f, 0, x, z + 1) || !Floor_Solid(f, 0, x, z - 1);
 }
 
 // Number of wall tiles among the four tiles that meet at corner (ci, cj).
 static int SolidAround(const FloorMap *f, int ci, int cj)
 {
-    return (int)Tile_IsSolid(f, ci - 1, cj - 1) + (int)Tile_IsSolid(f, ci, cj - 1) + (int)Tile_IsSolid(f, ci - 1, cj) + (int)Tile_IsSolid(f, ci, cj);
+    return (int)Floor_Solid(f, 0, ci - 1, cj - 1) + (int)Floor_Solid(f, 0, ci, cj - 1) + (int)Floor_Solid(f, 0, ci - 1, cj) + (int)Floor_Solid(f, 0, ci, cj);
 }
 
 static float CornerX(int ci) { return ((float)ci - 0.5f) * TILE_SIZE; }
@@ -295,10 +296,10 @@ static void DrawWallFace(const FloorMap *f, int i0, int j0, int i1, int j1, floa
 // quad, so there are no hidden faces and no two surfaces share a plane.
 static void DrawWallFaces(const FloorMap *f, int x, int z, float y0, float y1, Color base)
 {
-    if (!Tile_IsSolid(f, x + 1, z)) DrawWallFace(f, x + 1, z, x + 1, z + 1, y0, y1, (Vector3){ 1, 0, 0 }, base, SHADE_PLUS_X);
-    if (!Tile_IsSolid(f, x - 1, z)) DrawWallFace(f, x, z, x, z + 1, y0, y1, (Vector3){ -1, 0, 0 }, base, SHADE_MINUS_X);
-    if (!Tile_IsSolid(f, x, z + 1)) DrawWallFace(f, x, z + 1, x + 1, z + 1, y0, y1, (Vector3){ 0, 0, 1 }, base, SHADE_PLUS_Z);
-    if (!Tile_IsSolid(f, x, z - 1)) DrawWallFace(f, x, z, x + 1, z, y0, y1, (Vector3){ 0, 0, -1 }, base, SHADE_MINUS_Z);
+    if (!Floor_Solid(f, 0, x + 1, z)) DrawWallFace(f, x + 1, z, x + 1, z + 1, y0, y1, (Vector3){ 1, 0, 0 }, base, SHADE_PLUS_X);
+    if (!Floor_Solid(f, 0, x - 1, z)) DrawWallFace(f, x, z, x, z + 1, y0, y1, (Vector3){ -1, 0, 0 }, base, SHADE_MINUS_X);
+    if (!Floor_Solid(f, 0, x, z + 1)) DrawWallFace(f, x, z + 1, x + 1, z + 1, y0, y1, (Vector3){ 0, 0, 1 }, base, SHADE_PLUS_Z);
+    if (!Floor_Solid(f, 0, x, z - 1)) DrawWallFace(f, x, z, x + 1, z, y0, y1, (Vector3){ 0, 0, -1 }, base, SHADE_MINUS_Z);
 }
 
 static Color FloorColour(int x, int z)
@@ -315,33 +316,33 @@ static void DrawView(const FloorMap *floor, Vector3 viewer, float yOffset)
     const float maxDist = (float)DRAW_RADIUS_TILES * TILE_SIZE;
     g_fadeViewer = viewer;
     g_fadeEnd = maxDist - 1.5f;   // a surface dropped at maxDist is already fully black at its nearest vertex
-    const float ceilY = yOffset + WALL_HEIGHT;
-    const float midY = yOffset + WALL_HEIGHT * 0.5f;
+    const float ceilY = yOffset + Floor_RoofY(floor);
+    const float midY = yOffset + Floor_RoofY(floor) * 0.5f;
 
     for (int z = vz - DRAW_RADIUS_TILES; z <= vz + DRAW_RADIUS_TILES; ++z) {
-        if (z < 0 || z >= MAP_HEIGHT) continue;
+        if (z < 0 || z >= Floor_Depth(floor)) continue;
         for (int x = vx - DRAW_RADIUS_TILES; x <= vx + DRAW_RADIUS_TILES; ++x) {
-            if (x < 0 || x >= MAP_WIDTH) continue;
+            if (x < 0 || x >= Floor_Width(floor)) continue;
             const float tx = (float)x * TILE_SIZE, tz = (float)z * TILE_SIZE;
             const float dx = tx - viewer.x, dz = tz - viewer.z;
             const float d = sqrtf(dx * dx + dz * dz);
             if (d > maxDist) continue;
 
-            const MapCell *cell = &floor->grid[z][x];
-            if (cell->type == TILE_WALL) {
+            if (Floor_Solid(floor, 0, x, z)) {
                 if (!Exposed(floor, x, z)) continue;
                 if (!InView(tx, midY, tz, 3.4f)) continue;      // a wall tile reaches 3 m up and down from its middle
                 Color base = COL_WALL_SHELL;
-                if (cell->variant == WALL_PARTITION) base = COL_WALL_PARTITION;
-                else if (cell->variant == WALL_PILLAR) base = COL_WALL_PILLAR;
-                DrawWallFaces(floor, x, z, yOffset, ceilY, base);
+                const uint8_t variant = Floor_Variant(floor, 0, x, z);
+                if (variant == WALL_PARTITION) base = COL_WALL_PARTITION;
+                else if (variant == WALL_PILLAR) base = COL_WALL_PILLAR;
+                DrawWallFaces(floor, x, z, yOffset, yOffset + Floor_WallTopY(floor, 0, x, z), base);
             } else {
                 // Open ground: a floor tile, and a ceiling tile above it wherever there is a ceiling.
                 // Beyond the fade distance both are black, so they are not drawn at all.
                 if (d - 1.5f > g_fadeEnd) continue;
                 const bool fallen = g_collapseR >= 0.0f && hypotf(tx - g_collapseX, tz - g_collapseZ) > g_collapseR;
                 if (!fallen && InView(tx, yOffset, tz, 1.5f)) DrawSurfaceTile(floor, x, z, yOffset, FloorColour(x, z), SHADE_FLOOR, true);
-                if (Dungeon_HasCeiling(x, z) && InView(tx, ceilY, tz, 1.5f)) {
+                if (Floor_HasCeiling(floor, x, z) && InView(tx, ceilY, tz, 1.5f)) {
                     const Fixture *panel = Lighting_PanelOnTile(x, z);
                     if (panel) DrawCeilingWithPanel(floor, x, z, ceilY, panel);
                     else       DrawSurfaceTile(floor, x, z, ceilY, CEILING_TILE, SHADE_CEILING, false);

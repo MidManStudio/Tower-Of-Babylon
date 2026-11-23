@@ -612,8 +612,8 @@ static void Frame(void)
             hv.torchSecs = g_sim.torch.charge; hv.torchLevel = g_sim.torch.level;
             hv.floorNumber = g_sim.window.currentFloor; hv.enemies = CountActiveEnemies() + (Swarm_Alive(&g_sim.swarm) ? 1 : 0);
             char floorInfo[112];
-            snprintf(floorInfo, sizeof floorInfo, "attempt %d  route %d  walls %d  pillars %d  open %d%%%s", g_sim.map->attempts, g_sim.map->pathLength,
-                     g_sim.map->partitions, g_sim.map->pillars, (int)(g_sim.map->walkableFraction * 100.0f), g_sim.map->usedFallback ? "  FALLBACK" : "");
+            snprintf(floorInfo, sizeof floorInfo, "try %d route %d walls %d pillars %d open %d%% gen %uus%s", g_sim.map->attempts, g_sim.map->pathLength,
+                     g_sim.map->partitions, g_sim.map->pillars, (int)(g_sim.map->walkableFraction * 100.0f), (unsigned)g_sim.map->genMicros, g_sim.map->usedFallback ? "  FALLBACK" : "");
             hv.floorInfo = floorInfo;
             hv.useShown = useAvailable;
             if (useAvailable) {

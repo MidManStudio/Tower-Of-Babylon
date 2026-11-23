@@ -7,6 +7,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "../dungeon/floor_access.h"
 #include "../dungeon/stair_collision.h"
 #include "../dungeon/stair_layout.h"
 
@@ -35,7 +36,7 @@ unsigned Swarm_KillsLanded(const Swarm *s) { return s->kills; }
 static void FlowUpdate(Swarm *s, const FloorMap *map, Vector3 pos)
 {
     const int tx = TileOf(pos.x), tz = TileOf(pos.z);
-    if (Tile_IsSolid(map, tx, tz)) return;                                            // keep the last field
+    if (Floor_Solid(map, 0, tx, tz)) return;                                          // keep the last field
     if (tx == s->flowTx && tz == s->flowTz && s->flowSeed == map->seed && s->flowFloor == map->floorNumber) return;
     for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) s->flow[z][x] = -1;
     static const int dx4[4] = { 1, -1, 0, 0 }, dz4[4] = { 0, 0, 1, -1 };
@@ -46,7 +47,7 @@ static void FlowUpdate(Swarm *s, const FloorMap *map, Vector3 pos)
         const int x = qx[head], z = qz[head]; ++head;
         for (int k = 0; k < 4; ++k) {
             const int nx = x + dx4[k], nz = z + dz4[k];
-            if (Tile_IsSolid(map, nx, nz) || s->flow[nz][nx] >= 0) continue;
+            if (Floor_Solid(map, 0, nx, nz) || s->flow[nz][nx] >= 0) continue;
             s->flow[nz][nx] = (int16_t)(s->flow[z][x] + 1);
             qx[tail] = nx; qz[tail] = nz; ++tail;
         }
@@ -127,12 +128,12 @@ bool Swarm_Spawn(Swarm *s, const SwarmConfig *cfg, const FloorMap *map, uint32_t
     float farthest = 0.0f;
     for (int z = 1; z < MAP_HEIGHT - 1; ++z)
         for (int x = 1; x < MAP_WIDTH - 1; ++x) {
-            const MapCell *c = &map->grid[z][x];
-            if (c->flags & CELL_RESERVED) continue;
-            if (c->type != TILE_FLOOR && c->type != TILE_CORRIDOR) continue;
+            if (Floor_Reserved(map, x, z)) continue;
+            const TileType type = Floor_Type(map, 0, x, z);
+            if (type != TILE_FLOOR && type != TILE_CORRIDOR) continue;
             if (x >= 36 && x <= 44 && (z <= 8 || z >= 36)) continue;                       // the alcoves (the stairs stand in them)
             int open = 1;
-            for (int dz = -1; dz <= 1 && open; ++dz) for (int dx = -1; dx <= 1; ++dx) if (Tile_IsSolid(map, x + dx, z + dz)) { open = 0; break; }
+            for (int dz = -1; dz <= 1 && open; ++dz) for (int dx = -1; dx <= 1; ++dx) if (Floor_Solid(map, 0, x + dx, z + dz)) { open = 0; break; }
             if (!open) continue;
             const float wx = Tile_ToWorld(x), wz = Tile_ToWorld(z);
             const float d1 = hypotf(wx - map->startX, wz - map->startZ), d2 = hypotf(wx - map->arriveAboveX, wz - map->arriveAboveZ);
@@ -197,13 +198,13 @@ static void CollideDot(const Swarm *s, const FloorMap *map, const SwarmTarget *p
 {
     const float r = s->cfg.dotRadius;
     if (p->y < r) p->y = r;
-    if (p->y > WALL_HEIGHT - r) p->y = WALL_HEIGHT - r;
+    if (p->y > Floor_RoofY(map) - r) p->y = Floor_RoofY(map) - r;          // the roof is one plane; map may be NULL
     if (map) {
         const int tx = TileOf(p->x), tz = TileOf(p->z);
         for (int dz = -1; dz <= 1; ++dz)
             for (int dx = -1; dx <= 1; ++dx) {
                 const int ax = tx + dx, az = tz + dz;
-                if (!Tile_IsSolid(map, ax, az)) continue;
+                if (!Floor_Solid(map, 0, ax, az)) continue;
                 const float x0 = Tile_ToWorld(ax) - TILE_SIZE * 0.5f, x1 = x0 + TILE_SIZE, z0 = Tile_ToWorld(az) - TILE_SIZE * 0.5f, z1 = z0 + TILE_SIZE;
                 const float nx = p->x < x0 ? x0 : (p->x > x1 ? x1 : p->x), nz = p->z < z0 ? z0 : (p->z > z1 ? z1 : p->z);
                 const float vx = p->x - nx, vz = p->z - nz, d2 = vx * vx + vz * vz;

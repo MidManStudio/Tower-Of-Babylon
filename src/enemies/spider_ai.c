@@ -8,6 +8,7 @@
 #include "spider.h"
 #include "spider_math.h"
 #include "../dungeon/dungeon_raycast.h"
+#include "../dungeon/floor_access.h"
 #include "enemy_types.h"
 
 #define NEAR_RADIUS      9.0f    // closer than this (horizontally) a spider commits to coming down to the floor
@@ -46,7 +47,7 @@ static void NavCompute(const FloorMap *f, int px, int pz)
 {
     for (int z = 0; z < MAP_HEIGHT; ++z)
         for (int x = 0; x < MAP_WIDTH; ++x) g_nav[z][x] = -1;
-    if (Tile_IsSolid(f, px, pz)) return;
+    if (Floor_Solid(f, 0, px, pz)) return;
 
     static const int dxs[4] = { 1, -1, 0, 0 }, dzs[4] = { 0, 0, 1, -1 };
     int head = 0, tail = 0;
@@ -57,7 +58,7 @@ static void NavCompute(const FloorMap *f, int px, int pz)
         const int cx = cur % MAP_WIDTH, cz = cur / MAP_WIDTH;
         for (int k = 0; k < 4; ++k) {
             const int nx = cx + dxs[k], nz = cz + dzs[k];
-            if (Tile_IsSolid(f, nx, nz) || g_nav[nz][nx] >= 0) continue;
+            if (Floor_Solid(f, 0, nx, nz) || g_nav[nz][nx] >= 0) continue;
             g_nav[nz][nx] = g_nav[cz][cx] + 1;
             g_navQueue[tail++] = nz * MAP_WIDTH + nx;
         }
@@ -75,8 +76,8 @@ static bool NextWaypoint(const FloorMap *f, int sx, int sz, Vector3 player, Vect
         for (int dx = -1; dx <= 1; ++dx) {
             if (!dx && !dz) continue;
             const int nx = sx + dx, nz = sz + dz;
-            if (!Tile_InBounds(nx, nz) || g_nav[nz][nx] < 0) continue;
-            if (dx && dz && (Tile_IsSolid(f, sx + dx, sz) || Tile_IsSolid(f, sx, sz + dz))) continue;  // no corner cutting
+            if (!Floor_InBounds(f, nx, nz) || g_nav[nz][nx] < 0) continue;
+            if (dx && dz && (Floor_Solid(f, 0, sx + dx, sz) || Floor_Solid(f, 0, sx, sz + dz))) continue;  // no corner cutting
             if (g_nav[nz][nx] < best) { best = g_nav[nz][nx]; bx = nx; bz = nz; }
         }
     if (best == d0) return false;
@@ -91,7 +92,7 @@ static bool NearestWallDir(const FloorMap *f, Vector3 p, Vector3 *dir)
     float best = 1e30f;
     for (int z = cz - 6; z <= cz + 6; ++z)
         for (int x = cx - 6; x <= cx + 6; ++x) {
-            if (!Tile_InBounds(x, z) || !Tile_IsSolid(f, x, z)) continue;
+            if (!Floor_InBounds(f, x, z) || !Floor_Solid(f, 0, x, z)) continue;
             const float dx = (float)x * TILE_SIZE - p.x, dz = (float)z * TILE_SIZE - p.z;
             const float d = dx * dx + dz * dz;
             if (d < best) { best = d; *dir = V3NormOr(V3(dx, 0.0f, dz), V3(1.0f, 0.0f, 0.0f)); }
@@ -108,7 +109,7 @@ static void ComputeWant(const Spider *s, int index, const FloorMap *f, Vector3 p
 
     const Vector3 probe = V3Mad(s->anchor, s->normal, 0.7f);
     const int tx = TileOf(probe.x), tz = TileOf(probe.z);
-    if (!Tile_InBounds(tx, tz) || g_nav[tz][tx] < 0 || g_nav[tz][tx] > (int)fminf((float)HUNT_MAX_TILES, (float)HUNT_BASE_TILES + g_noise)) return;
+    if (!Floor_InBounds(f, tx, tz) || g_nav[tz][tx] < 0 || g_nav[tz][tx] > (int)fminf((float)HUNT_MAX_TILES, (float)HUNT_BASE_TILES + g_noise)) return;
     if (V3Len(V3Sub(player, s->pos)) < ATTACK_DIST) return;
 
     Vector3 wp;
@@ -122,7 +123,7 @@ static void ComputeWant(const Spider *s, int index, const FloorMap *f, Vector3 p
     bool near = g_descend[index];
 
     if (s->normal.y < -0.7f) {                       // ceiling: stalk from above, come down when close
-        if (!Dungeon_HasCeiling(TileOf(wp.x), TileOf(wp.z))) near = true;   // the ceiling ends ahead
+        if (!Floor_HasCeiling(f, TileOf(wp.x), TileOf(wp.z))) near = true;   // the ceiling ends ahead
         Vector3 wd;
         *want = (near && NearestWallDir(f, probe, &wd)) ? wd : toWp;
     } else if (s->normal.y > 0.7f) {                 // floor: follow the path
@@ -153,8 +154,7 @@ void Spiders_SpawnForFloor(const FloorMap *f, int tier)
     int cand[MAX_CANDIDATES], n = 0;
     for (int z = 4; z < MAP_HEIGHT - 3 && n < MAX_CANDIDATES; z += 4)
         for (int x = 4; x < MAP_WIDTH - 3 && n < MAX_CANDIDATES; x += 4) {
-            const MapCell *c = &f->grid[z][x];
-            if ((c->flags & CELL_RESERVED) || c->type == TILE_WALL) continue;
+            if (Floor_Reserved(f, x, z) || Floor_Solid(f, 0, x, z)) continue;
             if (hypotf((float)(x - ARRIVE_BELOW_X), (float)(z - ARRIVE_BELOW_Z)) < SPIDER_SAFE_TILES) continue;
             if (hypotf((float)(x - ARRIVE_ABOVE_X), (float)(z - ARRIVE_ABOVE_Z)) < SPIDER_SAFE_TILES) continue;
             cand[n++] = z * MAP_WIDTH + x;
@@ -176,8 +176,8 @@ void Spiders_SpawnForFloor(const FloorMap *f, int tier)
         const int x = cand[k] % MAP_WIDTH, z = cand[k] / MAP_WIDTH;
         const uint32_t h = Hash32(f->seed + (uint32_t)k * 0x9e3779b1U);
         const float a = (float)(h % 628) * 0.01f;
-        const bool ceiling = (k % 2 == 0) && Dungeon_HasCeiling(x, z);
-        const Vector3 anchor = V3((float)x * TILE_SIZE, ceiling ? WALL_HEIGHT : 0.0f, (float)z * TILE_SIZE);
+        const bool ceiling = (k % 2 == 0) && Floor_HasCeiling(f, x, z);
+        const Vector3 anchor = V3((float)x * TILE_SIZE, ceiling ? Floor_CeilY(f, (float)x * TILE_SIZE, (float)z * TILE_SIZE, 0.0f) : 0.0f, (float)z * TILE_SIZE);
         const Vector3 normal = ceiling ? V3(0.0f, -1.0f, 0.0f) : V3(0.0f, 1.0f, 0.0f);
 
         Spider *s = &g_spiders[k];
@@ -201,7 +201,7 @@ void Spiders_Update(float dt, Vector3 playerPos, const FloorMap *f)
 
     g_navAge += dt;
     const int ptx = TileOf(playerPos.x), ptz = TileOf(playerPos.z);
-    if (Tile_InBounds(ptx, ptz) && (ptx != g_navTX || ptz != g_navTZ || g_navAge > NAV_REFRESH_SECS)) {
+    if (Floor_InBounds(f, ptx, ptz) && (ptx != g_navTX || ptz != g_navTZ || g_navAge > NAV_REFRESH_SECS)) {
         NavCompute(f, ptx, ptz);
         g_navTX = ptx; g_navTZ = ptz; g_navAge = 0.0f;
     }

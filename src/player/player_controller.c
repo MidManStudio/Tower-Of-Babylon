@@ -4,6 +4,7 @@
 // ============================================================================
 #include "player_controller.h"
 #include "../obstacles/obstacles.h"
+#include "../dungeon/floor_access.h"
 #include "../dungeon/staircase.h"
 #include "raymath.h"
 #include <math.h>
@@ -28,8 +29,7 @@ static float NearestWallDist(const FloorMap *map, float x, float z, float reach)
 
     for (int tz = z0; tz <= z1; ++tz) {
         for (int tx = x0; tx <= x1; ++tx) {
-            const bool inside = tx >= 0 && tx < MAP_WIDTH && tz >= 0 && tz < MAP_HEIGHT;
-            if (inside && map->grid[tz][tx].type != TILE_WALL) continue;
+            if (!Floor_Solid(map, 0, tx, tz)) continue;                  // outside the floor counts as wall
             const float cx = (float)tx * TILE_SIZE;
             const float cz = (float)tz * TILE_SIZE;
             const float px = fminf(fmaxf(x, cx - h), cx + h);
@@ -118,7 +118,7 @@ static float SightDist(const FloorMap *map, float x, float z, float dx, float dz
     for (float d = 0.1f; d < reach; d += 0.1f) {
         const int tx = (int)floorf((x + dx * d + h) / TILE_SIZE);
         const int tz = (int)floorf((z + dz * d + h) / TILE_SIZE);
-        if (Tile_IsSolid(map, tx, tz)) return d;
+        if (Floor_Solid(map, 0, tx, tz)) return d;
     }
     return reach;
 }

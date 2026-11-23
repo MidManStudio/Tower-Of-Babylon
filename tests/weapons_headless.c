@@ -405,18 +405,38 @@ int main(void)
     for (int i = 0; i < MAX_PICKUPS; ++i) if (Pickups_Get(i)->active) { if (fabsf(Pickups_Get(i)->pos.x - first[n1].x) > 1e-3f || fabsf(Pickups_Get(i)->pos.z - first[n1].z) > 1e-3f) same = 0; ++n1; }
     Check(same && n1 == n0, "the same floor always gets the same layout");
 
+    // The rule (weapons.md, Pickups) is at least 10 steps of WALKING from the arrival point, not 10 tiles in a straight line:
+    // a pickup behind a wall can be 6 tiles away as the crow flies and 14 steps away on foot. This used to be checked as a
+    // Manhattan distance, which passed on 25 seeds of the old generator by luck (about one floor in ten has such a pickup
+    // under either generator) and failed on two floors of the integer one. The flood fill below is the test's own, not the
+    // one in pickups.c.
+    static int walk[MAP_HEIGHT][MAP_WIDTH];
+    static int walkQueue[MAP_WIDTH * MAP_HEIGHT];
     int onFloor = 1, reachable = 1, farEnough = 1, spaced = 1;
     for (int floorNo = 1; floorNo <= 25; ++floorNo) {
         GenerateFloorMap(&g_floor, floorNo, 1000u + (unsigned)floorNo * 77u);
         Pickups_SpawnForFloor(&g_floor, floorNo, 0u);
         const int sx = (int)(g_floor.startX / TILE_SIZE + 0.5f), sz = (int)(g_floor.startZ / TILE_SIZE + 0.5f);
+        for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) walk[z][x] = -1;
+        int qh = 0, qt = 0;
+        if (!Tile_IsSolid(&g_floor, sx, sz)) { walk[sz][sx] = 0; walkQueue[qt++] = sz * MAP_WIDTH + sx; }
+        while (qh < qt) {
+            const int cz = walkQueue[qh] / MAP_WIDTH, cx = walkQueue[qh] % MAP_WIDTH; ++qh;
+            const int ddx[4] = { 1, -1, 0, 0 }, ddz[4] = { 0, 0, 1, -1 };
+            for (int k = 0; k < 4; ++k) {
+                const int nx = cx + ddx[k], nz = cz + ddz[k];
+                if (nx < 0 || nz < 0 || nx >= MAP_WIDTH || nz >= MAP_HEIGHT) continue;
+                if (Tile_IsSolid(&g_floor, nx, nz) || walk[nz][nx] >= 0) continue;
+                walk[nz][nx] = walk[cz][cx] + 1; walkQueue[qt++] = nz * MAP_WIDTH + nx;
+            }
+        }
         for (int i = 0; i < MAX_PICKUPS; ++i) {
             const Pickup *p = Pickups_Get(i);
             if (!p->active) continue;
             const int tx = (int)(p->pos.x / TILE_SIZE + 0.5f), tz = (int)(p->pos.z / TILE_SIZE + 0.5f);
             if (Tile_IsSolid(&g_floor, tx, tz)) onFloor = 0;
             if (g_floor.grid[tz][tx].flags & CELL_RESERVED) onFloor = 0;
-            if (abs(tx - sx) + abs(tz - sz) < 10) farEnough = 0;
+            if (walk[tz][tx] < 10) farEnough = 0;      // -1 (not reachable on foot) counts as too close too
             for (int j = 0; j < i; ++j) {
                 const Pickup *q = Pickups_Get(j);
                 if (q->active && fabsf(q->pos.x - p->pos.x) + fabsf(q->pos.z - p->pos.z) < 6.0f * TILE_SIZE - 0.01f) spaced = 0;
@@ -425,7 +445,7 @@ int main(void)
         if (Pickups_Count() < 6) reachable = 0;
     }
     Check(onFloor, "pickups lie on open, unreserved floor (25 floors)");
-    Check(farEnough, "and never close to where the player arrives");
+    Check(farEnough, "and never within 10 steps of walking of where the player arrives, and always reachable on foot");
     Check(spaced, "and never on top of each other");
     Check(reachable, "and every floor places its weapon, ammo, medkit, stim shot and battery");
 

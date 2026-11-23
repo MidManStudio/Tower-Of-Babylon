@@ -3,6 +3,7 @@
 // live in docs/lighting.md, section "lighting.h and lighting.c"
 // ============================================================================
 #include "lighting.h"
+#include "../dungeon/floor_access.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -127,7 +128,7 @@ void Lighting_BuildForFloor(const FloorMap *f, int floorNumber)
     for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) g_panelAt[z][x] = -1;
     g_seed = (f->seed ^ ((uint32_t)floorNumber * 2654435761u)) | 1u;
     for (int z = 0; z < MAP_HEIGHT; ++z)
-        for (int x = 0; x < MAP_WIDTH; ++x) g_open[z][x] = !Tile_IsSolid(f, x, z);
+        for (int x = 0; x < MAP_WIDTH; ++x) g_open[z][x] = !Floor_Solid(f, 0, x, z);
 
     // Panels hang over open tiles that have a ceiling, one lattice cell each. A lattice point that falls
     // in a wall moves to a neighbouring open tile, or is left out.

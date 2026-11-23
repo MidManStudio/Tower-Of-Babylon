@@ -11,8 +11,8 @@
 #include "dungeon_types.h"
 
 // 3D queries against the floor as solid geometry: the floor plane at y = 0, a
-// ceiling plane at y = WALL_HEIGHT, and every solid tile as a box from the
-// floor to the ceiling. Units are world units, tile (x, z) is centred on
+// ceiling plane at the roof height (Floor_RoofY, floor_access.h), and every solid
+// tile as a box from the floor to the top of its wall (Floor_WallTopY). Units are world units, tile (x, z) is centred on
 // (x * TILE_SIZE, z * TILE_SIZE).
 
 typedef struct {

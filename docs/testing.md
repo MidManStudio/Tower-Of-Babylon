@@ -14,6 +14,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `input_headless.c` | the touch controls (the quick floating stick, sprint at the rim in any direction, the fixed fire pad as a drag (the default) and as a joystick, roles, buttons including RELOAD and DIVE, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
 | `audio_headless.c` | synthesiser numbers, limiter, voices, pan and distance, footsteps, every shipped sound recipe, the bank and the config registry | `audio.md` |
 | `dungeon_headless.c` | generator, floor window, probes | `dungeon.md` |
+| `floor_access_headless.c` | the accessor layer (`floor_access.h`) against an oracle on 40 floors and tiles outside them, each rule broken on purpose; and the guard that keeps the moved source files off `grid[]`, `TILE_WALL`, `Tile_IsSolid` and `WALL_HEIGHT` (reads files; run from the project root) | `dungeon.md` |
 | `stairs_headless.c` | staircase geometry and collision | `dungeon.md` |
 | `renderer_headless.c` | per-tile quads, culling, dark quads, the flashlight's reach | `dungeon.md`, `flashlight.md` |
 | `lighting_headless.c` | ceiling lights, light map, line of sight | `lighting.md` |
@@ -45,8 +46,11 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `floorgen_hash_headless.c` | 40 golden floors (hash, attempts, counts, route), the same floor after others, what the hash sees, the generation report, and the envelope of the old generator over 500 floors | `floorgen.md` |
 | `floorgen_plain_headless.c` | the same golden floors with the generator built with plain scans (the oracle for the bit scans) | `floorgen.md` |
 | `floorgen_integer_headless.c` | the layout source files contain no float, double, libm or float literal (reads files; run from the project root) | `floorgen.md` |
+| `floorgen_wasm_check.sh` (not a C test) | the 40 golden floors built natively and as WebAssembly (Emscripten with node, or Zig with wasmtime, the Zig build with the web build's 64 KB stack) and compared byte for byte; SKIP (exit 77) with no wasm toolchain | `floorgen.md` |
 | `config_headless.c` | the config layer, the baked tables, bad documents | `config.md` |
 | `flashlight_headless.c` | charge, batteries, flicker, the beam's shape | `flashlight.md` |
+
+`tools/bench_floorgen.c` is not a test and `run_tests.sh` does not run it: it measures the floor generator and is built by hand, on the phone as well (`floorgen.md`).
 
 ## The Node tests
 
@@ -56,6 +60,12 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 ## The shader test (Python)
 
 `python3 tests/shader_gles_test.py` compiles the high precision shaders with a real GLSL ES 1.00 compiler and renders with them, using Mesa's software OpenGL ES through EGL (the `libEGL` and `libGLESv2` libraries Mesa installs; no GPU and no window). It skips, and says so, when those are not there. What it can and cannot tell you is in `flashlight.md`.
+
+## Tests that follow a seed
+
+Every floor is built from a seed, and since round R0 (`floorgen.md`) the same seed gives a different floor than it did before. A check that held on 25 or 40 seeds of the old generator can therefore fail on the new one without anything being wrong. When that happens, find out which of the two it is before touching either: sweep a few thousand seeds with the old generator (a `git worktree` at the commit before) and the new one, and compare how often the condition holds. If the rates match, the test was asking for something the code never promised, and the test is what changes.
+
+The one case so far: `weapons_headless.c`, "pickups ... never within 10 steps of walking of where the player arrives". It used a straight-line distance; the rule is walking distance (`weapons.md`). It now floods the floor itself and checks the walking distance.
 
 ## What no test here can tell you
 
