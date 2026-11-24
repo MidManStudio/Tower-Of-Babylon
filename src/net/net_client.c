@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../dungeon/dungeon_generator.h"
+#include "net_driver.h"
 
 #define TICK_MS (1000.0 / (double)NET_TICK_RATE)
 
@@ -138,7 +139,14 @@ void NetClient_Poll(NetClient *c, double nowMs)
         Reconcile(c, &m.u.snap);
         AdjustClock(c, m.u.snap.margin);
     }
-    if ((c->state == NETC_PLAYING && nowMs - c->lastSnapMs > 5000.0) || (c->state == NETC_HELLO && nowMs - c->helloSentMs > 5000.0)) {
+    // A transport that watches its own connection (NO SIGNAL after a second and a half, the end after ten seconds or at the server's goodbye) says
+    // when it is over; the five seconds without a snapshot are then not ours to judge. Waiting for the Welcome is the game's own business either way.
+    NetLinkInfo li;
+    const bool watched = c->tp.linkInfo && c->tp.linkInfo(c->tp.self, &li);
+    if (watched && li.state == NETLINK_ENDED) {
+        c->state = NETC_CLOSED;
+        c->closedReason = NetDriver_EndToDisc(&li);
+    } else if ((c->state == NETC_PLAYING && !watched && nowMs - c->lastSnapMs > 5000.0) || (c->state == NETC_HELLO && nowMs - c->helloSentMs > 5000.0)) {
         c->state = NETC_CLOSED; c->closedReason = NET_DISC_TIMEOUT;
     }
 }
@@ -186,11 +194,14 @@ int NetClient_Update(NetClient *c, double nowMs, NetCmdFn fn, void *user)
 
 void NetClient_Leave(NetClient *c)
 {
-    if (c->state == NETC_IDLE || c->state == NETC_CLOSED) return;
-    NetMsg m; memset(&m, 0, sizeof m);
-    m.kind = NET_MSG_DISCONNECT; m.u.disc.reason = NET_DISC_NORMAL;
-    Send(c, &m, true);
+    if (c->state == NETC_IDLE || c->tpClosed) return;
+    if (c->state != NETC_CLOSED) {                                  // a connection already closed (timed out, or the server said goodbye) has no one to tell, but its transport still has to be freed
+        NetMsg m; memset(&m, 0, sizeof m);
+        m.kind = NET_MSG_DISCONNECT; m.u.disc.reason = NET_DISC_NORMAL;
+        Send(c, &m, true);
+    }
     if (c->tp.close) c->tp.close(c->tp.self);
+    c->tpClosed = true;
     c->state = NETC_CLOSED;
 }
 
@@ -264,4 +275,9 @@ bool NetClient_RemoteView(const NetClient *c, uint8_t id, double nowMs, Vector3 
     const NetRemote *r = Find(hold, id);
     *pos = RemotePos(r); *yaw = RemoteYaw(r);
     return true;
+}
+
+bool NetClient_Link(const NetClient *c, NetLinkInfo *out)
+{
+    return !c->tpClosed && c->state != NETC_IDLE && c->tp.linkInfo && out && c->tp.linkInfo(c->tp.self, out);
 }

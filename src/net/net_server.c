@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "../dungeon/dungeon_generator.h"
+#include "net_driver.h"
 
 static void Send(NetTransport *tp, const NetMsg *m, bool reliable)
 {
@@ -121,8 +122,14 @@ void NetServer_Poll(NetServer *s, double nowMs)
     for (int i = 0; i < NET_MAX_PLAYERS; ++i) {
         if (!s->c[i].used) continue;
         Drain(s, i, nowMs);
-        if (s->c[i].used && nowMs - s->c[i].lastHeardMs > NET_TIMEOUT_MS) NetServer_Drop(s, i, NET_DISC_TIMEOUT);
-        else if (s->c[i].used && !s->c[i].welcomed && nowMs - s->c[i].connectedMs > NET_HELLO_TIMEOUT_MS) NetServer_Drop(s, i, NET_DISC_TIMEOUT);
+        if (!s->c[i].used) continue;
+        NetLinkInfo li;
+        if (s->c[i].tp.linkInfo && s->c[i].tp.linkInfo(s->c[i].tp.self, &li)) {
+            // The transport watches its own connection (NO SIGNAL after a second and a half, the end after ten seconds or at the other side's
+            // goodbye): the silence rule below is its business, not ours.
+            if (li.state == NETLINK_ENDED) NetServer_Drop(s, i, NetDriver_EndToDisc(&li));
+        } else if (nowMs - s->c[i].lastHeardMs > NET_TIMEOUT_MS) NetServer_Drop(s, i, NET_DISC_TIMEOUT);
+        if (s->c[i].used && !s->c[i].welcomed && nowMs - s->c[i].connectedMs > NET_HELLO_TIMEOUT_MS) NetServer_Drop(s, i, NET_DISC_TIMEOUT);
     }
 }
 

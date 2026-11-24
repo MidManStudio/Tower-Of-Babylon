@@ -24,6 +24,10 @@ bash tests/server_smoke_quic.sh >/tmp/smoke_quic_out.txt 2>&1; qrc=$?
 if [ $qrc -eq 77 ]; then echo "SKIP  tests/server_smoke_quic.sh ($(head -1 /tmp/smoke_quic_out.txt))"
 elif [ $qrc -eq 0 ]; then echo "PASS  tests/server_smoke_quic.sh  (the server and bots over mid-net's QUIC, with discovery)"
 else echo "FAIL  tests/server_smoke_quic.sh"; tail -8 /tmp/smoke_quic_out.txt; fail=1; fi
+bash tests/net_driver_check.sh >/tmp/net_driver_out.txt 2>&1; drc=$?
+if [ $drc -eq 77 ]; then echo "SKIP  tests/net_driver_check.sh ($(head -1 /tmp/net_driver_out.txt))"
+elif [ $drc -eq 0 ]; then echo "PASS  tests/net_driver_check.sh  (the game's server and client over mid-net's driver: NO SIGNAL, a 6 s outage survived, a dead link ended at 10 s, hostile bytes, a full server, a reliable burst; under the sanitizers)"
+else echo "FAIL  tests/net_driver_check.sh"; tail -8 /tmp/net_driver_out.txt; fail=1; fi
 bash tests/floorgen_wasm_check.sh >/tmp/floorgen_wasm_out.txt 2>&1; wrc=$?
 if [ $wrc -eq 77 ]; then echo "SKIP  tests/floorgen_wasm_check.sh ($(head -1 /tmp/floorgen_wasm_out.txt))"
 elif [ $wrc -eq 0 ]; then echo "PASS  tests/floorgen_wasm_check.sh  ($(head -1 /tmp/floorgen_wasm_out.txt | sed 's/^floorgen_wasm_check: //'))"

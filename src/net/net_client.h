@@ -31,6 +31,7 @@ typedef struct {
     NetTransport    tp;
     NetClientState  state;
     uint8_t         closedReason;
+    bool            tpClosed;                  // the transport has been closed (once: a transport may free itself)
     char            character[NET_CHARACTER_LEN];
 
     uint8_t         id, maxPlayers;
@@ -66,6 +67,8 @@ void NetClient_Poll(NetClient *c, double nowMs);                                
 // Runs the ticks that are due by nowMs (asking fn for each tick's command), sending an Input for each. Returns how many ran.
 int  NetClient_Update(NetClient *c, double nowMs, NetCmdFn fn, void *user);
 void NetClient_Leave(NetClient *c);                                                         // tells the server and closes
+// How the connection stands (NETLINK_NO_SIGNAL is what to show as NO SIGNAL), when the transport watches it (net_driver.h): false for a transport that does not.
+bool NetClient_Link(const NetClient *c, NetLinkInfo *out);
 
 Vector3 NetClient_ViewPos(const NetClient *c);                                              // where to draw the player: predicted, plus the fading jump
 // The same, between the last two ticks: alpha is 0 at the older and 1 at the newest (NetClient_Alpha is how far the next tick has got), so

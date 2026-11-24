@@ -100,6 +100,7 @@ static bool Wrap(MidNetQuicConn *conn, NetTransport *out)
     out->sendReliable = SendReliable;
     out->recvReliable = RecvReliable;
     out->close = CloseConn;
+    out->linkInfo = NULL;
     return true;
 }
 

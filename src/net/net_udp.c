@@ -170,7 +170,7 @@ static void CloseConn(void *self)
 static NetTransport Transport(NetUdpPeer *p)
 {
     NetTransport t;
-    t.self = p; t.sendDatagram = SendDatagram; t.recvDatagram = RecvDatagram; t.sendReliable = SendReliable; t.recvReliable = RecvReliable; t.close = CloseConn;
+    t.self = p; t.sendDatagram = SendDatagram; t.recvDatagram = RecvDatagram; t.sendReliable = SendReliable; t.recvReliable = RecvReliable; t.close = CloseConn; t.linkInfo = NULL;
     return t;
 }
 

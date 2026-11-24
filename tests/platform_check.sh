@@ -65,6 +65,21 @@ done
 if gcc -std=gnu99 -fsyntax-only -Isrc -Iraylib/src -D__EMSCRIPTEN__ -Itests/stubs -DTOWER_MIDNET=1 src/net/net_mid.c 2>/tmp/platform_err.txt || ! grep -q "TOWER_MIDNET needs a native platform" /tmp/platform_err.txt; then
   echo "FAIL  the web build accepted TOWER_MIDNET=1 (it must be refused: the QUIC library is not built for the browser)"; fail=1
 else echo "  ok: TOWER_MIDNET=1 compiles for android and desktop and is refused for the web"; fi
+# TOWER_NETDRIVER (platform.h: the build links mid-net's driver): the adapter must compile for real on the native platforms (against the library's header),
+# the build without it must compile everywhere, and the web build must refuse the option outright
+for flags in "-D__ANDROID__ -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -Itests/stubs" "-DPLATFORM_DESKTOP"; do
+  if ! gcc -std=gnu99 -fsyntax-only -Wall -Wundef -Isrc -Iraylib/src $flags -DTOWER_NETDRIVER=1 src/net/net_driver.c 2>/tmp/platform_err.txt; then
+    echo "FAIL  TOWER_NETDRIVER=1: src/net/net_driver.c does not compile ($flags)"; head -5 /tmp/platform_err.txt; fail=1
+  fi
+done
+for flags in "-D__EMSCRIPTEN__ -Itests/stubs" "-D__ANDROID__ -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -Itests/stubs" "-DPLATFORM_DESKTOP"; do
+  if ! gcc -std=gnu99 -fsyntax-only -Wall -Wundef -Isrc -Iraylib/src $flags src/net/net_driver.c 2>/tmp/platform_err.txt; then
+    echo "FAIL  the build without the driver: src/net/net_driver.c does not compile ($flags)"; head -5 /tmp/platform_err.txt; fail=1
+  fi
+done
+if gcc -std=gnu99 -fsyntax-only -Isrc -Iraylib/src -D__EMSCRIPTEN__ -Itests/stubs -DTOWER_NETDRIVER=1 src/net/net_driver.c 2>/tmp/platform_err.txt || ! grep -q "TOWER_NETDRIVER needs a native platform" /tmp/platform_err.txt; then
+  echo "FAIL  the web build accepted TOWER_NETDRIVER=1 (it must be refused: the library is not built for the browser)"; fail=1
+else echo "  ok: TOWER_NETDRIVER=1 compiles for android and desktop, the build without it compiles everywhere, and the web build refuses it"; fi
 # a raw platform test outside platform.h is how this goes wrong again
 raw=$(grep -rn "__EMSCRIPTEN__\|__ANDROID__" main.c src --include=*.c --include=*.h | grep -v "^src/platform/platform.h")
 if [ -n "$raw" ]; then echo "FAIL  a raw __EMSCRIPTEN__ or __ANDROID__ test outside src/platform/platform.h (use a TOWER_ capability):"; echo "$raw" | head -5; fail=1; fi

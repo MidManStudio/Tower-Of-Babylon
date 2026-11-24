@@ -84,6 +84,16 @@
 #if TOWER_MIDNET && !TOWER_NET_UDP
     #error "TOWER_MIDNET needs a native platform (the QUIC library is not built for the browser)"
 #endif
+// TOWER_NETDRIVER: the build links mid-net's driver (handshake, keepalive with NO SIGNAL, channels, priorities: crates/mid-net/src/driver.rs, through
+// its C interface, src/net/net_driver.c). It lives in the same Rust static library as the QUIC transport (mid-net-transport-quinn-ffi re-exports it), so
+// a build that has one library has both; but it is asked for on its own (a build may have only the facade library). Off unless the build passes
+// -DTOWER_NETDRIVER=1; only native builds can have it.
+#ifndef TOWER_NETDRIVER
+    #define TOWER_NETDRIVER 0
+#endif
+#if TOWER_NETDRIVER && !TOWER_NET_UDP
+    #error "TOWER_NETDRIVER needs a native platform (the library is not built for the browser)"
+#endif
 
 // The browser drives the frame loop (emscripten_set_main_loop); everywhere else main() runs its own while loop.
 #define TOWER_MAIN_LOOP_CALLBACK TOWER_PLATFORM_WEB
