@@ -28,6 +28,20 @@ An endless tower full of otherworldly horrors, run as **entertainment**, like gl
 - *On random floors:* a shop, where points buy things; the safe zone around it is guarded by two sentinels.
 - No two floors are the same: the tower is ever changing.
 
+## The federation's record (yours, the dossier of 2026-11-25)
+
+The cosmic dossier you gave adds to the notes above; nothing in it contradicts them.
+
+- **Governance.** The federation is the dominant interstellar authority and the self-proclaimed peacekeeper of the known cosmos. Under its public image of law, planetary rescue and order it is a cold, ruthless war machine driven by strategic efficiency, not morality. It judges every civilisation, planet and lifeform by its survival probability and its resource cost: it will evacuate billions when that suits it and give up whole populated worlds without a thought if that keeps the wider balance.
+- **The three immortal Niu** sit at the summit, ancient and enigmatic; almost no citizen or officer has seen them. Every galactic directive, quarantine order and secret ascension trial comes from their unseen council.
+- **The Agents** drift through deep space, from the size of a metropolis to whole planets and, in extreme cases, galaxies, and exist only to rebalance existence when a civilisation, a technology or a power grows too dominant. Their arrival is almost always total planetary annihilation or worse, and conventional weapons are useless against beings that act as living laws of existence. **The federation's real reason to exist is to fight and delay the Agents**, with everything from mass refugee relocation to forbidden metaphysical experiments.
+- **Humanity's fall.** Earth was destroyed by a black hole (or so the official records say), taking most of the human race. Before humanity was entirely gone the federation's Planetary Rescue Response fleets arrived and took the survivors off-world.
+- **The All-World** is a colossal refugee planet, a temporary holding ground for the survivors of lost civilisations until new colony worlds are found, packed with displaced alien species: a volatile melting pot of cultures, tension, friction between species and tightly enforced federation law.
+- **Soul Ascension.** Mortal weapons cannot match the Agents, so the Niu oversee a near-impossible metaphysical process. The body cannot ascend, only the soul, and it takes a lethal ordeal at the bottom of a vast oceanic world, where the subject must in effect die without truly dying. The few who succeed gain sovereign control of their soul, the ability to rebuild their body, and authority over the fundamental laws of the universe.
+- **The Tower of Babylon broadcast.** The worst condemned criminals (warlords, cult mass-murderers, bio-terrorists, rogue assassins) are not executed but turned into spectacle, broadcast live across the galaxy by drones and surveillance feeds: death-row inmates are dropped into the Tower to fight G.V.E.X. horrors and rival squads, with total immunity and freedom promised to the one final survivor.
+
+Two new documents carry the parts the game uses directly: **`10-gvex-dossier.md`** (the creatures: designations, tiers, senses, variants) and **`11-babylon-01.md`** (the structure the Tower is part of: the figure-8, the Central Nexus Station, the bands of the spire, the collapse protocol).
+
 ## The NPCs (yours)
 
 - **The commentator.** A man on a microphone, hyping the show and insulting the contestants as the scum, the worst of the worst. Not a character you play; a voice.

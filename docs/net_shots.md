@@ -37,7 +37,7 @@ Every command carries `viewLag` (one byte, protocol version 3): `NetClient_ViewL
 ## Decisions to take with the owner before step 2
 1. What does a player carry in a session? (Solo: nothing but fists until a gun is found; a session has no pickups yet.)
 2. Do players hurt each other, and what happens at 0 health in a session (down, out, respawn at the start)?
-3. Do monsters come into sessions (step 4) or do sessions stay player-only for a while?
+3. ~~Do monsters come into sessions (step 4) or do sessions stay player-only for a while?~~ **Answered 2026-11-25: they come in, and they are the G.V.E.X.**, as Flecs entities on the server (`gvex_session.md` is the plan; step 4 below becomes its slices S1 to S4).
 4. Is the shot's first part judged only at the muzzle ray (like hitscan, the first 0.25 m steps) or does every flying projectile test against rewound poses for its whole flight (more exact, more work)?
 5. Do other players see the shooter's flash and sound (recommended: yes, as a spawn event), and the reload need not be seen (as decided).
 

@@ -1,5 +1,7 @@
 # Monsters and senses
 
+> **Update 2026-11-25.** The G.V.E.X. dossier (`10-gvex-dossier.md`) names every creature (designation, tier, senses, variants) and **replaces the monster list below**. What stays valid here is the model of senses with ranges, how it ties into noise, light and the flashlight, the walls-and-sound question, the floors and tiers proposal (read it with the new names), and the bosses. The dossier adds two senses (structural wall-scan, proximity/vibrational) to the three below, and counters to each; the mapping from the old names to the designations is at the end of `10-gvex-dossier.md`.
+
 ## The idea (yours)
 
 The monsters of the tower are procedural, with a handful of common ones to be named later. Each one finds you with one or more of three senses: it **sees** you, **hears** you, or **smells** you. Each sense has a range. Hearing and smell reach furthest. Smell is uncommon and needs something poured on you, which is an item an enemy player can use against you.

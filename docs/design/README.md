@@ -14,6 +14,8 @@ These are the planning documents for the game. They were written from what you d
 | `07-roadmap.md` | Milestones from the solo slice to the betrayal finale, the first thing to build next, a risk register, and the list of decisions I need from you. |
 | `08-floor-generation.md` | The plan for floor generation v2: bigger floors (64 for two teams, never more than 128), a start room per team, cover walls, rare stacked levels (up to four), themes, sockets for missions and special rooms, the safe zone, the determinism rules for multiplayer, the optimisation plan and the build rounds R0 to R5. |
 | `09-floor-generation-research.md` | What the plan rests on: the audit of the generator and what grows with the map, the sources, the free assets and their licences, what mid-engine offers, test vectors for the random numbers, and the measurements of a first prototype. |
+| `10-gvex-dossier.md` | The G.V.E.X. registry (your dossier): the eleven designations X0 to X6 with their senses, variants and counters, what the code has today, why it needs an ECS, and what the dossier leaves open. Replaces the monster list of `03`. |
+| `11-babylon-01.md` | The megastructure (your brief): the figure-8 heat engine, the Central Nexus Station, the bands of the Tower, the collapse protocol, and what the game can use of it. |
 
 ## Where the game is today
 
