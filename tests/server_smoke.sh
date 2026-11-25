@@ -4,12 +4,18 @@
 # NOTICE: Full documentation, design decisions, and fix history for this file
 # live in docs/net.md, section "The server program"
 # ============================================================================
-# Builds the server and the bot as separate programs and runs them against each other over real UDP on this machine: one server, two bots,
+# Builds the server and the bot as separate programs (every connection through mid-net's driver) and runs them against each other over real UDP on this machine: one server, two bots,
 # 10% of every packet lost on the way out. Passes when both bots finish playing (exit 0) and the server saw both. While they play, a second
 # server announces itself and a third bot LISTS it, then FINDS it and joins it with no address given (net/net_discovery.h); once that server
 # is gone a bot finds nothing and says so (exit 3). About fifteen seconds.
 #   bash tests/server_smoke.sh      (from the project root, or give the folder as the first argument)
 cd "${1:-$(dirname "$0")/..}" || exit 1
+# The server and the bot speak mid-net's driver (a Rust library): cargo and a mid-engine checkout (MID_ENGINE, or ./mid-engine, or ../mid-engine) are needed; otherwise exit 77 (SKIP).
+command -v cargo >/dev/null || { echo "SKIP: cargo is not installed (the server and the bot go through mid-net's driver)"; exit 77; }
+me="${MID_ENGINE:-}"
+if [ -z "$me" ]; then for d in ./mid-engine ../mid-engine; do [ -f "$d/crates/mid-net/src/driver_ffi.rs" ] && { me="$d"; break; }; done; fi
+[ -n "$me" ] && [ -f "$me/crates/mid-net/src/driver_ffi.rs" ] || { echo "SKIP: no mid-engine checkout with crates/mid-net/src/driver_ffi.rs (set MID_ENGINE)"; exit 77; }
+export MID_ENGINE="$me"
 dir=$(mktemp -d /tmp/tower_smoke_XXXX)
 trap 'kill $srv 2>/dev/null; rm -rf "$dir"' EXIT
 bash scripts/build_server.sh "$dir" >"$dir/build.txt" 2>&1 || { echo "build failed"; tail -8 "$dir/build.txt"; exit 1; }

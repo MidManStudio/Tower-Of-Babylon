@@ -498,8 +498,8 @@ int main(void)
             }
             Check(l.search == LOBBY_SEARCHING, "FIND started the real search");
             Check(l.entryCount == 1, "the host on this machine answered and is listed");
-            Check(l.entryCount == 1 && strcmp(l.entries[0].name, "STEVE'S TOWER") == 0 && l.entries[0].players == 1 && l.entries[0].maxPlayers == 4 && strcmp(l.entries[0].transport, "UDP") == 0 && l.entries[0].joinable,
-                  "with its name, its players, UDP, and joinable");
+            Check(l.entryCount == 1 && strcmp(l.entries[0].name, "STEVE'S TOWER") == 0 && l.entries[0].players == 1 && l.entries[0].maxPlayers == 4 && strcmp(l.entries[0].transport, "UDP") == 0 && l.entries[0].joinable == (TOWER_NETDRIVER != 0),
+                  "with its name, its players, UDP, and joinable where the build has the driver library (every connection goes through it; where it has not, the entry says CANNOT CONNECT)");
             uint32_t found = 0;
             Check(l.entryCount == 1 && NetDisc_ParseIp(l.entries[0].address, &found) && l.entries[0].port == 7777 && l.entries[0].transportId == NET_TRANSPORT_UDP, "and where to connect: an address that parses, the game port the host announced, and UDP");
             NetDiscHost_SetInfo(&host, "STEVE'S TOWER", 7777, 4, 4, NET_TRANSPORT_UDP);
@@ -510,7 +510,7 @@ int main(void)
                 usleep(5000);
                 Lobby_Update(&l, &nb, now + 1.0);
             }
-            Check(l.entryCount == 1 && l.entries[0].players == 4 && !l.entries[0].joinable && strcmp(l.entries[0].why, "FULL") == 0, "when the host fills up the entry follows: FULL, not joinable");
+            Check(l.entryCount == 1 && l.entries[0].players == 4 && !l.entries[0].joinable && strcmp(l.entries[0].why, TOWER_NETDRIVER ? "FULL" : "CANNOT CONNECT") == 0, "when the host fills up the entry follows: FULL, not joinable (a build without the driver library keeps saying CANNOT CONNECT)");
             TapRect(&l, Lobby_Back());
             Lobby_Update(&l, &nb, now + 10.0);
             Check(l.search == LOBBY_SEARCH_OFF && l.entryCount == 0 && nb.count(NULL) == 0, "BACK closes the real search and the list is empty");

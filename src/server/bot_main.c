@@ -19,6 +19,7 @@
 #include <time.h>
 
 #include "../net/net_client.h"
+#include "../net/net_dial.h"
 #include "../net/net_discovery.h"
 #include "../net/net_mid.h"
 #include "../net/net_udp.h"
@@ -28,8 +29,7 @@ void DrawCylinderEx(Vector3 a, Vector3 b, float r0, float r1, int sides, Color c
 bool CheckObstacleCollision(Vector3 pos, float radius) { (void)pos; (void)radius; return false; }
 
 static NetClient g_cl;
-static NetUdpHost g_host;
-static NetMidHost g_mid;
+static NetDial g_dial;
 
 static void SleepMs(double ms) { struct timespec ts; ts.tv_sec = 0; ts.tv_nsec = (long)(ms * 1e6); nanosleep(&ts, NULL); }
 
@@ -119,8 +119,9 @@ int main(int argc, char **argv)
         else NetUdp_SetDebug((float)(lossPercent / 100.0), 0.0f);
     }
     NetTransport tp;
-    if (!(useQuic ? NetMidHost_Connect(&g_mid, host, (uint16_t)port, &tp) : NetUdpHost_Connect(&g_host, host, (uint16_t)port, &tp))) { fprintf(stderr, "tower_bot: cannot reach %s:%u\n", host, port); return 2; }
-    if (!quiet) printf("tower_bot: connecting to %s:%u over %s\n", host, port, useQuic ? "QUIC (mid-net)" : "plain UDP");
+    char dialErr[64];
+    if (!NetDial_Open(&g_dial, useQuic ? NET_TRANSPORT_QUIC : NET_TRANSPORT_UDP, host, (uint16_t)port, &tp, dialErr, sizeof dialErr)) { fprintf(stderr, "tower_bot: %s (%s:%u)\n", dialErr, host, port); return 2; }
+    if (!quiet) printf("tower_bot: connecting to %s:%u over %s, through mid-net's driver\n", host, port, useQuic ? "QUIC (mid-net)" : "plain UDP");
     NetClient_Init(&g_cl, tp, name, NetUdp_NowMs());
 
     const double start = NetUdp_NowMs();
@@ -144,8 +145,7 @@ int main(int argc, char **argv)
     const int ok = g_cl.state == NETC_PLAYING && played > 0.5 && (double)ticks >= played * (double)NET_TICK_RATE * 0.8 && g_cl.hardSnaps == 0;
     printf("tower_bot: %s; played %.1f s, %u ticks, %u corrections, %u hard snaps, state %d\n", ok ? "ok" : "NOT ok", played, ticks, g_cl.corrections, g_cl.hardSnaps, (int)g_cl.state);
     NetClient_Leave(&g_cl);
-    for (int i = 0; i < 30; ++i) { if (useQuic) NetMidHost_Pump(&g_mid); else NetUdpHost_Pump(&g_host); SleepMs(5.0); }      // let the goodbye go out
-    if (useQuic) NetMidHost_Close(&g_mid); else NetUdpHost_Close(&g_host);
+    NetDial_Close(&g_dial, 150);                                                                  // lets the goodbye go out, then closes the socket
     return ok ? 0 : 1;
 }
 #endif

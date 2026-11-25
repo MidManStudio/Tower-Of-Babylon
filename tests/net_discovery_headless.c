@@ -18,6 +18,8 @@
 #include "net/net_discovery.h"
 #include "platform/platform.h"
 
+// Every connection goes through mid-net's driver (net_driver.h): a transport is supported where the platform has it AND the build has the driver library.
+static const bool udpOk = TOWER_NET_UDP != 0 && TOWER_NETDRIVER != 0, quicOk = TOWER_MIDNET != 0 && TOWER_NETDRIVER != 0;
 static int g_failures = 0, g_checks = 0;
 static void Check(int ok, const char *what) { ++g_checks; printf("  [%s] %s\n", ok ? "pass" : "FAIL", what); if (!ok) ++g_failures; }
 
@@ -209,8 +211,8 @@ int main(void)
         Check(NetLobbies_Nth(&t, 3) == NULL && NetLobbies_Nth(&t, 100) == NULL, "past the end there is nothing");
         // the transport
         {
-            Check(NetDisc_TransportSupported(NET_TRANSPORT_UDP) == (TOWER_NET_UDP != 0), "plain UDP is supported wherever the platform has UDP");
-            Check(NetDisc_TransportSupported(NET_TRANSPORT_QUIC) == (TOWER_MIDNET != 0), "QUIC is supported only in a build that linked mid-net");
+            Check(NetDisc_TransportSupported(NET_TRANSPORT_UDP) == udpOk, "plain UDP is supported wherever the platform has UDP and the build has the driver library");
+            Check(NetDisc_TransportSupported(NET_TRANSPORT_QUIC) == quicOk, "QUIC is supported only in a build that linked mid-net and its driver");
             Check(!NetDisc_TransportSupported(7) && !NetDisc_TransportSupported(255), "a transport this build has never heard of is not supported");
             NetLobbies tr;
             NetLobbies_Init(&tr);
@@ -221,14 +223,14 @@ int main(void)
             NetLobbies_Update(&tr, IP(10, 0, 0, 1), &odd, 0.0);
             NetLobbies_Update(&tr, IP(10, 0, 0, 2), &qk, 0.0);
             NetLobbies_Update(&tr, IP(10, 0, 0, 3), &u, 0.0);
-            Check(!NetLobbies_Nth(&tr, 0)->transportSupported && NetLobbies_Nth(&tr, 1)->transportSupported == (TOWER_MIDNET != 0) && NetLobbies_Nth(&tr, 2)->transportSupported == (TOWER_NET_UDP != 0),
+            Check(!NetLobbies_Nth(&tr, 0)->transportSupported && NetLobbies_Nth(&tr, 1)->transportSupported == quicOk && NetLobbies_Nth(&tr, 2)->transportSupported == udpOk,
                   "each lobby is marked with whether this build can connect the way it wants");
             const NetLobby *jf = NetLobbies_FirstJoinable(&tr);
-            Check((TOWER_NET_UDP && TOWER_MIDNET) ? (jf && !strcmp(jf->info.name, "quic")) : TOWER_NET_UDP ? (jf && !strcmp(jf->info.name, "udp")) : jf == NULL,
+            Check(quicOk ? (jf && !strcmp(jf->info.name, "quic")) : udpOk ? (jf && !strcmp(jf->info.name, "udp")) : jf == NULL,
                   "the first joinable skips a lobby this build cannot connect to (and one of a transport nobody has heard of)");
             qk.transport = NET_TRANSPORT_UDP;
             Check(NetLobbies_Update(&tr, IP(10, 0, 0, 2), &qk, 1.0) == NETLOBBY_CHANGED, "a host that changes transport is CHANGED");
-            Check(NetLobbies_Nth(&tr, 1)->info.transport == NET_TRANSPORT_UDP && NetLobbies_Nth(&tr, 1)->transportSupported == (TOWER_NET_UDP != 0), "and its supported flag follows the new transport, not the old one");
+            Check(NetLobbies_Nth(&tr, 1)->info.transport == NET_TRANSPORT_UDP && NetLobbies_Nth(&tr, 1)->transportSupported == udpOk, "and its supported flag follows the new transport, not the old one");
         }
         // one host, two of its addresses
         {
@@ -255,7 +257,7 @@ int main(void)
         Check(NetLobbies_FirstJoinable(&u) == NULL, "a full lobby and one of another version are not joinable");
         Check(!NetLobbies_Nth(&u, 1)->compatible && NetLobbies_Nth(&u, 0)->compatible, "the other version is kept in the list but marked incompatible, so a player can be told to update");
         NetLobbies_Update(&u, IP(10, 0, 0, 3), &good, 0.0);
-        Check(NetLobbies_FirstJoinable(&u) && !strcmp(NetLobbies_FirstJoinable(&u)->info.name, "good"), "the first joinable skips them");
+        Check(udpOk ? (NetLobbies_FirstJoinable(&u) && !strcmp(NetLobbies_FirstJoinable(&u)->info.name, "good")) : NetLobbies_FirstJoinable(&u) == NULL, "the first joinable skips them (and in a build without the driver library there is none: nothing can be joined)");
         // order survives a freed place being reused by a newer lobby
         {
             NetLobbies o;
@@ -389,7 +391,7 @@ int main(void)
         int fromHere = l && l->addr == IP(127, 0, 0, 1);
         for (int i = 0; i < nm; ++i) if (l && l->addr == mine[i].ip) fromHere = 1;
         Check(fromHere, "and the address it ANSWERED from (this machine's own: the loopback or one of its interfaces), not one the host claims");
-        Check(NetLobbies_FirstJoinable(&cl.lobbies) == l, "it can be joined");
+        Check(NetLobbies_FirstJoinable(&cl.lobbies) == (udpOk ? l : NULL), "it can be joined where the build has the driver library, and is offered to nobody where it has not");
 
         NetDiscHost_SetInfo(&host, "steve's tower", 7777, 3, 4, NET_TRANSPORT_UDP);
         now += 2100.0;
@@ -403,8 +405,8 @@ int main(void)
         NetDiscClient_Search(&cl, now);
         SleepMs(30); NetDiscHost_Poll(&host, now); SleepMs(30);
         NetDiscClient_Poll(&cl, now);
-        Check(NetLobbies_Nth(&cl.lobbies, 0)->info.transport == NET_TRANSPORT_QUIC && NetLobbies_Nth(&cl.lobbies, 0)->transportSupported == (TOWER_MIDNET != 0),
-              "a host that announces QUIC is listed as QUIC, joinable only in a build that has it");
+        Check(NetLobbies_Nth(&cl.lobbies, 0)->info.transport == NET_TRANSPORT_QUIC && NetLobbies_Nth(&cl.lobbies, 0)->transportSupported == quicOk,
+              "a host that announces QUIC is listed as QUIC, joinable only in a build that has it and the driver");
         NetDiscHost_SetInfo(&host, "steve's tower", 7777, 3, 4, NET_TRANSPORT_UDP);
         now += 2100.0;
         NetDiscClient_Search(&cl, now);

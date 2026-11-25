@@ -121,8 +121,8 @@ midnet_active() { [ "$MIDNET" != "0" ] && [ -f "$MIDNET_LIB" ]; }
 # (TOWER_MIDNET_REQUIRED=1) or carry on without QUIC and say so loudly.
 midnet_fail() {
     if [ "$MIDNET_REQUIRED" = "1" ]; then die "QUIC library: $1"; fi
-    warn "the APK is built WITHOUT QUIC: $1"
-    summary "- **QUIC: not in this APK.** $1"
+    warn "the APK is built WITHOUT QUIC: $1 (and so WITHOUT MULTIPLAYER: every connection of the game goes through the driver in this library)"
+    summary "- **QUIC: not in this APK, and no multiplayer** (the driver is in the same library). $1"
     return 0
 }
 
@@ -235,10 +235,10 @@ stage_midnet() {
     if [ -z "$syms" ]; then
         warn "llvm-nm could not read the QUIC library (build/android/midnet-nm.log): the check against src/net/mid_net_quic.h is skipped; the link still needs every function the game calls"
     else
-        for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$root/src/net/mid_net_quic.h" | tr -d '(' | sort -u); do
+        for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$root/src/net/mid_net_quic.h" | tr -d '(' | sort -u) $(grep -o 'mid_net_[a-z0-9_]*(' "$root/src/net/mid_net_driver.h" | tr -d '(' | sort -u); do
             if ! grep -qw "$fn" <<<"$syms"; then missing="$missing $fn"; fi
         done
-        if [ -n "$missing" ]; then midnet_fail "the library lacks functions that src/net/mid_net_quic.h declares:$missing"; return 0; fi
+        if [ -n "$missing" ]; then midnet_fail "the library lacks functions that src/net/mid_net_quic.h or src/net/mid_net_driver.h declares:$missing"; return 0; fi
     fi
 
     cp "$built" "$MIDNET_LIB"
@@ -273,7 +273,9 @@ stage_compile() {
                   -Wall -Wno-unused-function -Werror=implicit-function-declaration
                   -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -I"$root/src" -I"$OUT/raylib/src")
     # -DTOWER_MIDNET: src/net/net_mid.c talks to the QUIC library when this is 1, and has stubs that say "not built in" when it is 0.
-    if midnet_active; then cflags+=(-DTOWER_MIDNET=1); echo "TOWER_MIDNET=1 (QUIC library: $MIDNET_LIB)"; else cflags+=(-DTOWER_MIDNET=0); echo "TOWER_MIDNET=0 (no QUIC library)"; fi
+    # -DTOWER_NETDRIVER: every connection of the game goes through mid-net's driver (src/net/net_driver.c), which is in the SAME library (libmid_net_quic.a carries
+    # QUIC and the driver: two Rust static libraries cannot be linked together). Without the library the APK has no multiplayer at all, and says so in the lobby.
+    if midnet_active; then cflags+=(-DTOWER_MIDNET=1 -DTOWER_NETDRIVER=1); echo "TOWER_MIDNET=1 TOWER_NETDRIVER=1 (QUIC and driver library: $MIDNET_LIB)"; else cflags+=(-DTOWER_MIDNET=0 -DTOWER_NETDRIVER=0); echo "TOWER_MIDNET=0 TOWER_NETDRIVER=0 (no QUIC library: the APK has no multiplayer)"; fi
     local sources=(main.c)
     while IFS= read -r f; do sources+=("$f"); done < <(find src -name '*.c' | sort)
     local f

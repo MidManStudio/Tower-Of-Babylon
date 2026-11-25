@@ -182,8 +182,9 @@ const NetLobby *NetLobbies_FirstJoinable(const NetLobbies *t)
 
 bool NetDisc_TransportSupported(uint8_t transport)
 {
-    if (transport == NET_TRANSPORT_UDP) return TOWER_NET_UDP != 0;
-    if (transport == NET_TRANSPORT_QUIC) return TOWER_MIDNET != 0;
+    // every connection goes through the driver (net_driver.h): a build without its library joins nothing, so it offers nothing
+    if (transport == NET_TRANSPORT_UDP) return TOWER_NET_UDP != 0 && TOWER_NETDRIVER != 0;
+    if (transport == NET_TRANSPORT_QUIC) return TOWER_MIDNET != 0 && TOWER_NETDRIVER != 0;
     return false;                                                                  // a transport this build has never heard of
 }
 

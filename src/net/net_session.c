@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../platform/platform.h"
+#include "net_driver.h"
 
 bool NetSession_CanHost(void) { return TOWER_NET_UDP != 0; }
 
@@ -53,6 +54,7 @@ static bool Connect(NetSession *s, int transport, const char *address, uint16_t 
 bool NetSession_Host(NetSession *s, int transport, const char *lobbyName, const char *character, uint32_t floorSeed, double nowMs)
 {
     Begin(s, true, lobbyName, nowMs);
+    if (NetSession_CanHost() && !NetDriver_Available()) { Fail(s, "THIS BUILD HAS NO MULTIPLAYER LIBRARY"); return false; }
     NetHostConfig cfg;
     NetHostConfig_Default(&cfg);
     cfg.transport = transport; cfg.seed = floorSeed; cfg.name = lobbyName;
@@ -70,6 +72,7 @@ bool NetSession_Join(NetSession *s, int transport, const char *address, uint16_t
 // Everything is closed (no waiting): the session ended by itself, so there is nobody left to say goodbye to.
 static void Teardown(NetSession *s)
 {
+    NetClient_Leave(&s->client);                             // a connection that ended by itself still has its transport (the driver's, which holds memory and a thread's worth of state) to free; this says nothing to anyone then
     if (s->hosting) NetHost_Close(&s->host, 0);
     NetDial_Close(&s->dial, 0);
 }
@@ -138,6 +141,13 @@ int NetSession_Slots(const NetSession *s, NetSessionSlot out[NET_MAX_PLAYERS])
     }
     if (!placed) out[n++] = mine;
     return n;
+}
+
+uint32_t NetSession_NoSignalMs(const NetSession *s)
+{
+    NetLinkInfo li;
+    if (s->state != NETS_PLAYING || !NetClient_Link(&s->client, &li) || li.state != NETLINK_NO_SIGNAL) return 0;
+    return li.silentMs > 0 ? li.silentMs : 1;
 }
 
 int NetSession_Players(const NetSession *s)

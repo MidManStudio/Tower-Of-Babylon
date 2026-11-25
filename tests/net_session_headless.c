@@ -1,8 +1,10 @@
 // Headless test of NetSession: real games over real UDP sockets on this machine's loopback address, in real time. A session hosts (the shared
 // host module with the host playing as a client of its own game), others join by address, the lobby's announcement is read back by a real
 // searcher, a fifth player is turned away, players leave, the host leaves, and the failures say why. No window, no raylib calls. Takes a few
-// seconds (the clock is the real one). Run from the project root:
-//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
+// seconds (the clock is the real one). Every connection of the game goes through mid-net's driver (net_driver.h), a Rust library: built as below there is
+// none (TOWER_NETDRIVER 0), and the test checks that hosting and joining say so; tests/net_session_check.sh builds the same file against the library
+// and runs the real games. Run from the project root:
+//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_driver.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
 #ifdef NET_SESSION_HEADLESS_TEST
 
 #define _POSIX_C_SOURCE 200809L
@@ -51,6 +53,7 @@ typedef struct { NetSession *s; NetSessionState state; int players; } Want;
 static bool WantState(void *ctx) { const Want *w = ctx; return w->s->state == w->state; }
 static bool WantPlayers(void *ctx) { const Want *w = ctx; return w->s->state == NETS_PLAYING && NetSession_Players(w->s) == w->players; }
 static bool Never(void *ctx) { (void)ctx; return false; }
+static bool QuietOver(void *ctx) { return NetSession_NoSignalMs((NetSession *)ctx) == 0; }
 
 static NetSession host, a, b, c, extra;
 
@@ -84,7 +87,8 @@ int main(void)
         Check(strcmp(NetSession_ReasonText(NET_DISC_NORMAL, true), "THE HOST LEFT") == 0 && strcmp(NetSession_ReasonText(NET_DISC_NORMAL, false), "THE HOST CLOSED THE GAME") == 0, "NORMAL: the host left (in play) or closed the game (while joining)");
         Check(strcmp(NetSession_ReasonText(NET_DISC_TIMEOUT, true), "CONNECTION LOST") == 0 && strcmp(NetSession_ReasonText(NET_DISC_TIMEOUT, false), "NO ANSWER") == 0, "TIMEOUT: connection lost (in play) or no answer (while joining)");
         Check(strcmp(NetSession_ReasonText(NET_DISC_BAD, false), "THE HOST REFUSED THE CONNECTION") == 0 && strcmp(NetSession_ReasonText(99, false), "DISCONNECTED") == 0, "BAD and anything unknown have words too");
-        Check(NetSession_CanHost() == (TOWER_NET_UDP != 0), "a session can host exactly where the platform has UDP");
+        Check(NET_PROTOCOL_VERSION >= 4, "the protocol is version 4 or later: every connection goes through the driver, a wire format a build of version 3 cannot speak, so the two must not meet");
+    Check(NetSession_CanHost() == (TOWER_NET_UDP != 0), "a session can host exactly where the platform has UDP");
         NetSession idle; memset(&idle, 0, sizeof idle);
         NetSessionSlot slots[NET_MAX_PLAYERS];
         NetSession_Update(&idle, 100.0); NetSession_Leave(&idle);
@@ -111,6 +115,24 @@ int main(void)
 #endif
     }
 
+#if !TOWER_NETDRIVER
+    printf("\nno driver library in this build\n");
+    {
+        NetSession h, j;
+        const double now = NetUdp_NowMs();
+        Check(!NetSession_Host(&h, NET_TRANSPORT_UDP, "X", "steve", 1, now) && h.state == NETS_FAILED && strcmp(h.error, "THIS BUILD HAS NO MULTIPLAYER LIBRARY") == 0, "hosting says plainly that this build has no multiplayer library");
+        Check(!h.host.open, "and nothing is left open");
+        NetSession_Leave(&h);
+        Check(!NetSession_Join(&j, NET_TRANSPORT_UDP, "127.0.0.1", 9, "x", "steve", now) && j.state == NETS_FAILED && strcmp(j.error, "THIS BUILD HAS NO MULTIPLAYER LIBRARY") == 0, "joining says the same");
+        NetSession_Leave(&j);
+        static NetHost direct;                                                             // 600 KB: not on the stack
+        NetHostConfig dcfg;
+        NetHostConfig_Default(&dcfg);
+        Check(!NetHost_Open(&direct, &dcfg, now) && strstr(direct.error, "multiplayer library") != NULL, "opening a NetHost directly (the server program does) says so too, and opens nothing");
+        Check(NetSession_NoSignalMs(&j) == 0, "an idle session has no NO SIGNAL");
+        Check(!NetDisc_TransportSupported(NET_TRANSPORT_UDP) && !NetDisc_TransportSupported(NET_TRANSPORT_QUIC), "and its lobby list offers no game, whatever way the host speaks");
+    }
+#else
     printf("\nhosting\n");
     {
         const double t0 = NetUdp_NowMs();
@@ -202,6 +224,28 @@ int main(void)
         Check(hypotf(host.client.player.position.x - hs.x, host.client.player.position.z - hs.z) < 1.5f, "with no one naming the commands again they are stand-still: the player slows to a stop (the default is kept)");
     }
 
+    printf("\nthe link goes quiet\n");
+    {
+        Watch(&host, &a, NULL, NULL, NULL);
+        Check(NetSession_NoSignalMs(&a) == 0 && NetSession_NoSignalMs(&host) == 0, "while the link is fine there is no NO SIGNAL");
+        NetUdp_SetDebug(1.0f, 0.0f);                                     // every packet lost, both ways
+        const double q0 = NetUdp_NowMs();
+        uint32_t most = 0;
+        while (NetUdp_NowMs() - q0 < 2600.0) {
+            const double now = NetUdp_NowMs();
+            NetSession_Update(&host, now); NetSession_Update(&a, now);
+            const uint32_t ms = NetSession_NoSignalMs(&a);
+            if (ms > most) most = ms;
+            SleepMs(5);
+        }
+        Check(most >= 1500 && most < 4000, "a silent link shows NO SIGNAL after a second and a half, with the time it has been silent");
+        Check(a.state == NETS_PLAYING && host.state == NETS_PLAYING && NetSession_Players(&host) == 2, "and nobody has been dropped: the game is still on (the link ends at ten seconds, not before)");
+        NetUdp_SetDebug(0.0f, 0.0f);
+        Check(Pump(4000, QuietOver, &a), "when packets come again NO SIGNAL goes away by itself");
+        Want wp = { &host, NETS_PLAYING, 2 };
+        Check(Pump(3000, WantPlayers, &wp) && a.state == NETS_PLAYING, "and the game goes on with both players");
+    }
+
     printf("\nfilling up, being turned away, leaving\n");
     {
         NetSession_Join(&b, NET_TRANSPORT_UDP, "127.0.0.1", host.host.port, "X", "cy", NetUdp_NowMs());
@@ -265,7 +309,9 @@ int main(void)
         NetSession_Leave(&h1); NetSession_Leave(&h2);
     }
 
-    (void)Never;
+#endif   // TOWER_NETDRIVER
+
+    (void)Never; (void)QuietOver;
 #endif
 
     printf("\n%s\n", g_failures == 0 ? "all passed" : "FAILED");

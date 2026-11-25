@@ -70,7 +70,7 @@ int main(int argc, char **argv)
     cfg.discoveryPort = (uint16_t)discPort; cfg.discovery = discovery != 0;
     if (!NetHost_Open(&g_host, &cfg, NetUdp_NowMs())) { fprintf(stderr, "tower_server: %s\n", g_host.error); return 2; }
     const uint16_t gamePort = g_host.port;
-    printf("tower_server: floor %d, seed %u, listening on UDP port %u (%s), %d players at most\n", floorNumber, seed, (unsigned)gamePort, useQuic ? "QUIC, mid-net" : "plain UDP", NET_MAX_PLAYERS);
+    printf("tower_server: floor %d, seed %u, listening on UDP port %u (%s), %d players at most\n", floorNumber, seed, (unsigned)gamePort, useQuic ? "QUIC, mid-net, through its driver" : "plain UDP, through mid-net's driver", NET_MAX_PLAYERS);
     {   // where this machine can be reached, best first (a browser player, who cannot search, types one of these)
         NetDiscIface ifs[16];
         uint32_t addrs[16];

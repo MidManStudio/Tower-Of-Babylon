@@ -13,7 +13,7 @@
 // replaced by the next, and the client repeats its last few commands in every Input so that a lost one is rarely missed) and a reliable,
 // ordered channel (Hello, Welcome, Disconnect). Every packet starts with 'T' 'B' and a kind byte. Decoding checks everything (lengths,
 // counts, finite numbers, known flag bits, leftover bytes) and refuses what is wrong; nothing a stranger sends can run off a buffer.
-#define NET_PROTOCOL_VERSION 3             // 3: every command says how far behind the server the player saw the others (viewLag, for lag compensation); 2: the buttons are 16 bits and the owner's state carries a dive
+#define NET_PROTOCOL_VERSION 4             // 4: every connection goes through mid-net's driver (net_driver.h), a different wire format that a build of version 3 cannot speak (it shows in the lobby as another version, and is refused with VERSION); 3: every command says how far behind the server the player saw the others (viewLag, for lag compensation); 2: the buttons are 16 bits and the owner's state carries a dive
 #define NET_TICK_RATE        30
 #define NET_TICK_SECS        (1.0f / 30.0f)
 #define NET_MAX_PLAYERS      4

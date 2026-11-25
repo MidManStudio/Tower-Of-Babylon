@@ -49,6 +49,9 @@ void NetSession_Update(NetSession *s, double nowMs);            // once per fram
 void NetSession_Leave(NetSession *s);                           // say goodbye and close everything (a moment of waiting for the goodbye to go out); the state is IDLE after; safe to call at any time
 int  NetSession_Slots(const NetSession *s, NetSessionSlot out[NET_MAX_PLAYERS]);   // who is in the game, in id order
 int  NetSession_Players(const NetSession *s);
+// NO SIGNAL (the driver's word, net_driver.h: a second and a half without a word from the other side; the connection ends at ten seconds): how long nothing has been
+// heard, in milliseconds, while that is so; 0 while the link is fine, when the session is not playing, and for a transport that does not watch its link.
+uint32_t NetSession_NoSignalMs(const NetSession *s);
 // What a Disconnect reason means to the player, in capitals ("THE GAME IS FULL"); connecting says whether it was the join that failed.
 const char *NetSession_ReasonText(uint8_t reason, bool wasPlaying);
 

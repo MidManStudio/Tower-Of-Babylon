@@ -9,6 +9,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "net_driver.h"
+
 void NetHostConfig_Default(NetHostConfig *c)
 {
     memset(c, 0, sizeof *c);
@@ -39,6 +41,7 @@ bool NetHost_Open(NetHost *h, const NetHostConfig *cfg, double nowMs)
     h->transport = cfg->transport;
     if (h->transport != NET_TRANSPORT_UDP && h->transport != NET_TRANSPORT_QUIC) { snprintf(h->error, sizeof h->error, "unknown transport"); return false; }
     if (h->transport == NET_TRANSPORT_QUIC && !NetMid_Available()) { snprintf(h->error, sizeof h->error, "this build has no QUIC"); return false; }
+    if (!NetDriver_Available()) { snprintf(h->error, sizeof h->error, "this build has no multiplayer library (mid-net's driver: see docs/net.md)"); return false; }
     snprintf(h->name, sizeof h->name, "%s", cfg->name && NetDisc_NameOk(cfg->name) ? cfg->name : "TOWER");
 
     NetServer_Init(&h->server, cfg->seed, cfg->floorNumber);
@@ -65,7 +68,9 @@ void NetHost_Update(NetHost *h, double nowMs)
     if (!h->open) return;
     NetTransport tp;
     while (h->transport == NET_TRANSPORT_QUIC ? NetMidHost_Accept(&h->mid, &tp) : NetUdpHost_Accept(&h->udp, &tp)) {
-        if (NetServer_AddClient(&h->server, tp, nowMs) >= 0) ++h->accepted; else ++h->refused;
+        NetTransport driven;                                                           // every player's connection is one of mid-net's driver, over the socket's own
+        if (!NetDriver_Server(tp, (uint32_t)(h->accepted + h->refused + 1), &driven)) { if (tp.close) tp.close(tp.self); ++h->refused; continue; }
+        if (NetServer_AddClient(&h->server, driven, nowMs) >= 0) ++h->accepted; else ++h->refused;
     }
     NetServer_Poll(&h->server, nowMs);
     int ran = 0;

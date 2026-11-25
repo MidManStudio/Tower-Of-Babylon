@@ -87,6 +87,17 @@ void PlayUI_DrawOverlay(const NetSession *s, bool showKeys, bool leaveArmed)
     DrawText(TextFormat("P%d   %d / %d PLAYERS   PING %d MS", c->id + 1, players, NET_MAX_PLAYERS, (int)c->rttMs), 10, 8, 14, Fade(WHITE, 0.85f));
     DrawText(s->hosting ? TextFormat("HOSTING  %s", s->name) : TextFormat("JOINED  %s", s->name), 10, 26, 12, Fade(YELLOW, 0.8f));
 
+    // NO SIGNAL: nothing heard from the other side for a second and a half. The game goes on (the player is predicted), and the link ends by itself at ten seconds.
+    const uint32_t lost = NetSession_NoSignalMs(s);
+    if (lost > 0) {
+        const float pulse = 0.65f + 0.35f * sinf((float)GetTime() * 6.0f);
+        const char *l1 = "NO SIGNAL", *l2 = TextFormat("NOTHING HEARD FOR %u.%u S", (unsigned)(lost / 1000), (unsigned)((lost % 1000) / 100));
+        const int w = MeasureText(l1, 22), w2 = MeasureText(l2, 12), bw = (w > w2 ? w : w2) + 24;
+        DrawRectangle(400 - bw / 2, 52, bw, 50, Fade(BLACK, 0.6f));
+        DrawText(l1, 400 - w / 2, 58, 22, Fade(RED, pulse));
+        DrawText(l2, 400 - w2 / 2, 84, 12, Fade(WHITE, 0.85f));
+    }
+
     const UiRect lv = SessionUI_Leave();
     DrawRectangleRec(R(lv), Fade(BLACK, 0.55f));
     DrawRectangleLines((int)lv.x, (int)lv.y, (int)lv.w, (int)lv.h, leaveArmed ? RED : LIGHTGRAY);

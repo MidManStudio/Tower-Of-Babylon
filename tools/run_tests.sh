@@ -19,7 +19,14 @@ for f in tests/*_headless.c; do
   if ! eval "$line" 2>/tmp/build_err.txt; then echo "BUILD FAIL: $f"; head -5 /tmp/build_err.txt; fail=1; continue; fi
   if "$out" > /tmp/run_out.txt 2>&1; then echo "PASS  $f  ($(grep -c '^  ok\|ok:' /tmp/run_out.txt) ok lines)"; else echo "FAIL  $f"; tail -5 /tmp/run_out.txt; fail=1; fi
 done
-if bash tests/server_smoke.sh >/tmp/smoke_out.txt 2>&1; then echo "PASS  tests/server_smoke.sh  (the server and two bots as separate programs over real UDP, 10% packet loss each way)"; else echo "FAIL  tests/server_smoke.sh"; tail -8 /tmp/smoke_out.txt; fail=1; fi
+bash tests/server_smoke.sh >/tmp/smoke_out.txt 2>&1; src=$?
+if [ $src -eq 77 ]; then echo "SKIP  tests/server_smoke.sh ($(head -1 /tmp/smoke_out.txt))"
+elif [ $src -eq 0 ]; then echo "PASS  tests/server_smoke.sh  (the server and two bots as separate programs over real UDP, 10% packet loss each way, through mid-net's driver)"
+else echo "FAIL  tests/server_smoke.sh"; tail -8 /tmp/smoke_out.txt; fail=1; fi
+bash tests/net_session_check.sh >/tmp/net_session_out.txt 2>&1; nrc=$?
+if [ $nrc -eq 77 ]; then echo "SKIP  tests/net_session_check.sh ($(head -1 /tmp/net_session_out.txt))"
+elif [ $nrc -eq 0 ]; then echo "PASS  tests/net_session_check.sh  (real games over real sockets through the driver: host, join, walk, a link that goes quiet, a full game, leaving, the host leaving; sanitizers, no leaks)"
+else echo "FAIL  tests/net_session_check.sh"; tail -8 /tmp/net_session_out.txt; fail=1; fi
 bash tests/server_smoke_quic.sh >/tmp/smoke_quic_out.txt 2>&1; qrc=$?
 if [ $qrc -eq 77 ]; then echo "SKIP  tests/server_smoke_quic.sh ($(head -1 /tmp/smoke_quic_out.txt))"
 elif [ $qrc -eq 0 ]; then echo "PASS  tests/server_smoke_quic.sh  (the server and bots over mid-net's QUIC, with discovery)"

@@ -14,7 +14,7 @@
 #include "net_udp.h"
 
 // A hosted game, as a thing that can be opened, updated every frame, and closed: the server (net_server.h) with the socket that gives it
-// its players (plain UDP or QUIC) and the announcer that lets others on the network find it (net_discovery.h). It is the loop that was
+// its players (plain UDP or QUIC, each connection wrapped in mid-net's driver: net_driver.h) and the announcer that lets others on the network find it (net_discovery.h). It is the loop that was
 // in the dedicated server's main(), taken out so the game can host too: tower_server calls it from a loop of its own, the game calls it
 // from its frame. The caller supplies the clock (any clock that only goes forward, in milliseconds, the same on every call).
 typedef struct {

@@ -12,7 +12,7 @@ cd "${1:-$(dirname "$0")/..}" || exit 1
 real="$(pwd)"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-export FT="$T" FAKE_HDR="$real/src/net/mid_net_quic.h"
+export FT="$T" FAKE_HDR="$real/src/net/mid_net_quic.h" FAKE_HDR2="$real/src/net/mid_net_driver.h"
 fail=0
 ok()  { echo "  ok: $1"; }
 bad() { echo "  FAIL: $1"; fail=1; }
@@ -35,7 +35,7 @@ cat > "$bin/llvm-nm" <<'EOF'
 last=""; for a in "$@"; do last="$a"; done
 case "$last" in
   *.a) if [ -z "${FAKE_NM_EMPTY:-}" ]; then
-         for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$FAKE_HDR" | tr -d '(' | sort -u); do
+         for fn in $(grep -o 'mid_net_quic_[a-z_]*(' "$FAKE_HDR" | tr -d '(' | sort -u) $(grep -o 'mid_net_[a-z0-9_]*(' "$FAKE_HDR2" | tr -d '(' | sort -u); do
            if [ "$fn" != "${FAKE_NM_MISSING:-}" ]; then echo "0000 T $fn"; fi; done
        fi
        # the real llvm-nm 17 on a library made by a newer rustc: complains about some members, exits 1, still lists the rest
@@ -81,7 +81,7 @@ reset_project() {
   mkdir -p "$T/proj/scripts" "$T/proj/src/net" "$T/proj/android" "$T/proj/build/android/raylib/src" "$T/me/crates/mid-net/transport-quinn-ffi" \
            "$T/sysroot/lib/rustlib/armv7-linux-androideabi/lib"
   cp "$real/scripts/build_android.sh" "$T/proj/scripts/"
-  cp "$real/src/net/mid_net_quic.h" "$T/proj/src/net/"
+  cp "$real/src/net/mid_net_quic.h" "$real/src/net/mid_net_driver.h" "$T/proj/src/net/"
   echo "int main(void){return 0;}" > "$T/proj/main.c"; echo "int a(void){return 1;}" > "$T/proj/src/a.c"; echo "int b(void){return 2;}" > "$T/proj/src/net/b.c"
   : > "$T/proj/build/android/raylib/src/raylib.h"; : > "$T/proj/build/android/raylib/src/libraylib.a"
   echo "# fake lock" > "$T/proj/android/midnet.Cargo.lock"
@@ -103,6 +103,7 @@ check "the pinned lock file is in place during the build" has "$T/log/cargo.log"
 check "and gone from the mid-engine checkout afterwards" test ! -e "$T/me/Cargo.lock"
 check "the library cargo built (not an empty file) is copied to build/android/midnet" has "$T/proj/build/android/midnet/libmid_net_quic.a" FAKE-LIB-CONTENT
 check "every game source is compiled with -DTOWER_MIDNET=1" bash -c "test \"\$(grep -c -- ' -c ' '$T/log/cc.log')\" -ge 3 && test \"\$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=1')\" -eq \"\$(grep -c -- ' -c ' '$T/log/cc.log')\""
+check "every game source is compiled with -DTOWER_NETDRIVER=1 (the driver is in the same library)" bash -c "test \"\$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_NETDRIVER=1')\" -eq \"\$(grep -c -- ' -c ' '$T/log/cc.log')\""
 check "the QUIC link strips the debug info of Rust's precompiled parts" bash -c "grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q -- '--strip-debug'"
 check "the link line has the QUIC library, before raylib" bash -c "linkline=\$(grep -- '-shared' '$T/log/cc.log' | tail -1); case \"\$linkline\" in *libmid_net_quic.a*libraylib.a*) true ;; *) false ;; esac"
 check "the link stage reports the library is inside and nothing extra is needed" has "$T/out.txt" "QUIC library linked in"
@@ -119,6 +120,7 @@ check "the stages still succeed" test $rc -eq 0
 check "a warning says the APK is built WITHOUT QUIC" has "$T/out.txt" "WITHOUT QUIC"
 check "cargo's output is kept in build/android/midnet.log" has "$T/proj/build/android/midnet.log" "fake cargo failure"
 check "no library, so compile says -DTOWER_MIDNET=0" bash -c "test ! -e '$T/proj/build/android/midnet/libmid_net_quic.a' && grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=0' && ! grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=1'"
+check "and -DTOWER_NETDRIVER=0 (no library, no multiplayer), with the warning saying so" bash -c "grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_NETDRIVER=0' && ! grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_NETDRIVER=1' && grep -q 'WITHOUT MULTIPLAYER' '$T/out.txt'"
 check "and the link line has no QUIC library and no --strip-debug" bash -c "! grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q 'libmid_net_quic\\|strip-debug'"
 check "the lock file is taken away even when cargo failed" test ! -e "$T/me/Cargo.lock"
 
@@ -158,6 +160,8 @@ check "the same with TOWER_MIDNET_REQUIRED=1 stops the build" bash -c "test $rc 
 echo "== checks on what was built"
 reset_project; run "midnet" FAKE_NM_MISSING=mid_net_quic_conn_state
 check "a function the header declares but the library lacks: fallback, and it names the function" bash -c "test $rc -eq 0 && grep -q 'mid_net_quic_conn_state' '$T/out.txt' && grep -q 'WITHOUT QUIC' '$T/out.txt' && test ! -e '$T/proj/build/android/midnet/libmid_net_quic.a'"
+reset_project; run "midnet" FAKE_NM_MISSING=mid_net_driver_poll
+check "a function the DRIVER header declares but the library lacks: fallback, and it names the function" bash -c "test $rc -eq 0 && grep -q 'mid_net_driver_poll' '$T/out.txt' && grep -q 'WITHOUT QUIC' '$T/out.txt' && test ! -e '$T/proj/build/android/midnet/libmid_net_quic.a'"
 lastlink_has_quic() { grep -- '-shared' "$T/log/cc.log" | tail -1 | grep -q libmid_net_quic.a; }
 lastcompile_flag() { grep -- ' -c ' "$T/log/cc.log" | tail -1 | grep -q -- "$1"; }
 reset_project; run "midnet compile link" FAKE_SO_NO_QUIC=1
