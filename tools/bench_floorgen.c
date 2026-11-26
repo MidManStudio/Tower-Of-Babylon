@@ -9,10 +9,11 @@
 //
 // Build and run (Termux on the phone, or any computer with gcc or clang), from the project root:
 //   cc -O2 -std=c99 -DFLOORGEN_BENCH -Isrc tools/bench_floorgen.c src/dungeon/dungeon_generator.c -lm -o /tmp/bench_floorgen && /tmp/bench_floorgen
-// Options:   /tmp/bench_floorgen [floors] [tower_seed] [rows]
+// Options:   /tmp/bench_floorgen [floors] [tower_seed] [rows] [size=N or size=WxH]
 //   floors      how many floors to build (default 300, at most 100000). Floor numbers go 1 to 25 and round again.
 //   tower_seed  the tower seed, decimal or 0x hex (default 0x12345678)
 //   rows        the word "rows" prints one line per floor as well (CSV: floor, seed, attempts, fallback, open, hash, total, stages)
+//   size=N      floors of N by N tiles (45 to 128, default 45); size=64x100 for a floor that is not square. The checksum is for that size.
 // A build without optimisation is not a benchmark and the program says so. The times come from clock() (processor time, plain C99, so
 // the same code runs on the phone, the server and the browser); in a browser its resolution is the browser's, and the line "smallest
 // time seen" says what the clock can resolve. Nothing here is read by the game.
@@ -62,7 +63,7 @@ static Stats Summarise(uint32_t *v, int n)
     return s;
 }
 
-static void PrintBanner(int floors, uint32_t tower)
+static void PrintBanner(int floors, uint32_t tower, int w, int h)
 {
     printf("bench_floorgen: compiler %s, ", __VERSION__);
 #if defined(__aarch64__)
@@ -86,7 +87,7 @@ static void PrintBanner(int floors, uint32_t tower)
 #else
     printf("NOT OPTIMISED: these numbers are not a benchmark\n");
 #endif
-    printf("generator version %d, floor %d by %d tiles, FloorMap %d bytes, CLOCKS_PER_SEC %ld\n", FG_GEN_VERSION, MAP_WIDTH, MAP_HEIGHT, (int)sizeof(FloorMap), (long)CLOCKS_PER_SEC);
+    printf("generator version %d, floors %d by %d tiles, FloorMap %d bytes, CLOCKS_PER_SEC %ld\n", FG_GEN_VERSION, w, h, (int)sizeof(FloorMap), (long)CLOCKS_PER_SEC);
     printf("%d floors from tower seed %08x (floor numbers 1 to 25, round and round), %d warm-up floors first\n", floors, (unsigned)tower, BENCH_WARMUP);
 }
 
@@ -94,19 +95,27 @@ int main(int argc, char **argv)
 {
     int floors = BENCH_DEFAULT_FLOORS;
     uint32_t tower = 0x12345678u;
-    int rows = 0;
+    int rows = 0, w = MAP_WIDTH, h = MAP_HEIGHT;
     if (argc > 1) {
         const long n = strtol(argv[1], NULL, 10);
         if (n < 1 || n > BENCH_MAX_FLOORS) { printf("floors must be 1 to %d\n", BENCH_MAX_FLOORS); return 2; }
         floors = (int)n;
     }
     if (argc > 2) tower = (uint32_t)strtoul(argv[2], NULL, 0);
-    if (argc > 3 && strcmp(argv[3], "rows") == 0) rows = 1;
+    for (int i = 3; i < argc; ++i) {
+        if (strcmp(argv[i], "rows") == 0) rows = 1;
+        else if (strncmp(argv[i], "size=", 5) == 0) {
+            char *end = NULL;
+            w = (int)strtol(argv[i] + 5, &end, 10);
+            h = (end && (*end == 'x' || *end == 'X')) ? (int)strtol(end + 1, NULL, 10) : w;
+            if (w < FLOOR_TILES_MIN || w > FLOOR_TILES_MAX || h < FLOOR_TILES_MIN || h > FLOOR_TILES_MAX) { printf("size must be %d to %d tiles\n", FLOOR_TILES_MIN, FLOOR_TILES_MAX); return 2; }
+        } else { printf("unknown option %s\n", argv[i]); return 2; }
+    }
 
-    PrintBanner(floors, tower);
+    PrintBanner(floors, tower, w, h);
 
     // The first floors pay for cold caches and first touches of memory; they are built and thrown away.
-    for (int i = 0; i < BENCH_WARMUP; ++i) GenerateFloorMap(&g_floor, 1 + i, tower ^ 0xA5A5A5A5u);
+    for (int i = 0; i < BENCH_WARMUP; ++i) GenerateFloorMapSized(&g_floor, 1 + i, tower ^ 0xA5A5A5A5u, w, h);
 
     uint32_t *stage[GEN_STAGE_COUNT], *total = (uint32_t *)malloc((size_t)floors * sizeof(uint32_t)), *attemptsV = (uint32_t *)malloc((size_t)floors * sizeof(uint32_t));
     uint32_t *openV = (uint32_t *)malloc((size_t)floors * sizeof(uint32_t)), *other = (uint32_t *)malloc((size_t)floors * sizeof(uint32_t));
@@ -124,7 +133,7 @@ int main(int argc, char **argv)
 
     for (int i = 0; i < floors; ++i) {
         const int floorNo = 1 + i % 25;
-        GenerateFloorMap(&g_floor, floorNo, tower + (uint32_t)i * 0x9E3779B1u);
+        GenerateFloorMapSized(&g_floor, floorNo, tower + (uint32_t)i * 0x9E3779B1u, w, h);
         const FloorMap *f = &g_floor;
         const uint32_t hash = FgFloorHash(f);
         checksum = FgHashU32(checksum, hash);

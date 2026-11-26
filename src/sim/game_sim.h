@@ -66,7 +66,8 @@ typedef struct GameSim {
 } GameSim;
 
 // Sets everything to its start and builds the tower's floor window from the seed. Call before the module inits below.
-void GameSim_Init(GameSim *s, uint32_t towerSeed);
+void GameSim_Init(GameSim *s, uint32_t towerSeed);        // floors of TOWER_FLOOR_TILES by TOWER_FLOOR_TILES (45 unless changed)
+void GameSim_InitSized(GameSim *s, uint32_t towerSeed, int tiles);   // floors of tiles by tiles, FLOOR_TILES_MIN to FLOOR_TILES_MAX
 // The first floor and the player on it: monsters, swarm, pickups, the stair clock. Call after InitObstaclesSystem, InitProjectilesSystem,
 // InitEnemiesSystem and GameConfig_Init (the same order the game always used). Posts SIMEV_FLOOR.
 void GameSim_Begin(GameSim *s);

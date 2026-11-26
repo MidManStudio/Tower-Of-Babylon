@@ -38,27 +38,29 @@ static void FlowUpdate(Swarm *s, const FloorMap *map, Vector3 pos)
     const int tx = TileOf(pos.x), tz = TileOf(pos.z);
     if (Floor_Solid(map, 0, tx, tz)) return;                                          // keep the last field
     if (tx == s->flowTx && tz == s->flowTz && s->flowSeed == map->seed && s->flowFloor == map->floorNumber) return;
-    for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) s->flow[z][x] = -1;
+    for (int z = 0; z < map->h; ++z) for (int x = 0; x < map->w; ++x) s->flow[z][x] = -1;
     static const int dx4[4] = { 1, -1, 0, 0 }, dz4[4] = { 0, 0, 1, -1 };
-    int qx[MAP_WIDTH * MAP_HEIGHT], qz[MAP_WIDTH * MAP_HEIGHT];
+    // Static, not on the stack: two int arrays of a whole 128 by 128 floor are 128 KB, and the web build's stack is 64 KB.
+    static int16_t qx[MAP_MAX * MAP_MAX], qz[MAP_MAX * MAP_MAX];
     int head = 0, tail = 0;
-    s->flow[tz][tx] = 0; qx[tail] = tx; qz[tail] = tz; ++tail;
+    s->flow[tz][tx] = 0; qx[tail] = (int16_t)tx; qz[tail] = (int16_t)tz; ++tail;
     while (head < tail) {
         const int x = qx[head], z = qz[head]; ++head;
         for (int k = 0; k < 4; ++k) {
             const int nx = x + dx4[k], nz = z + dz4[k];
             if (Floor_Solid(map, 0, nx, nz) || s->flow[nz][nx] >= 0) continue;
             s->flow[nz][nx] = (int16_t)(s->flow[z][x] + 1);
-            qx[tail] = nx; qz[tail] = nz; ++tail;
+            qx[tail] = (int16_t)nx; qz[tail] = (int16_t)nz; ++tail;
         }
     }
     s->flowTx = tx; s->flowTz = tz; s->flowSeed = map->seed; s->flowFloor = map->floorNumber;
+    s->flowW = map->w; s->flowH = map->h;
 }
 
 static int FlowAt(const Swarm *s, float x, float z)             // steps from the tile holding (x, z) to the player, or -1
 {
     const int tx = TileOf(x), tz = TileOf(z);
-    if (!Tile_InBounds(tx, tz) || s->flowTx < 0) return -1;
+    if (tx < 0 || tz < 0 || tx >= s->flowW || tz >= s->flowH || s->flowTx < 0) return -1;
     return s->flow[tz][tx];
 }
 
@@ -75,7 +77,7 @@ static void Steer(const Swarm *s, float x, float z, Vector3 target, float *ox, f
             for (int nx = -1; nx <= 1; ++nx) {
                 if (!nx && !nz) continue;
                 const int ax = tx + nx, az = tz + nz;
-                if (!Tile_InBounds(ax, az) || s->flow[az][ax] < 0) continue;
+                if (ax < 0 || az < 0 || ax >= s->flowW || az >= s->flowH || s->flow[az][ax] < 0) continue;
                 if (nx && nz && (s->flow[tz][tx + nx] < 0 || s->flow[tz + nz][tx] < 0)) continue;     // no cutting a corner of a wall
                 const float gain = (float)(here - s->flow[az][ax]);
                 if (gain <= 0.0f) continue;
@@ -122,16 +124,17 @@ bool Swarm_SpawnAt(Swarm *s, const SwarmConfig *cfg, float x, float z, uint32_t 
 
 bool Swarm_Spawn(Swarm *s, const SwarmConfig *cfg, const FloorMap *map, uint32_t seed)
 {
-    static int cx[MAP_WIDTH * MAP_HEIGHT], cz[MAP_WIDTH * MAP_HEIGHT];
-    static float cd[MAP_WIDTH * MAP_HEIGHT];
+    static int cx[MAP_MAX * MAP_MAX], cz[MAP_MAX * MAP_MAX];
+    static float cd[MAP_MAX * MAP_MAX];
     int n = 0;
     float farthest = 0.0f;
-    for (int z = 1; z < MAP_HEIGHT - 1; ++z)
-        for (int x = 1; x < MAP_WIDTH - 1; ++x) {
+    const FloorShell sh = Floor_Shell(map);
+    for (int z = 1; z < map->h - 1; ++z)
+        for (int x = 1; x < map->w - 1; ++x) {
             if (Floor_Reserved(map, x, z)) continue;
             const TileType type = Floor_Type(map, 0, x, z);
             if (type != TILE_FLOOR && type != TILE_CORRIDOR) continue;
-            if (x >= 36 && x <= 44 && (z <= 8 || z >= 36)) continue;                       // the alcoves (the stairs stand in them)
+            if (x >= sh.wallX && (z <= sh.upAlcoveZ1 || z >= sh.downAlcoveZ0)) continue;     // the alcoves (the stairs stand in them)
             int open = 1;
             for (int dz = -1; dz <= 1 && open; ++dz) for (int dx = -1; dx <= 1; ++dx) if (Floor_Solid(map, 0, x + dx, z + dz)) { open = 0; break; }
             if (!open) continue;

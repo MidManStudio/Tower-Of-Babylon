@@ -28,12 +28,12 @@ static inline uint32_t FgFloorHash(const FloorMap *f)
     h = FgHashByte(h, 'F');
     h = FgHashByte(h, 'G');
     h = FgHashByte(h, FG_GEN_VERSION);
-    h = FgHashByte(h, MAP_WIDTH);
-    h = FgHashByte(h, MAP_HEIGHT);
+    h = FgHashByte(h, (uint32_t)f->w);
+    h = FgHashByte(h, (uint32_t)f->h);
     h = FgHashU32(h, (uint32_t)f->floorNumber);
     h = FgHashU32(h, f->seed);
-    for (int z = 0; z < MAP_HEIGHT; ++z)
-        for (int x = 0; x < MAP_WIDTH; ++x) {
+    for (int z = 0; z < f->h; ++z)
+        for (int x = 0; x < f->w; ++x) {
             const MapCell *c = &f->grid[z][x];
             h = FgHashByte(h, (uint32_t)c->type);
             h = FgHashByte(h, c->variant);

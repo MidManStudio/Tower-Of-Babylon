@@ -19,7 +19,7 @@
 #define ATTACK_DIST      1.35f   // a spider closes to this distance from the player, then bites
 #define SPIDER_SAFE_TILES 18.0f  // no spawns this close to either arrival point
 #define NAV_REFRESH_SECS 0.5f
-#define MAX_CANDIDATES   256
+#define MAX_CANDIDATES   1024             // 256 was enough for 45 by 45; a 128 by 128 floor has about 960 lattice points
 
 static float  g_noise = 22.0f;   // until the game says otherwise, as loud as the old fixed range of 34 tiles was
 void Spiders_SetNoise(float metres) { g_noise = metres < 0.0f ? 0.0f : metres; }
@@ -28,8 +28,8 @@ static Spider g_spiders[MAX_SPIDERS];
 static bool   g_descend[MAX_SPIDERS];   // latched: once the player is close the spider keeps coming down
 
 // Path distance to the player's tile for every open tile.
-static int  g_nav[MAP_HEIGHT][MAP_WIDTH];
-static int  g_navQueue[MAP_WIDTH * MAP_HEIGHT];
+static int  g_nav[MAP_MAX][MAP_MAX];       // steps to the player over open tiles, the floor's w by h corner
+static int  g_navQueue[MAP_MAX * MAP_MAX];
 static int  g_navTX = -1, g_navTZ = -1;
 static float g_navAge = 0.0f;
 
@@ -45,22 +45,23 @@ static uint32_t Hash32(uint32_t x)
 
 static void NavCompute(const FloorMap *f, int px, int pz)
 {
-    for (int z = 0; z < MAP_HEIGHT; ++z)
-        for (int x = 0; x < MAP_WIDTH; ++x) g_nav[z][x] = -1;
+    const int W = f->w;
+    for (int z = 0; z < f->h; ++z)
+        for (int x = 0; x < W; ++x) g_nav[z][x] = -1;
     if (Floor_Solid(f, 0, px, pz)) return;
 
     static const int dxs[4] = { 1, -1, 0, 0 }, dzs[4] = { 0, 0, 1, -1 };
     int head = 0, tail = 0;
     g_nav[pz][px] = 0;
-    g_navQueue[tail++] = pz * MAP_WIDTH + px;
+    g_navQueue[tail++] = pz * W + px;
     while (head < tail) {
         const int cur = g_navQueue[head++];
-        const int cx = cur % MAP_WIDTH, cz = cur / MAP_WIDTH;
+        const int cx = cur % W, cz = cur / W;
         for (int k = 0; k < 4; ++k) {
             const int nx = cx + dxs[k], nz = cz + dzs[k];
             if (Floor_Solid(f, 0, nx, nz) || g_nav[nz][nx] >= 0) continue;
             g_nav[nz][nx] = g_nav[cz][cx] + 1;
-            g_navQueue[tail++] = nz * MAP_WIDTH + nx;
+            g_navQueue[tail++] = nz * W + nx;
         }
     }
 }
@@ -152,12 +153,14 @@ void Spiders_SpawnForFloor(const FloorMap *f, int tier)
     if (tier < 1) tier = 1;
 
     int cand[MAX_CANDIDATES], n = 0;
-    for (int z = 4; z < MAP_HEIGHT - 3 && n < MAX_CANDIDATES; z += 4)
-        for (int x = 4; x < MAP_WIDTH - 3 && n < MAX_CANDIDATES; x += 4) {
+    const int W = f->w;
+    const FloorShell sh = Floor_Shell(f);
+    for (int z = 4; z < f->h - 3 && n < MAX_CANDIDATES; z += 4)
+        for (int x = 4; x < W - 3 && n < MAX_CANDIDATES; x += 4) {
             if (Floor_Reserved(f, x, z) || Floor_Solid(f, 0, x, z)) continue;
-            if (hypotf((float)(x - ARRIVE_BELOW_X), (float)(z - ARRIVE_BELOW_Z)) < SPIDER_SAFE_TILES) continue;
-            if (hypotf((float)(x - ARRIVE_ABOVE_X), (float)(z - ARRIVE_ABOVE_Z)) < SPIDER_SAFE_TILES) continue;
-            cand[n++] = z * MAP_WIDTH + x;
+            if (hypotf((float)(x - sh.arriveBelowX), (float)(z - sh.arriveBelowZ)) < SPIDER_SAFE_TILES) continue;
+            if (hypotf((float)(x - sh.arriveAboveX), (float)(z - sh.arriveAboveZ)) < SPIDER_SAFE_TILES) continue;
+            cand[n++] = z * W + x;
         }
 
     uint32_t rng = Hash32(f->seed ^ 0x5B1DE7A9U);
@@ -173,7 +176,7 @@ void Spiders_SpawnForFloor(const FloorMap *f, int tier)
     if (count > n) count = n;
 
     for (int k = 0; k < count; ++k) {
-        const int x = cand[k] % MAP_WIDTH, z = cand[k] / MAP_WIDTH;
+        const int x = cand[k] % W, z = cand[k] / W;
         const uint32_t h = Hash32(f->seed + (uint32_t)k * 0x9e3779b1U);
         const float a = (float)(h % 628) * 0.01f;
         const bool ceiling = (k % 2 == 0) && Floor_HasCeiling(f, x, z);

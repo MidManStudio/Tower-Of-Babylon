@@ -17,6 +17,7 @@
 
 #include "dungeon/dungeon_generator.h"
 #include "dungeon/dungeon_raycast.h"
+#include "dungeon/floor_access.h"
 #include "dungeon/dungeon_renderer.h"
 #include "config/game_config.h"
 #include "flashlight/flashlight.h"
@@ -100,7 +101,7 @@ int main(void)
                 expWalls += !Tile_IsSolid(&g_floor, x + 1, z) + !Tile_IsSolid(&g_floor, x - 1, z) + !Tile_IsSolid(&g_floor, x, z + 1) + !Tile_IsSolid(&g_floor, x, z - 1);
             } else {
                 ++expFloor;
-                if (Dungeon_HasCeiling(x, z)) {
+                if (Floor_HasCeiling(&g_floor, x, z)) {
                     ++ceilTiles;
                     if (Lighting_PanelOnTile(x, z)) { expCeil += 9; ++panelTiles; } else ++expCeil;
                 }

@@ -20,7 +20,11 @@ typedef struct { float x0, x1, z0, z1, y0, y1; unsigned char kind; } StairBox;  
 #define STAIR_BOX_RAIL  1
 
 // The i-th box, or NULL past the last one (for drawing).
-const StairBox *Stair_Box(int i);
+const StairBox *Stair_Box(int i);   // in the 45 by 45 layout; add Stair_FrameX() for the floor in use
+
+// How far the stair shell of the floor in use is from where it is on a 45 by 45 floor, in metres (see Staircase_SetFrame).
+float Stair_FrameX(void);
+float Stair_FrameZ(void);
 
 // Nearest hit of a ray on the solid flight (railings are bars, shots pass between them). dir must be a unit vector. A ray
 // that starts inside a box ignores that box, like a ray starting inside a wall tile. On a hit *t is the distance and

@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include "dungeon/dungeon_generator.h"
+#include "dungeon/floor_access.h"
 #include "dungeon/stair_collision.h"
 #include "dungeon/staircase.h"
 #include "player/player_controller.h"
@@ -221,6 +222,102 @@ int main(void)
         Check(Stair_ChaseWaypoint((Vector3){ 80.25f, 2.25f, 8 }, (Vector3){ 60, 0, 8 }, &wx, &wz) && fabsf(wx - 75.0f) < 0.01f, "on run A with the player below: back down to the foot");
         Check(Stair_ChaseWaypoint((Vector3){ 76.25f, 0.25f, 8 }, (Vector3){ 60, 0, 8 }, &wx, &wz) && fabsf(wx - 75.0f) < 0.01f, "on the first step with the player below: off it, to the foot");
         Check(!Stair_ChaseWaypoint((Vector3){ 75.0f, 0.3f, 8 }, (Vector3){ 60, 0, 8 }, &wx, &wz), "and from the very foot it is an ordinary walk at them");
+    }
+
+    // ---- the shell stands where the floor's size puts it -------------------------------------------------------------------
+    printf("\nThe stair shell follows the size of the floor\n");
+    {
+        // The stairs are laid out for a 45 by 45 floor. For a bigger one every query is asked at the shifted place and has to give the
+        // 45 by 45 answer: the flight and its doors move east with the east edge, the down door south with the south edge.
+        enum { NX = 41, NZ = 43, NY = 4, NR = 300 };
+        static float baseH[NX][NZ][NY], shiftH[NX][NZ][NY];
+        static unsigned char baseB[NX][NZ][NY], shiftB[NX][NZ][NY];
+        static Vector3 rayO[NR], rayD[NR], pushC[NR];
+        static float baseT[NR], baseNy[NR], basePush[NR][3], baseSurf[NR];
+        static unsigned char baseHit[NR], basePushed[NR], baseFlight[NR];
+        static float baseWp[NR][2]; static unsigned char baseWpOk[NR];
+        const float ys[NY] = { 0.0f, 2.0f, 4.0f, 8.0f };
+        unsigned lcg = 12345u;
+        for (int i = 0; i < NR; ++i) {
+            lcg = lcg * 1664525u + 1013904223u; const float a = (float)(lcg >> 20) / 4096.0f;
+            lcg = lcg * 1664525u + 1013904223u; const float b = (float)(lcg >> 20) / 4096.0f;
+            lcg = lcg * 1664525u + 1013904223u; const float c = (float)(lcg >> 20) / 4096.0f;
+            rayO[i] = (Vector3){ 70.0f + 20.0f * floorf(a * 320.0f) / 320.0f, 0.5f + 8.0f * floorf(b * 128.0f) / 128.0f, -1.0f + 20.0f * floorf(c * 320.0f) / 320.0f };
+            lcg = lcg * 1664525u + 1013904223u; const float dx = (float)(lcg >> 20) / 2048.0f - 1.0f;
+            lcg = lcg * 1664525u + 1013904223u; const float dy = (float)(lcg >> 20) / 2048.0f - 1.0f;
+            lcg = lcg * 1664525u + 1013904223u; const float dz = (float)(lcg >> 20) / 2048.0f - 1.0f;
+            const float l = sqrtf(dx * dx + dy * dy + dz * dz) + 1e-6f;
+            rayD[i] = (Vector3){ dx / l, dy / l, dz / l };
+            pushC[i] = rayO[i];
+        }
+        Staircase_SetFrame(45, 45);
+        for (int xi = 0; xi < NX; ++xi) for (int zi = 0; zi < NZ; ++zi) for (int yi = 0; yi < NY; ++yi) {
+            const float x = 70.0f + 0.5f * (float)xi, z = -1.0f + 0.5f * (float)zi;
+            baseH[xi][zi][yi] = Staircase_GroundHeight(x, z, ys[yi]);
+            baseB[xi][zi][yi] = Staircase_Blocked(x, z, 0.35f, ys[yi], 1.7f) ? 1 : 0;
+        }
+        for (int i = 0; i < NR; ++i) {
+            float t = 0.0f; Vector3 n = { 0, 0, 0 };
+            baseHit[i] = Stair_Raycast(rayO[i], rayD[i], 30.0f, &t, &n) ? 1 : 0; baseT[i] = t; baseNy[i] = n.y;
+            Vector3 c = pushC[i]; basePushed[i] = Stair_PushOutSphere(&c, 0.5f) ? 1 : 0; basePush[i][0] = c.x; basePush[i][1] = c.y; basePush[i][2] = c.z;
+            baseSurf[i] = Stair_SurfaceDistance(rayO[i]);
+            baseFlight[i] = Stair_OnFlight(rayO[i].x, rayO[i].z, rayO[i].y) ? 1 : 0;
+            float wx = 0, wz = 0; baseWpOk[i] = Stair_ChaseWaypoint(rayO[i], (Vector3){ 60.0f, 0.0f, 8.0f }, &wx, &wz) ? 1 : 0; baseWp[i][0] = wx; baseWp[i][1] = wz;
+        }
+        float upX45, upZ45, dnX45, dnZ45; Staircase_DoorPosition(DOOR_UP, &upX45, &upZ45); Staircase_DoorPosition(DOOR_DOWN, &dnX45, &dnZ45);
+        Vector3 below45, above45; float yawB45, yawA45; Staircase_SpawnBelow(&below45, &yawB45); Staircase_SpawnAbove(&above45, &yawA45);
+
+        static const int SZ[5][2] = { { 45, 45 }, { 64, 64 }, { 100, 70 }, { 128, 128 }, { 45, 128 } };
+        int heightsOk = 1, blockedOk = 1, raysOk = 1, pushOk = 1, surfOk = 1, flightOk = 1, routeOk = 1, doorsOk = 1, tilesOk = 1, rangeOk = 1, spawnOk = 1;
+        for (int k = 0; k < 5; ++k) {
+            const int w = SZ[k][0], h = SZ[k][1];
+            const float ox = (float)(w - 45) * TILE_SIZE, oz = (float)(h - 45) * TILE_SIZE;
+            Staircase_SetFrame(w, h);
+            for (int xi = 0; xi < NX; ++xi) for (int zi = 0; zi < NZ; ++zi) for (int yi = 0; yi < NY; ++yi) {
+                const float x = 70.0f + 0.5f * (float)xi + ox, z = -1.0f + 0.5f * (float)zi;
+                shiftH[xi][zi][yi] = Staircase_GroundHeight(x, z, ys[yi]);
+                shiftB[xi][zi][yi] = Staircase_Blocked(x, z, 0.35f, ys[yi], 1.7f) ? 1 : 0;
+                if (shiftH[xi][zi][yi] != baseH[xi][zi][yi]) heightsOk = 0;
+                if (shiftB[xi][zi][yi] != baseB[xi][zi][yi]) blockedOk = 0;
+            }
+            for (int i = 0; i < NR; ++i) {
+                Vector3 o = rayO[i]; o.x += ox;
+                float t = 0.0f; Vector3 n = { 0, 0, 0 };
+                const int hit = Stair_Raycast(o, rayD[i], 30.0f, &t, &n) ? 1 : 0;
+                if (hit != baseHit[i] || (hit && (t != baseT[i] || n.y != baseNy[i]))) raysOk = 0;
+                Vector3 c = pushC[i]; c.x += ox;
+                const int pushed = Stair_PushOutSphere(&c, 0.5f) ? 1 : 0;
+                if (pushed != basePushed[i] || c.x != basePush[i][0] + ox || c.y != basePush[i][1] || c.z != basePush[i][2]) pushOk = 0;
+                if (Stair_SurfaceDistance(o) != baseSurf[i]) surfOk = 0;
+                if ((Stair_OnFlight(o.x, o.z, o.y) ? 1 : 0) != baseFlight[i]) flightOk = 0;
+                float wx = 0, wz = 0; const int ok = Stair_ChaseWaypoint(o, (Vector3){ 60.0f + ox, 0.0f, 8.0f }, &wx, &wz) ? 1 : 0;
+                if (ok != baseWpOk[i] || (ok && (wx != baseWp[i][0] + ox || wz != baseWp[i][1]))) routeOk = 0;
+            }
+            float ux, uz, dx, dz; Staircase_DoorPosition(DOOR_UP, &ux, &uz); Staircase_DoorPosition(DOOR_DOWN, &dx, &dz);
+            if (ux != upX45 + ox || uz != upZ45 || dx != dnX45 + ox || dz != dnZ45 + oz) doorsOk = 0;
+            // The doors stand on the tiles the generator built the shell from (a tile t is centred on 2 t).
+            static FloorMap f; GenerateFloorMapSized(&f, 2, 99u + (unsigned)k, w, h);
+            const FloorShell sh = Floor_Shell(&f);
+            if (fabsf(ux - (Tile_ToWorld(sh.wallX) + 1.0f)) > 1e-4f || fabsf(dx - (Tile_ToWorld(w - 1) - 1.0f)) > 1e-4f || fabsf(dz - Tile_ToWorld(sh.downPadZ)) > 1e-4f) tilesOk = 0;
+            // In range of the door where it is, not where it would be on a 45 by 45 floor.
+            Vector3 atDoor = (Vector3){ ux + 1.0f, 0.0f, uz }, atDoorDown = (Vector3){ dx - 1.0f, 0.0f, dz };
+            if (!Staircase_DoorInRange(DOOR_DOWN, atDoorDown)) rangeOk = 0;
+            if (w != 45 && Staircase_DoorInRange(DOOR_DOWN, (Vector3){ dnX45 - 1.0f, 0.0f, dnZ45 })) rangeOk = 0;
+            (void)atDoor;
+            Vector3 below, above; float yb, ya; Staircase_SpawnBelow(&below, &yb); Staircase_SpawnAbove(&above, &ya);
+            if (below.x != below45.x + ox || below.z != below45.z + oz || above.x != above45.x + ox || above.z != above45.z) spawnOk = 0;
+        }
+        Staircase_SetFrame(45, 45);
+        Check(heightsOk, "Staircase_GroundHeight at a place shifted east with the floor is the 45 by 45 answer, on 5 sizes and 7,052 points each");
+        Check(blockedOk, "Staircase_Blocked likewise");
+        Check(raysOk, "Stair_Raycast likewise, 300 rays on each size");
+        Check(pushOk, "Stair_PushOutSphere pushes a sphere to the shifted place of where it pushes it on 45 by 45");
+        Check(surfOk && flightOk, "Stair_SurfaceDistance and Stair_OnFlight likewise");
+        Check(routeOk, "and Stair_ChaseWaypoint gives the shifted waypoint");
+        Check(doorsOk, "the up door moves east with the floor and the down door east and south");
+        Check(tilesOk, "and they stand on the shell the generator built: the up door at the alcove wall, the down door at the east wall on the pad's row");
+        Check(rangeOk, "a player at the down door is in range of it, and where it stood on a 45 by 45 floor is not");
+        Check(spawnOk, "arriving from below and from above puts the player at the shifted places");
     }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");

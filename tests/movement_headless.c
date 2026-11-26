@@ -35,6 +35,7 @@ static void Check(int ok, const char *what)
 
 static void OpenFloor(int wallColumn)
 {
+    g_floor.w = MAP_WIDTH; g_floor.h = MAP_HEIGHT;      // a floor built by hand has the size of the solo floor
     for (int z = 0; z < MAP_HEIGHT; ++z)
         for (int x = 0; x < MAP_WIDTH; ++x) {
             g_floor.grid[z][x].type = (x == 0 || z == 0 || x == MAP_WIDTH - 1 || z == MAP_HEIGHT - 1 || x == wallColumn) ? TILE_WALL : TILE_FLOOR;

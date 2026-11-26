@@ -64,6 +64,7 @@ static FloorMap g_map;
 static void BuildRoom(void)
 {
     memset(&g_map, 0, sizeof g_map);
+    g_map.w = MAP_WIDTH; g_map.h = MAP_HEIGHT;      // a floor built by hand has the size of the solo floor
     for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) g_map.grid[z][x].type = TILE_WALL;
     for (int z = 4; z <= 14; ++z) for (int x = 4; x <= 14; ++x) g_map.grid[z][x].type = TILE_FLOOR;
 }
@@ -226,6 +227,7 @@ int main(void)
         // The flight of stairs in the up alcove is solid: a round stops at it (it used to go straight through).
         {
             static FloorMap hall;
+            hall.w = MAP_WIDTH; hall.h = MAP_HEIGHT;
             memset(&hall, 0, sizeof hall);
             for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) hall.grid[z][x].type = TILE_FLOOR;   // open, so only the stairs are in the way
 

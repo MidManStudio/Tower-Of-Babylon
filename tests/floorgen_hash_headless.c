@@ -8,7 +8,7 @@
 // floors must stay inside the envelope measured on the generator it replaced (5,000 floors, see docs/design/09, section 5b).
 // The golden values were taken with plain scans and checked with fast scans, with -O0 to -O3, with -ffast-math and fused
 // multiply-add, under the address and undefined behaviour sanitizers, and in a WebAssembly build: all give the same 40 lines.
-// With "dump" as the first argument the program prints those 40 lines and exits, which tests/floorgen_wasm_check.sh compares
+// With "dump" as the first argument the program prints those 40 lines and the 16 of other sizes and exits, which tests/floorgen_wasm_check.sh compares
 // between builds. Inside a macro so mray's build, which compiles every .c file, does not pick up a second main().
 // Build (one line, from the project root):
 //   cc -O2 -std=c99 -DFLOORGEN_HASH_HEADLESS_TEST -Isrc tests/floorgen_hash_headless.c src/dungeon/dungeon_generator.c -lm -o floorgen_hash_headless
@@ -73,6 +73,28 @@ static const Golden GOLDEN[40] = {
     { 0xdeadbeefu, 10, 0xbb797500u, 1, 0, 35, 28, 58 },
 };
 
+// Floors of other sizes (round R1). The 45 by 45 floors above never changed when sizes came in; these pin what the sizes give.
+typedef struct { uint32_t tower; int floor, w, h; uint32_t hash; int attempts, fallback, partitions, pillars, route; } SizedGolden;
+#define SIZED_COUNT 16
+static const SizedGolden SIZED[SIZED_COUNT] = {
+    { 0x12345678u,  1,  64,  64, 0x8531b552u, 1, 0, 64, 78, 75 },
+    { 0x12345678u,  2,  64,  64, 0xdf0776bfu, 1, 0, 72, 45, 85 },
+    { 0xdeadbeefu,  9,  64,  64, 0xc83d2d02u, 1, 0, 72, 78, 83 },
+    { 0x00000001u,  3,  81,  81, 0x67074f62u, 1, 0, 120, 129, 96 },
+    { 0x00000000u,  4, 100,  70, 0x86b728c9u, 2, 0, 133, 86, 83 },
+    { 0x00000000u,  1, 128, 128, 0x3907e8ebu, 4, 0, 313, 260, 181 },
+    { 0xdeadbeefu,  5, 128, 128, 0x50473f6bu, 1, 0, 332, 248, 155 },
+    { 0x12345678u, 12, 128, 128, 0xd047d2c1u, 1, 0, 283, 349, 161 },
+    { 0x00000001u,  6,  45, 128, 0x335f8013u, 1, 0, 107, 81, 151 },
+    { 0x12345678u,  7, 128,  64, 0xfebd9acfu, 1, 0, 156, 153, 77 },
+    { 0xdeadbeefu,  8,  64,  45, 0xf0bc27c0u, 2, 0, 53, 25, 54 },
+    { 0x00000000u, 10,  97,  53, 0x8da0aef8u, 1, 0, 97, 69, 100 },
+    { 0x00000001u,  2, 128, 127, 0x33dea4e8u, 1, 0, 292, 334, 156 },
+    { 0xdeadbeefu,  1,  47,  45, 0x120b6d66u, 1, 0, 28, 36, 52 },
+    { 0x12345678u, 20, 110, 110, 0x463d8710u, 1, 0, 245, 175, 187 },
+    { 0x00000000u, 25,  90, 120, 0x5cfc3f53u, 1, 0, 223, 130, 149 },
+};
+
 static FloorMap g_a, g_b;
 
 static int CountOpen(const FloorMap *f)
@@ -104,6 +126,11 @@ int main(int argc, char **argv)
             printf("%08x %2d %08x att=%d fb=%d part=%d pil=%d route=%d\n", GOLDEN[i].tower, GOLDEN[i].floor, FgFloorHash(&g_a),
                    g_a.attempts, g_a.usedFallback ? 1 : 0, g_a.partitions, g_a.pillars, g_a.pathLength);
         }
+        for (int i = 0; i < SIZED_COUNT; ++i) {
+            GenerateFloorMapSized(&g_a, SIZED[i].floor, SIZED[i].tower, SIZED[i].w, SIZED[i].h);
+            printf("%08x %2d %3dx%-3d %08x att=%d fb=%d part=%d pil=%d route=%d\n", SIZED[i].tower, SIZED[i].floor, SIZED[i].w, SIZED[i].h, FgFloorHash(&g_a),
+                   g_a.attempts, g_a.usedFallback ? 1 : 0, g_a.partitions, g_a.pillars, g_a.pathLength);
+        }
         return 0;
     }
 
@@ -121,6 +148,38 @@ int main(int argc, char **argv)
         }
         Check(hashOk, "all 40 floors have their golden hash");
         Check(reportOk, "all 40 floors have their golden attempts, partitions, pillars and route length");
+    }
+
+    printf("\nGolden floors of other sizes\n");
+    {
+        int hashOk = 1, reportOk = 1, sizeOk = 1;
+        for (int i = 0; i < SIZED_COUNT; ++i) {
+            GenerateFloorMapSized(&g_a, SIZED[i].floor, SIZED[i].tower, SIZED[i].w, SIZED[i].h);
+            if (g_a.w != SIZED[i].w || g_a.h != SIZED[i].h) sizeOk = 0;
+            if (FgFloorHash(&g_a) != SIZED[i].hash) { hashOk = 0; printf("      %dx%d floor %d of tower %08x: hash %08x, expected %08x\n", SIZED[i].w, SIZED[i].h, SIZED[i].floor, SIZED[i].tower, FgFloorHash(&g_a), SIZED[i].hash); }
+            if (g_a.attempts != SIZED[i].attempts || (g_a.usedFallback ? 1 : 0) != SIZED[i].fallback || g_a.partitions != SIZED[i].partitions ||
+                g_a.pillars != SIZED[i].pillars || g_a.pathLength != SIZED[i].route) reportOk = 0;
+        }
+        Check(sizeOk, "each floor has the size it was asked for");
+        Check(hashOk, "all 16 floors of 47 to 128 tiles have their golden hash");
+        Check(reportOk, "and their golden attempts, partitions, pillars and route length");
+        int distinct = 1;
+        for (int i = 0; i < SIZED_COUNT && distinct; ++i) {
+            for (int j = i + 1; j < SIZED_COUNT; ++j) if (SIZED[i].hash == SIZED[j].hash) { distinct = 0; break; }
+            for (int j = 0; j < 40 && distinct; ++j) if (SIZED[i].hash == GOLDEN[j].hash) distinct = 0;
+        }
+        Check(distinct, "all 56 golden floors have different hashes");
+
+        // Another size does not leave anything behind in the generator's statics, and the size is part of the floor.
+        GenerateFloorMap(&g_a, GOLDEN[20].floor, GOLDEN[20].tower);
+        const uint32_t solo = FgFloorHash(&g_a);
+        GenerateFloorMapSized(&g_b, 1, 0x12345678u, 128, 128);
+        GenerateFloorMapSized(&g_b, 5, 7u, 64, 100);
+        GenerateFloorMap(&g_a, GOLDEN[20].floor, GOLDEN[20].tower);
+        Check(FgFloorHash(&g_a) == solo && solo == GOLDEN[20].hash, "a 45 by 45 floor made after 128 and 64 by 100 floors is still its golden floor");
+        GenerateFloorMapSized(&g_a, 1, 0x12345678u, 64, 64);
+        GenerateFloorMapSized(&g_b, 1, 0x12345678u, 65, 64);
+        Check(FgFloorHash(&g_a) != FgFloorHash(&g_b), "the same tower and floor at two sizes are two floors");
     }
 
     printf("\nThe same floor every time\n");

@@ -15,7 +15,7 @@
 // touches FloorMap.grid[][], TILE_WALL or WALL_HEIGHT any more, so the storage can change behind these functions (a floor of its
 // own size in round R1, wall classes in R2, stacked levels in R4) without moving a call site again.
 //
-// Until those rounds every answer is the one the old direct reads gave:
+// Until those rounds every answer is the one the old direct reads gave (a floor's size is its own since R1):
 //  - there is one level, so `level` is accepted and not read (callers pass 0);
 //  - a wall is a full wall, so the wall class is open (0) or full (3);
 //  - there is one ceiling height, so the `y` of Floor_CeilY is accepted and not read;
@@ -31,8 +31,11 @@
 #define FLOOR_NO_CEILING 1.0e9f
 
 // ---- size -----------------------------------------------------------------------------------------------------------------
-static inline int Floor_Width(const FloorMap *f) { (void)f; return MAP_WIDTH; }    // tiles along x
-static inline int Floor_Depth(const FloorMap *f) { (void)f; return MAP_HEIGHT; }   // tiles along z (not a height in metres)
+static inline int Floor_Width(const FloorMap *f) { return f->w; }    // tiles along x
+static inline int Floor_Depth(const FloorMap *f) { return f->h; }    // tiles along z (not a height in metres)
+
+// The stair shell of this floor (its size's alcoves, doors, pads, arrival and approach points).
+static inline FloorShell Floor_Shell(const FloorMap *f) { return FloorShell_Make(f->w, f->h); }
 
 static inline bool Floor_InBounds(const FloorMap *f, int x, int z)
 {
@@ -87,11 +90,12 @@ static inline uint8_t Floor_Flags(const FloorMap *f, int x, int z)
 static inline bool Floor_Reserved(const FloorMap *f, int x, int z) { return (Floor_Flags(f, x, z) & CELL_RESERVED) != 0; }
 
 // ---- ceilings -------------------------------------------------------------------------------------------------------------
-// Whether the column over tile (x, z) has a ceiling. The two stair alcoves (east of STAIR_WALL_X, north of UP_ALCOVE_Z1 or south
-// of DOWN_ALCOVE_Z0) are open to the shaft above, and so is everything outside the floor.
+// Whether the column over tile (x, z) has a ceiling. The two stair alcoves (east of the shell's wallX, north of its upAlcoveZ1 or
+// south of its downAlcoveZ0) are open to the shaft above, and so is everything outside the floor.
 static inline bool Floor_HasCeiling(const FloorMap *f, int x, int z)
 {
-    return Floor_InBounds(f, x, z) && !(x >= STAIR_WALL_X && (z <= UP_ALCOVE_Z1 || z >= DOWN_ALCOVE_Z0));
+    const FloorShell s = Floor_Shell(f);
+    return Floor_InBounds(f, x, z) && !(x >= s.wallX && (z <= s.upAlcoveZ1 || z >= s.downAlcoveZ0));
 }
 
 // The ceiling over world point (x, z): its height, or FLOOR_NO_CEILING where the column has none. `y` is where the caller is; it

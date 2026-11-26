@@ -13,6 +13,8 @@
 
 #include "config/game_config.h"
 #include "core/fixed_step.h"
+#include "dungeon/floor_access.h"
+#include "dungeon/stair_collision.h"
 #include "dungeon/staircase.h"
 #include "enemies/enemy_manager.h"
 #include "floor/floor_game.h"
@@ -87,6 +89,16 @@ static int Said(const char *part) { return strstr(T.all, part) != NULL; }
 static void Boot(unsigned seed)
 {
     GameSim_Init(&sim, seed);
+    InitObstaclesSystem();
+    InitProjectilesSystem();
+    InitEnemiesSystem();
+    GameSim_Begin(&sim);
+    TallyClear();
+    Drain();
+}
+static void BootSized(unsigned seed, int tiles)
+{
+    GameSim_InitSized(&sim, seed, tiles);
     InitObstaclesSystem();
     InitProjectilesSystem();
     InitEnemiesSystem();
@@ -783,6 +795,81 @@ int main(void)
         Check(f60 == a && f144 == a, "60 and 144 frames a second give the same world as 30");
         Check(f37 == a && f20 == a, "an uneven 37 and a slow 20 frames a second give the same world too (a frame takes 0 to 2 steps)");
         Check(sim.steps == (unsigned long)N, "each run took exactly the steps that were asked for");
+    }
+
+    printf("\n-- other floor sizes\n");
+    {
+        static const int SIZES[4] = { 45, 64, 100, 128 };
+        int mapOk = 1, frameOk = 1, pickupsOk = 1, consoleOk = 1, enemiesOk = 1, wallsOk = 1, finiteOk = 1;
+        unsigned hashes[2][4];
+        for (int rep = 0; rep < 2; ++rep)
+            for (int si = 0; si < 4; ++si) {
+                const int n = SIZES[si];
+                BootSized(5, n);
+                LoadoutGuns();
+                int loadedSlots = 0;
+                for (int k = 0; k < 3; ++k) if (sim.window.loaded[k]) { ++loadedSlots; if (sim.window.floors[k].w != n || sim.window.floors[k].h != n) mapOk = 0; }
+                if (loadedSlots < 1) mapOk = 0;
+                if (sim.map->w != n || sim.map->h != n) mapOk = 0;
+                if (fabsf(Stair_FrameX() - (float)(n - MAP_WIDTH) * TILE_SIZE) > 1e-4f || fabsf(Stair_FrameZ() - (float)(n - MAP_HEIGHT) * TILE_SIZE) > 1e-4f) frameOk = 0;
+                if (Pickups_Count() < 6) pickupsOk = 0;
+                float cx = 0, cz = 0;
+                if (!FloorGame_ConsolePosition(&cx, &cz)) consoleOk = 0;
+                else {
+                    const int tx = Floor_TileOfWorld(cx), tz = Floor_TileOfWorld(cz);
+                    const FloorShell sh = Floor_Shell(sim.map);
+                    if (Floor_Solid(sim.map, 0, tx, tz) || (tx >= sh.wallX && (tz <= sh.upAlcoveZ1 || tz >= sh.downAlcoveZ0))) consoleOk = 0;
+                }
+                int enemies = 0;
+                for (int i = 0; i < MAX_FLOOR_ENEMIES; ++i) { const Enemy *e = Enemies_At(i); if (e && e->active) ++enemies; }
+                if (enemies < 1) enemiesOk = 0;
+                for (int step = 0; step < 600; ++step) {
+                    God();
+                    Stp(ScriptCmd(5, step));
+                    const Vector3 p = sim.player.position;
+                    if (!isfinite(p.x) || !isfinite(p.y) || !isfinite(p.z)) finiteOk = 0;
+                    else if (Floor_Solid(sim.map, 0, Floor_TileOfWorld(p.x), Floor_TileOfWorld(p.z))) wallsOk = 0;
+                }
+                hashes[rep][si] = WorldHash();
+            }
+        Check(mapOk, "every loaded floor of the window and the floor in play are the size that was asked for: 45, 64, 100, 128");
+        Check(frameOk, "the stair code was told the size");
+        Check(pickupsOk && consoleOk, "the pickups are placed and the console stands on open floor outside the alcoves, on every size");
+        Check(enemiesOk, "the floor's enemies are placed on every size");
+        Check(finiteOk, "600 scripted steps on each size: every position stays a number");
+        Check(wallsOk, "and the player is never inside a wall");
+        Check(hashes[0][0] == hashes[1][0] && hashes[0][1] == hashes[1][1] && hashes[0][2] == hashes[1][2] && hashes[0][3] == hashes[1][3], "the same walk gives the same world on a second run, on every size");
+        Check(hashes[0][0] != hashes[0][1] && hashes[0][1] != hashes[0][2] && hashes[0][2] != hashes[0][3], "and the sizes give different worlds");
+
+        // The climb of "the stair clock through the whole simulation", on floors of three sizes: hold USE at the console, wait out the
+        // clock, go through the top door, and arrive in the down alcove of the next floor, which is as big as this one.
+        int climbOk = 1, arriveOk = 1, nextSizeOk = 1;
+        for (int si = 0; si < 3; ++si) {
+            const int n = si == 0 ? 45 : (si == 1 ? 64 : 128);
+            BootSized(1, n);
+            GoTo(ConsolePos());
+            SimCmd hold = None(); hold.useHeld = true;
+            for (int i = 0; i < 13 * 30; ++i) { God(); GoTo(ConsolePos()); Stp(hold); }
+            for (int i = 0; i < 32 * 30; ++i) { God(); Stp(None()); }
+            if (FloorGame_Phase() != 3) climbOk = 0;
+            float dx, dz;
+            Staircase_DoorPosition(DOOR_UP, &dx, &dz);
+            Vector3 at = { dx - 1.0f, 0.0f, dz };
+            for (float y = 0.0f; y < 12.0f; y += 0.25f) { Vector3 p = { dx - 1.0f, y, dz }; if (Staircase_DoorInRange(DOOR_UP, p)) { at = p; break; } }
+            GoTo(at);
+            SimCmd use = None();
+            for (int i = 0; i < 4 * 30; ++i) { use.use = (i == 3); God(); Stp(use); }
+            if (sim.window.currentFloor != 2) climbOk = 0;
+            if (sim.map->w != n || sim.map->h != n || sim.map->floorNumber != 2) nextSizeOk = 0;
+            const FloorShell sh = Floor_Shell(sim.map);
+            const int tx = Floor_TileOfWorld(sim.player.position.x), tz = Floor_TileOfWorld(sim.player.position.z);
+            Vector3 below; float yaw; Staircase_SpawnBelow(&below, &yaw);
+            if (!(tx >= sh.wallX && tz >= sh.downAlcoveZ0) || fabsf(sim.player.position.x - below.x) > 1.5f || fabsf(sim.player.position.z - below.z) > 1.5f) arriveOk = 0;
+        }
+        Check(climbOk, "on 45, 64 and 128: the console unlocks, the clock runs out, and the top door takes the player to floor 2");
+        Check(nextSizeOk, "the floor 2 that comes in is the same size");
+        Check(arriveOk, "and the player arrives in its down alcove, at the arrival point of that size");
+        GameSim_Init(&sim, 1);                                                                  // leave the stair code on the default size
     }
 
     printf("\n-- no window\n");

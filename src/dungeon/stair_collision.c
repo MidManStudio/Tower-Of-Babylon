@@ -14,6 +14,19 @@ static StairBox g_boxes[MAX_BOXES];
 static int  g_count = 0;
 static bool g_built = false;
 
+// The frame: how far the shell of the floor in use stands from where it stands on a 45 by 45 floor. The box table and the route
+// are laid out for 45 by 45; every query shifts its x into that layout and shifts what it hands back out again. The up flight lies
+// in the north alcove, so only x moves.
+static float g_ox = 0.0f, g_oz = 0.0f;
+
+void Staircase_SetFrame(int floorW, int floorH)
+{
+    g_ox = (float)(floorW - MAP_WIDTH) * TILE_SIZE;
+    g_oz = (float)(floorH - MAP_HEIGHT) * TILE_SIZE;
+}
+float Stair_FrameX(void) { return g_ox; }
+float Stair_FrameZ(void) { return g_oz; }
+
 static void AddBox(float x0, float x1, float z0, float z1, float y0, float y1, unsigned char kind)
 {
     if (g_count >= MAX_BOXES) return;
@@ -55,6 +68,7 @@ const StairBox *Stair_Box(int i)
 float Staircase_GroundHeight(float x, float z, float y)
 {
     Build();
+    x -= g_ox;
     float ground = 0.0f;
     const float reach = y + STEP_UP_MAX + 0.001f;
     for (int i = 0; i < g_count; ++i) {
@@ -69,6 +83,7 @@ float Staircase_GroundHeight(float x, float z, float y)
 bool Staircase_Blocked(float x, float z, float radius, float y, float height)
 {
     Build();
+    x -= g_ox;
     const float reach = y + STEP_UP_MAX + 0.001f;
     for (int i = 0; i < g_count; ++i) {
         const StairBox *b = &g_boxes[i];
@@ -82,6 +97,7 @@ bool Staircase_Blocked(float x, float z, float radius, float y, float height)
 bool Stair_Raycast(Vector3 o, Vector3 d, float maxDist, float *tOut, Vector3 *nOut)
 {
     Build();
+    o.x -= g_ox;
     const float org[3] = { o.x, o.y, o.z }, dir[3] = { d.x, d.y, d.z };
     float best = maxDist;
     bool hit = false;
@@ -127,6 +143,7 @@ static float Clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi 
 bool Stair_PushOutSphere(Vector3 *c, float r)
 {
     Build();
+    c->x -= g_ox;
     bool moved = false;
     for (int i = 0; i < g_count; ++i) {
         const StairBox *b = &g_boxes[i];
@@ -154,12 +171,14 @@ bool Stair_PushOutSphere(Vector3 *c, float r)
         }
         moved = true;
     }
+    c->x += g_ox;
     return moved;
 }
 
 float Stair_SurfaceDistance(Vector3 p)
 {
     Build();
+    p.x -= g_ox;
     float best = 1e9f;
     for (int i = 0; i < g_count; ++i) {
         const StairBox *b = &g_boxes[i];
@@ -202,14 +221,16 @@ static float RouteProject(float px, float pz)       // distance along the route 
     return bestS;
 }
 
-bool Stair_OnFlight(float x, float z, float y)
+static bool OnFlightBase(float x, float z, float y)
 {
     return x >= ALC_X0 && x <= ALC_X1 && z >= LANE_A_Z0 && z <= LANE_B_Z1 && y > 0.2f;
 }
 
-bool Stair_ChaseWaypoint(Vector3 from, Vector3 to, float *wx, float *wz)
+bool Stair_OnFlight(float x, float z, float y) { return OnFlightBase(x - g_ox, z, y); }
+
+static bool ChaseWaypointBase(Vector3 from, Vector3 to, float *wx, float *wz)
 {
-    const bool onE = Stair_OnFlight(from.x, from.z, from.y), onT = Stair_OnFlight(to.x, to.z, to.y);
+    const bool onE = OnFlightBase(from.x, from.z, from.y), onT = OnFlightBase(to.x, to.z, to.y);
     if (!onE && !onT) return false;
 
     if (!onE) {                                     // on the floor, the target is up on the flight
@@ -237,4 +258,13 @@ bool Stair_ChaseWaypoint(Vector3 from, Vector3 to, float *wx, float *wz)
         return true;
     }
     return false;                                   // close enough: straight at it
+}
+
+bool Stair_ChaseWaypoint(Vector3 from, Vector3 to, float *wx, float *wz)
+{
+    from.x -= g_ox;
+    to.x -= g_ox;
+    if (!ChaseWaypointBase(from, to, wx, wz)) return false;
+    *wx += g_ox;
+    return true;
 }

@@ -46,23 +46,25 @@ static uint32_t Mix(uint32_t h) { h ^= h >> 16; h *= 0x7feb352dU; h ^= h >> 15; 
 // either alcove, with a metre of room round it. Chosen from the floor's own seed, so the same floor always has it in the same place.
 static void PlaceConsole(const FloorMap *map, int floorNumber, float *outX, float *outZ)
 {
-    static int cand[MAP_WIDTH * MAP_HEIGHT];
+    static int cand[MAP_MAX * MAP_MAX];
+    const int W = map->w, H = map->h;
+    const FloorShell sh = Floor_Shell(map);
     for (int pass = 0; pass < 3; ++pass) {
         const float minFromStairs = pass == 0 ? 22.0f : (pass == 1 ? 12.0f : 0.0f);
         int n = 0;
-        for (int z = 1; z < MAP_HEIGHT - 1; ++z)
-            for (int x = 1; x < MAP_WIDTH - 1; ++x) {
+        for (int z = 1; z < H - 1; ++z)
+            for (int x = 1; x < W - 1; ++x) {
                 if (Floor_Solid(map, 0, x, z)) continue;
-                if (x >= 36 && x <= 44 && (z <= 8 || z >= 36)) continue;                       // the alcoves
-                if (hypotf((float)(x - 35), (float)(z - 4)) < minFromStairs) continue;         // tiles from the foot of the up stairs
-                if (hypotf((float)(x - 38), (float)(z - 40)) < 8.0f) continue;                 // and from where the player arrives
+                if (x >= sh.wallX && (z <= sh.upAlcoveZ1 || z >= sh.downAlcoveZ0)) continue;                          // the alcoves
+                if (hypotf((float)(x - sh.upApproachX), (float)(z - sh.upApproachZ)) < minFromStairs) continue;       // tiles from the foot of the up stairs
+                if (hypotf((float)(x - sh.arriveBelowX), (float)(z - sh.arriveBelowZ)) < 8.0f) continue;              // and from where the player arrives
                 if (pass < 2 && Blocked(map, (float)x * TILE_SIZE, (float)z * TILE_SIZE, 1.0f)) continue;
-                cand[n++] = z * MAP_WIDTH + x;
+                cand[n++] = z * W + x;
             }
         if (n > 0) {
             const int pick = cand[Mix(map->seed ^ (uint32_t)(floorNumber * 7919)) % (uint32_t)n];
-            *outX = (float)(pick % MAP_WIDTH) * TILE_SIZE;
-            *outZ = (float)(pick / MAP_WIDTH) * TILE_SIZE;
+            *outX = (float)(pick % W) * TILE_SIZE;
+            *outZ = (float)(pick / W) * TILE_SIZE;
             return;
         }
     }
@@ -81,8 +83,8 @@ void FloorGame_NewFloor(const FloorMap *map, int floorNumber, bool cleared)
     float cx, cz;
     PlaceConsole(map, floorNumber, &cx, &cz);
     float far = 0.0f;
-    for (int z = 0; z < MAP_HEIGHT; ++z)
-        for (int x = 0; x < MAP_WIDTH; ++x) {
+    for (int z = 0; z < map->h; ++z)
+        for (int x = 0; x < map->w; ++x) {
             if (Floor_Solid(map, 0, x, z)) continue;
             const float d = hypotf((float)x * TILE_SIZE - g_doorX, (float)z * TILE_SIZE - g_doorZ);
             if (d > far) far = d;
@@ -112,7 +114,7 @@ static void CallMonster(const FloorMap *map, int floorNumber)
         const uint32_t h = Mix(g_calls++ * 2654435761u + map->seed);
         const float ang = (float)(h % 628) * 0.01f, dist = 7.0f + (float)((h >> 10) % 40) * 0.1f;
         const float x = g_run.consoleX + cosf(ang) * dist, z = g_run.consoleZ + sinf(ang) * dist;
-        if (x < 2.0f || z < 2.0f || x > (MAP_WIDTH - 2) * TILE_SIZE || z > (MAP_HEIGHT - 2) * TILE_SIZE) continue;
+        if (x < 2.0f || z < 2.0f || x > (float)(map->w - 2) * TILE_SIZE || z > (float)(map->h - 2) * TILE_SIZE) continue;
         if (Blocked(map, x, z, 0.8f)) continue;
         Enemies_SpawnAt((Vector3){ x, 0.0f, z }, floorNumber, true);
         return;

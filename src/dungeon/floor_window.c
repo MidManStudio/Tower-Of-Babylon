@@ -20,7 +20,7 @@ static void Refresh(FloorWindow *w)
         if (f < 1) {
             w->loaded[slot] = 0;
         } else if (w->loaded[slot] != f) {
-            GenerateFloorMap(&w->floors[slot], f, w->towerSeed);
+            GenerateFloorMapSized(&w->floors[slot], f, w->towerSeed, w->tiles, w->tiles);
             w->loaded[slot] = f;
             ++w->generations;
         }
@@ -29,7 +29,13 @@ static void Refresh(FloorWindow *w)
 
 void FloorWindow_Init(FloorWindow *w, uint32_t towerSeed, int startFloor)
 {
+    FloorWindow_InitSized(w, towerSeed, startFloor, MAP_WIDTH);
+}
+
+void FloorWindow_InitSized(FloorWindow *w, uint32_t towerSeed, int startFloor, int tiles)
+{
     memset(w->loaded, 0, sizeof w->loaded);
+    w->tiles = tiles < FLOOR_TILES_MIN ? FLOOR_TILES_MIN : (tiles > FLOOR_TILES_MAX ? FLOOR_TILES_MAX : tiles);
     w->towerSeed = towerSeed;
     w->currentFloor = startFloor < 1 ? 1 : startFloor;
     w->generations = 0;

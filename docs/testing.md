@@ -14,10 +14,10 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `input_headless.c` | the touch controls (the quick floating stick, sprint at the rim in any direction, the fixed fire pad as a drag (the default) and as a joystick, roles, buttons including RELOAD and DIVE, locked and walk-only) and the HUD layout (nothing overlaps, targets are thumb-sized) | `input.md` |
 | `audio_headless.c` | synthesiser numbers, limiter, voices, pan and distance, footsteps, every shipped sound recipe, the bank and the config registry | `audio.md` |
 | `dungeon_headless.c` | generator, floor window, probes | `dungeon.md` |
-| `floor_access_headless.c` | the accessor layer (`floor_access.h`) against an oracle on 40 floors and tiles outside them, each rule broken on purpose; and the guard that keeps the moved source files off `grid[]`, `TILE_WALL`, `Tile_IsSolid` and `WALL_HEIGHT` (reads files; run from the project root) | `dungeon.md` |
-| `stairs_headless.c` | staircase geometry and collision | `dungeon.md` |
+| `floor_access_headless.c` | the accessor layer (`floor_access.h`) against an oracle on 40 floors and tiles outside them, each rule broken on purpose; and the guard that keeps the moved source files off `grid[]`, `TILE_WALL`, `Tile_IsSolid` and `WALL_HEIGHT` (reads files; run from the project root) Since R1a it covers floors of five sizes (45 to 128) and the shell of each, and its guard also forbids the 45 by 45 constants | `dungeon.md` |
+| `stairs_headless.c` | staircase geometry and collision; the stair frame: shifted queries equal the 45 by 45 answers on five sizes and the doors stand on the generated shell | `dungeon.md` |
 | `renderer_headless.c` | per-tile quads, culling, dark quads, the flashlight's reach | `dungeon.md`, `flashlight.md` |
-| `lighting_headless.c` | ceiling lights, light map, line of sight | `lighting.md` |
+| `lighting_headless.c` | ceiling lights, light map, line of sight; floors of 64, 100 and 128 (capacity, the windowed update equals the whole-floor update inside its window, bit for bit) | `lighting.md` |
 | `highp_headless.c` | the shaders' text and the beam calls | `lighting.md`, `flashlight.md` |
 | `health_headless.c` | health and damage | `player.md` |
 | `movement_headless.c` | velocity, omni sprint, forward-only slide, stamina, noise, aiming down sights, automatic corner leaning, sprinting beside a wall (the lean stays), the strafe amount, dive, roll and lying (stays down until the stick is moved; the camera never below the floor), the stim shot | `player.md` |
@@ -26,7 +26,7 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `projectiles_headless.c` | patterns, falloff, swept hits, piercing, tracers, `Gunfire_Shoot` | `projectiles.md` |
 | `inventory_headless.c` | items (the stim shot included), stacks, the inventory and its touch screen | `inventory.md` |
 | `sim_headless.c` | the input latch (dive included), the same steps at any frame rate, look per frame against movement per step, the monsters' blend hooks | `sim.md` |
-| `game_sim_headless.c` | the simulation with no window: the event queue, the rules reported as events (flashlight, shots, hits, medkit, pickups, the stair clock, doors, death), the same world at any frame rate and on every run, and a scan that it reaches for no window, clock, sound or screen | `sim.md` |
+| `game_sim_headless.c` | the simulation with no window: the event queue, the rules reported as events (flashlight, shots, hits, medkit, pickups, the stair clock, doors, death), the same world at any frame rate and on every run, and a scan that it reaches for no window, clock, sound or screen; floors of 45, 64, 100 and 128 (placements, 600 scripted steps, never in a wall, the same world twice) and the climb to floor 2 on 45, 64 and 128 | `sim.md` |
 | `floor_run_headless.c` | the timers, the fixed step, the unlock console, the countdown, the collapse, the events and floor.mdix | `floor_run.md` |
 | `floor_game_headless.c` | the stair clock in the game: where the console goes, the door lock, the monster calls, the kill, frame rate independence | `floor_run.md` |
 | `net_rel_headless.c` | the reliable-message layer over a path that loses, doubles and reorders: order, once each, wraparound, window, round trip, giving up | `net.md` |
@@ -44,10 +44,10 @@ Each file holds its own `main()` inside a macro (`-DNAME_HEADLESS_TEST`) so mray
 | `obstacles_headless.c` | the props' suspend switch (a networked game has no props): collision and drawing off and back on | `net.md` |
 | `floorgen_rng_headless.c` | the floor generator's random numbers: PCG32 vectors, SplitMix64, the 32-bit range threshold, stream keys, and each rule broken on purpose | `floorgen.md` |
 | `floorgen_bits_headless.c` | the bit rows and the integer probe rays against plain loops and exact arithmetic, and each rule broken on purpose | `floorgen.md` |
-| `floorgen_hash_headless.c` | 40 golden floors (hash, attempts, counts, route), the same floor after others, what the hash sees, the generation report, and the envelope of the old generator over 500 floors | `floorgen.md` |
+| `floorgen_hash_headless.c` | 56 golden floors (40 of 45 by 45 and 16 of other sizes: hash, attempts, counts, route), the same floor after others, what the hash sees, the generation report, and the envelope of the old generator over 500 floors | `floorgen.md` |
 | `floorgen_plain_headless.c` | the same golden floors with the generator built with plain scans (the oracle for the bit scans) | `floorgen.md` |
 | `floorgen_integer_headless.c` | the layout source files contain no float, double, libm or float literal (reads files; run from the project root) | `floorgen.md` |
-| `floorgen_wasm_check.sh` (not a C test) | the 40 golden floors built natively and as WebAssembly (Emscripten with node, or Zig with wasmtime, the Zig build with the web build's 64 KB stack) and compared byte for byte; SKIP (exit 77) with no wasm toolchain | `floorgen.md` |
+| `floorgen_wasm_check.sh` (not a C test) | the 56 golden floors built natively and as WebAssembly (Emscripten with node, or Zig with wasmtime, the Zig build with the web build's 64 KB stack) and compared byte for byte; SKIP (exit 77) with no wasm toolchain | `floorgen.md` |
 | `config_headless.c` | the config layer, the baked tables, bad documents | `config.md` |
 | `flashlight_headless.c` | charge, batteries, flicker, the beam's shape | `flashlight.md` |
 

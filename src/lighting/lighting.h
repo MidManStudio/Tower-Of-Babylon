@@ -33,7 +33,8 @@ typedef struct {
 } Fixture;
 
 #define LIGHT_LATTICE_TILES 3     // one fixture every 3 tiles, 6 m
-#define LIGHT_MAX_FIXTURES  224
+#define LIGHT_MAX_FIXTURES  2000  // 224 were enough for 45 by 45; a 128 by 128 floor has about 1,750 lattice points
+#define LIGHT_POOL_ENTRIES  60000 // tiles the fixtures light, all together: about 5,000 on 45 by 45, 48,000 on 128 by 128
 #define LIGHT_HEIGHT        5.0f  // how far above the floor the light is taken to be, for the falloff
 #define LIGHT_REACH_TILES   4
 #define LIGHT_ZONE_TILES    12    // moods come in patches about this big
@@ -41,11 +42,18 @@ typedef struct {
 // Builds the fixtures and the per-tile influence of the floor. Call whenever the current floor changes.
 void Lighting_BuildForFloor(const FloorMap *f, int floorNumber);
 
-// Moves every fixture to its level for this time and recomputes the light of every tile and corner.
+// Moves every fixture to its level for this time and recomputes the light of every tile and corner of the whole floor.
 void Lighting_Update(float timeSecs);
 
+// The same, for the tiles within LIGHT_WINDOW_TILES of the viewer (world x, z) only: the fixtures whose light reaches the window and
+// the tiles and corners inside it. The whole-floor update costs 19 us on a 45 by 45 floor and 217 us on 128 by 128 (docs/design/08,
+// section 13.4); this costs the same on every size. Inside the window every value is exactly what Lighting_Update gives; outside it
+// values are left as they were, which nothing reads (the renderer draws 18 tiles round the camera). This is what the game calls.
+void Lighting_UpdateAround(float timeSecs, float viewerX, float viewerZ);
+#define LIGHT_WINDOW_TILES  24
+
 // Light 0 to 1 at the corner (ci, cj) between tiles (ci-1..ci, cj-1..cj): world x = (ci - 0.5) * TILE_SIZE.
-// Valid for 0 <= ci <= MAP_WIDTH, 0 <= cj <= MAP_HEIGHT. Ambient light is not included.
+// Valid for 0 <= ci <= the floor's width, 0 <= cj <= its depth. Ambient light is not included.
 float Lighting_Corner(int ci, int cj);
 
 // Light 0 to 1 over open tile (tx, tz); 0 for a wall or outside the map.

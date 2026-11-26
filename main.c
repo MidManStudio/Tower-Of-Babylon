@@ -195,6 +195,7 @@ static void MenuAudio(float dt, bool gesture)
 static void BeginRun(void)
 {
     g_screen = SCREEN_GAME;
+    Staircase_SetFrame(g_sim.map->w, g_sim.map->h);   // the stair code follows the floor in play (a session may have set 45)
     if (g_netLightingDirty) { Lighting_BuildForFloor(g_sim.map, g_sim.window.currentFloor); g_netLightingDirty = false; }   // a session's floor was the last one lit
     FixedStep_Init(&g_simStep, SIM_STEP_SECS, SIM_MAX_STEPS_PER_FRAME);   // the game starts from a clean clock
     SimCmd_Init(&g_simCmd);
@@ -205,6 +206,7 @@ static void BeginRun(void)
 // player does when they appear (yaw 0, as the floor's spawn faces), and the leave key has not been pressed.
 static void BeginNetPlay(void)
 {
+    Staircase_SetFrame(MAP_WIDTH, MAP_HEIGHT);     // online floors are 45 by 45 whatever TOWER_FLOOR_TILES is (src/net makes them)
     NetPlay_Init(&g_netPlay, 0.0f);
     NetSession_SetCommands(&g_session, NetPlay_CmdFn, &g_netPlay);
     g_leaveArmed = 0.0f;
@@ -344,7 +346,7 @@ static void NetWalkFrame(void)
         Audio_Update(dt, cam.position, fx, fz, in.gesture);
         AudioEvents_Movement(dt, PlayerSpeed(me), me->isGrounded, me->velocityY, me->sprinting, me->sliding, me->exhausted, me->health.isAlive);
     }
-    Lighting_Update((float)GetTime());
+    Lighting_UpdateAround((float)GetTime(), cam.position.x, cam.position.z);
     BeginDrawing();
         ClearBackground(BLACK);
         Highp_Begin();
@@ -518,7 +520,7 @@ static void Frame(void)
 
     const double tAi = GetTime();
     const double tLight0 = GetTime();
-    Lighting_Update((float)GetTime());
+    Lighting_UpdateAround((float)GetTime(), viewCam.position.x, viewCam.position.z);
     SubNote(SUB_LIGHT, tLight0, GetTime());
     BeginDrawing();
         ClearBackground(BLACK);

@@ -12,19 +12,20 @@
 
 
 #define TONE_GAIN      2.0f
-#define INFLUENCE_POOL 40000
+#define INFLUENCE_POOL LIGHT_POOL_ENTRIES     // 40000 were enough for 45 by 45; a 128 by 128 floor uses about 48,000 (6 bytes each)
 
 static Fixture  g_fix[LIGHT_MAX_FIXTURES];
 static int      g_nFix = 0;
-static uint16_t g_poolIdx[INFLUENCE_POOL];   // tile index z * MAP_WIDTH + x
+static uint16_t g_poolIdx[INFLUENCE_POOL];   // offset of the tile in g_tileI, z * MAP_MAX + x (row stride of the array, under 16,384)
 static float    g_poolW[INFLUENCE_POOL];
 static int      g_poolN = 0;
 
-static float g_tileI[MAP_HEIGHT][MAP_WIDTH];      // summed light before the tone curve
-static float g_tile[MAP_HEIGHT][MAP_WIDTH];       // 0 to 1
-static float g_corner[MAP_HEIGHT + 1][MAP_WIDTH + 1];
-static bool  g_open[MAP_HEIGHT][MAP_WIDTH];       // an open tile: not a wall
-static int   g_panelAt[MAP_HEIGHT][MAP_WIDTH];    // index of the fixture whose panel hangs over the tile, or -1
+static float g_tileI[MAP_MAX][MAP_MAX];           // summed light before the tone curve
+static float g_tile[MAP_MAX][MAP_MAX];            // 0 to 1
+static float g_corner[MAP_MAX + 1][MAP_MAX + 1];
+static bool  g_open[MAP_MAX][MAP_MAX];            // an open tile: not a wall
+static int   g_panelAt[MAP_MAX][MAP_MAX];         // index of the fixture whose panel hangs over the tile, or -1
+static int   g_w = 0, g_h = 0;                 // the size of the floor built for; nothing is lit before the first one
 static uint32_t g_seed = 1;
 
 // ---- hashing ---------------------------------------------------------------------------------
@@ -52,7 +53,7 @@ static float Patch(float px, float pz, uint32_t salt)
 }
 
 // ---- tile line of sight --------------------------------------------------------------------------
-static bool Open(int x, int z) { return x >= 0 && x < MAP_WIDTH && z >= 0 && z < MAP_HEIGHT && g_open[z][x]; }
+static bool Open(int x, int z) { return x >= 0 && x < g_w && z >= 0 && z < g_h && g_open[z][x]; }
 
 static bool LineOfSight(int x0, int z0, int x1, int z1)
 {
@@ -88,7 +89,7 @@ static void AddInfluence(Fixture *fx)
             if (!LineOfSight(fx->tx, fx->tz, x, z)) continue;
             const float k = 1.0f - d2 / rm2;
             if (g_poolN >= INFLUENCE_POOL) return;
-            g_poolIdx[g_poolN] = (uint16_t)(z * MAP_WIDTH + x);
+            g_poolIdx[g_poolN] = (uint16_t)(z * MAP_MAX + x);
             g_poolW[g_poolN] = k * k / w0;
             ++g_poolN;
             ++fx->count;
@@ -125,15 +126,18 @@ void Lighting_BuildForFloor(const FloorMap *f, int floorNumber)
 {
     g_nFix = 0;
     g_poolN = 0;
-    for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) g_panelAt[z][x] = -1;
+    g_w = f->w;
+    g_h = f->h;
+    const FloorShell sh = Floor_Shell(f);
+    for (int z = 0; z < g_h; ++z) for (int x = 0; x < g_w; ++x) g_panelAt[z][x] = -1;
     g_seed = (f->seed ^ ((uint32_t)floorNumber * 2654435761u)) | 1u;
-    for (int z = 0; z < MAP_HEIGHT; ++z)
-        for (int x = 0; x < MAP_WIDTH; ++x) g_open[z][x] = !Floor_Solid(f, 0, x, z);
+    for (int z = 0; z < g_h; ++z)
+        for (int x = 0; x < g_w; ++x) g_open[z][x] = !Floor_Solid(f, 0, x, z);
 
     // Panels hang over open tiles that have a ceiling, one lattice cell each. A lattice point that falls
     // in a wall moves to a neighbouring open tile, or is left out.
-    for (int lz = 0; lz * LIGHT_LATTICE_TILES + 2 < MAP_HEIGHT - 1; ++lz) {
-        for (int lx = 0; lx * LIGHT_LATTICE_TILES + 2 < MAP_WIDTH - 1; ++lx) {
+    for (int lz = 0; lz * LIGHT_LATTICE_TILES + 2 < g_h - 1; ++lz) {
+        for (int lx = 0; lx * LIGHT_LATTICE_TILES + 2 < g_w - 1; ++lx) {
             int tx = lx * LIGHT_LATTICE_TILES + 2, tz = lz * LIGHT_LATTICE_TILES + 2;
             if (!Open(tx, tz)) {
                 static const int ox[4] = { 1, -1, 0, 0 }, oz[4] = { 0, 0, 1, -1 };
@@ -142,7 +146,7 @@ void Lighting_BuildForFloor(const FloorMap *f, int floorNumber)
                     if (Open(tx + ox[k], tz + oz[k])) { tx += ox[k]; tz += oz[k]; moved = true; }
                 if (!moved) continue;
             }
-            if (tx >= STAIR_WALL_X && (tz <= UP_ALCOVE_Z1 || tz >= DOWN_ALCOVE_Z0)) continue;   // alcoves have no ceiling
+            if (tx >= sh.wallX && (tz <= sh.upAlcoveZ1 || tz >= sh.downAlcoveZ0)) continue;     // alcoves have no ceiling
             const uint32_t id = (uint32_t)(lz * 64 + lx);
             // Value noise sits near the middle, so stretch it: the extremes are what make a patch clearly dark or clearly lit.
             float patch = 0.5f + (Patch((float)tx, (float)tz, 0x51u) - 0.5f) * 2.1f;
@@ -150,8 +154,8 @@ void Lighting_BuildForFloor(const FloorMap *f, int floorNumber)
             const float dark = 0.88f * patch + 0.12f * Hash01(g_seed, id, 3u);
             LightMode m = PickMode(dark, Hash01(g_seed, id, 5u));
             // The ground around both stair doors is always lit, so arriving on a floor is never blind.
-            const int d1 = abs(tx - UP_APPROACH_X) + abs(tz - UP_APPROACH_Z);
-            const int d2 = abs(tx - DOWN_APPROACH_X) + abs(tz - DOWN_APPROACH_Z);
+            const int d1 = abs(tx - sh.upApproachX) + abs(tz - sh.upApproachZ);
+            const int d2 = abs(tx - sh.downApproachX) + abs(tz - sh.downApproachZ);
             if (d1 <= 8 || d2 <= 8) m = LIGHT_ON;
             if (g_panelAt[tz][tx] >= 0) continue;   // two lattice points shifted onto the same tile: one panel per tile
             AddFixture(tx, tz, true, LIGHT_REACH_TILES, m, id);
@@ -159,8 +163,8 @@ void Lighting_BuildForFloor(const FloorMap *f, int floorNumber)
     }
 
     // One steady lamp over each stair alcove, with no panel because the alcove is open to the shaft.
-    AddFixture(UP_PAD_X, UP_PAD_Z, false, 6, LIGHT_ON, 9001u);
-    AddFixture(DOWN_PAD_X, DOWN_PAD_Z, false, 6, LIGHT_ON, 9002u);
+    AddFixture(sh.upPadX, sh.upPadZ, false, 6, LIGHT_ON, 9001u);
+    AddFixture(sh.downPadX, sh.downPadZ, false, 6, LIGHT_ON, 9002u);
     memset(g_tile, 0, sizeof g_tile);
     memset(g_corner, 0, sizeof g_corner);
 }
@@ -208,14 +212,67 @@ void Lighting_Update(float t)
         if (f->level < 0.002f) continue;
         for (int k = f->first; k < f->first + f->count; ++k) flat[g_poolIdx[k]] += g_poolW[k] * f->level;
     }
-    for (int z = 0; z < MAP_HEIGHT; ++z)
-        for (int x = 0; x < MAP_WIDTH; ++x) {
+    for (int z = 0; z < g_h; ++z)
+        for (int x = 0; x < g_w; ++x) {
             const float I = g_tileI[z][x];
             g_tile[z][x] = I > 0.0f ? 1.0f - expf(-TONE_GAIN * I) : 0.0f;
         }
     // Corner light is the mean of the open tiles around the corner.
-    for (int cj = 0; cj <= MAP_HEIGHT; ++cj)
-        for (int ci = 0; ci <= MAP_WIDTH; ++ci) {
+    for (int cj = 0; cj <= g_h; ++cj)
+        for (int ci = 0; ci <= g_w; ++ci) {
+            float sum = 0.0f;
+            int n = 0;
+            for (int dz = -1; dz <= 0; ++dz)
+                for (int dx = -1; dx <= 0; ++dx) {
+                    if (!Open(ci + dx, cj + dz)) continue;
+                    sum += g_tile[cj + dz][ci + dx];
+                    ++n;
+                }
+            g_corner[cj][ci] = n ? sum / (float)n : 0.0f;
+        }
+}
+
+// The same as Lighting_Update, for the window round the viewer. A fixture that lights a window tile stands within its reach of the
+// window, and everything such a fixture lights is within twice its reach of it, so clearing the window padded by twice the longest
+// reach (the stair lamps, 6 tiles) means every sum a fixture adds to lands on a cleared tile. Only the tiles of the window and the
+// one-tile margin are ever read, so the padding is not needed for correctness; it keeps the sums beyond them from growing without
+// bound. Fixtures are added in the same order as in the full update, so the sums are the same floats.
+#define LIGHT_MAX_REACH 6
+void Lighting_UpdateAround(float t, float viewerX, float viewerZ)
+{
+    if (g_w <= 2 * LIGHT_WINDOW_TILES + 1 && g_h <= 2 * LIGHT_WINDOW_TILES + 1) { Lighting_Update(t); return; }   // the window would be the whole floor
+    const int cx = (int)floorf(viewerX / TILE_SIZE + 0.5f), cz = (int)floorf(viewerZ / TILE_SIZE + 0.5f);
+    int x0 = cx - LIGHT_WINDOW_TILES, x1 = cx + LIGHT_WINDOW_TILES, z0 = cz - LIGHT_WINDOW_TILES, z1 = cz + LIGHT_WINDOW_TILES;
+    if (x0 < 0) x0 = 0;
+    if (z0 < 0) z0 = 0;
+    if (x1 > g_w - 1) x1 = g_w - 1;
+    if (z1 > g_h - 1) z1 = g_h - 1;
+    if (x0 > x1 || z0 > z1) return;                                   // the viewer is far outside the floor
+
+    // A corner on the edge of the window reads the tile just outside it (a corner lies between four tiles), so the tiles, and the
+    // fixtures that light them, run one further on every side.
+    const int xa = x0 > 0 ? x0 - 1 : 0, za = z0 > 0 ? z0 - 1 : 0;
+    const int xb = x1 < g_w - 1 ? x1 + 1 : g_w - 1, zb = z1 < g_h - 1 ? z1 + 1 : g_h - 1;
+    const int pad = 2 * LIGHT_MAX_REACH;
+    const int cx0 = xa - pad < 0 ? 0 : xa - pad, cx1 = xb + pad > g_w - 1 ? g_w - 1 : xb + pad;
+    const int cz0 = za - pad < 0 ? 0 : za - pad, cz1 = zb + pad > g_h - 1 ? g_h - 1 : zb + pad;
+    for (int z = cz0; z <= cz1; ++z) memset(&g_tileI[z][cx0], 0, (size_t)(cx1 - cx0 + 1) * sizeof(float));
+
+    float *flat = &g_tileI[0][0];
+    for (int i = 0; i < g_nFix; ++i) {
+        Fixture *f = &g_fix[i];
+        if (f->tx + f->reach < xa || f->tx - f->reach > xb || f->tz + f->reach < za || f->tz - f->reach > zb) continue;
+        f->level = Clamp01(Animate(f, t) * 1.05f);
+        if (f->level < 0.002f) continue;
+        for (int k = f->first; k < f->first + f->count; ++k) flat[g_poolIdx[k]] += g_poolW[k] * f->level;
+    }
+    for (int z = za; z <= zb; ++z)
+        for (int x = xa; x <= xb; ++x) {
+            const float I = g_tileI[z][x];
+            g_tile[z][x] = I > 0.0f ? 1.0f - expf(-TONE_GAIN * I) : 0.0f;
+        }
+    for (int cj = z0; cj <= z1 + 1; ++cj)
+        for (int ci = x0; ci <= x1 + 1; ++ci) {
             float sum = 0.0f;
             int n = 0;
             for (int dz = -1; dz <= 0; ++dz)
@@ -231,7 +288,7 @@ void Lighting_Update(float t)
 // ---- reading -------------------------------------------------------------------------------------
 float Lighting_Corner(int ci, int cj)
 {
-    if (ci < 0 || ci > MAP_WIDTH || cj < 0 || cj > MAP_HEIGHT) return 0.0f;
+    if (ci < 0 || ci > g_w || cj < 0 || cj > g_h) return 0.0f;
     return g_corner[cj][ci];
 }
 
@@ -281,7 +338,7 @@ void Lighting_SetAllModes(LightMode m)
 // ---- panels ----------------------------------------------------------------------------------------
 const Fixture *Lighting_PanelOnTile(int tx, int tz)
 {
-    if (tx < 0 || tx >= MAP_WIDTH || tz < 0 || tz >= MAP_HEIGHT) return NULL;
+    if (tx < 0 || tx >= g_w || tz < 0 || tz >= g_h) return NULL;
     const int i = g_panelAt[tz][tx];
     return i >= 0 ? &g_fix[i] : NULL;
 }

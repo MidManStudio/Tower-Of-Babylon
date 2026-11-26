@@ -16,7 +16,7 @@
 #define ENEMY_LATTICE     3      // candidate spawn tiles sit on every third tile
 #define ENEMY_SAFE_TILES  16.0f  // no spawns this close to either arrival point
 #define ENEMY_ALERT_SECS  3.0f
-#define MAX_CANDIDATES    256
+#define MAX_CANDIDATES    2048              // 256 was enough for 45 by 45; the lattice of a 128 by 128 floor has about 1,700 points
 
 static Enemy g_enemies[MAX_FLOOR_ENEMIES];
 
@@ -59,8 +59,9 @@ static bool SpawnCandidate(const FloorMap *map, int x, int z)
     if (Floor_Reserved(map, x, z)) return false;
     const TileType type = Floor_Type(map, 0, x, z);
     if (type != TILE_FLOOR && type != TILE_CORRIDOR) return false;
-    if (DistTiles(x, z, ARRIVE_BELOW_X, ARRIVE_BELOW_Z) < ENEMY_SAFE_TILES) return false;
-    if (DistTiles(x, z, ARRIVE_ABOVE_X, ARRIVE_ABOVE_Z) < ENEMY_SAFE_TILES) return false;
+    const FloorShell sh = Floor_Shell(map);
+    if (DistTiles(x, z, sh.arriveBelowX, sh.arriveBelowZ) < ENEMY_SAFE_TILES) return false;
+    if (DistTiles(x, z, sh.arriveAboveX, sh.arriveAboveZ) < ENEMY_SAFE_TILES) return false;
     return true;
 }
 
@@ -109,9 +110,10 @@ void SpawnEnemiesForFloor(const FloorMap *floorMap, int tier)
 
     int cand[MAX_CANDIDATES];
     int n = 0;
-    for (int z = ENEMY_LATTICE; z < MAP_HEIGHT - 2 && n < MAX_CANDIDATES; z += ENEMY_LATTICE)
-        for (int x = ENEMY_LATTICE; x < MAP_WIDTH - 2 && n < MAX_CANDIDATES; x += ENEMY_LATTICE)
-            if (SpawnCandidate(floorMap, x, z)) cand[n++] = z * MAP_WIDTH + x;
+    const int W = floorMap->w;
+    for (int z = ENEMY_LATTICE; z < floorMap->h - 2 && n < MAX_CANDIDATES; z += ENEMY_LATTICE)
+        for (int x = ENEMY_LATTICE; x < W - 2 && n < MAX_CANDIDATES; x += ENEMY_LATTICE)
+            if (SpawnCandidate(floorMap, x, z)) cand[n++] = z * W + x;
 
     // Shuffle so the enemies spread over the whole floor instead of filling one corner.
     uint32_t rng = Hash32(floorMap->seed ^ 0xE4E31E5Du);
@@ -127,7 +129,7 @@ void SpawnEnemiesForFloor(const FloorMap *floorMap, int tier)
     if (target > n) target = n;
 
     for (int i = 0; i < target; ++i) {
-        const int x = cand[i] % MAP_WIDTH, z = cand[i] / MAP_WIDTH;
+        const int x = cand[i] % W, z = cand[i] / W;
         InitEnemy(&g_enemies[i], (uint32_t)i, (float)x * TILE_SIZE, (float)z * TILE_SIZE,
                   Hash32(floorMap->seed + (uint32_t)i * 0x9e3779b1U), tier);
     }

@@ -23,6 +23,11 @@ typedef enum {
 // ---- Physics ---------------------------------------------------------------
 // Height of the highest standable surface under (x, z) that is no more than
 // STEP_UP_MAX above y. Never below 0 (the floor).
+// Tells the stair code how big the floor in use is. The shell stands 9 tiles in from the east edge and the down alcove 9 from the
+// south edge, so on a floor bigger than 45 by 45 everything here moves by (size - 45) tiles. Call it whenever the size of the floor
+// in play changes (FloorWindow_Init does); the default is 45 by 45, which is what every older test builds. One size at a time.
+void Staircase_SetFrame(int floorW, int floorH);
+
 float Staircase_GroundHeight(float x, float z, float y);
 
 // True when a body of the given radius and height standing at (x, z, y) would be

@@ -76,6 +76,30 @@ static inline Fx FgProbe_AxisReach(int freeTiles)
     return r > FG_PROBE_MAX_DIST ? FG_PROBE_MAX_DIST : r;
 }
 
+// One probe's fields from the four axis runs (what FgProbeField_Analyze gives with fullRays false), for a probe whose tileX and
+// tileZ are set. A probe's axis fields read only its own row and its own column of the grid and nothing else.
+static inline void FgProbe_FillAxes(const FgBitGrid *g, FgProbe *p)
+{
+    p->active = !FgBitGrid_Test(g, p->tileX, p->tileZ);
+    if (!p->active) {
+        p->reachE = p->reachW = p->reachN = p->reachS = 0;
+        p->spanX = p->spanZ = p->meanReach = p->maxReach = 0;
+        return;
+    }
+    p->reachE = FgProbe_AxisReach(FgBitGrid_RunE(g, p->tileX, p->tileZ));
+    p->reachW = FgProbe_AxisReach(FgBitGrid_RunW(g, p->tileX, p->tileZ));
+    p->reachS = FgProbe_AxisReach(FgBitGrid_RunS(g, p->tileX, p->tileZ));
+    p->reachN = FgProbe_AxisReach(FgBitGrid_RunN(g, p->tileX, p->tileZ));
+    p->spanX = p->reachE + p->reachW;
+    p->spanZ = p->reachN + p->reachS;
+    p->meanReach = (p->reachE + p->reachW + p->reachN + p->reachS) >> 2;
+    Fx m = p->reachE;
+    if (p->reachW > m) m = p->reachW;
+    if (p->reachN > m) m = p->reachN;
+    if (p->reachS > m) m = p->reachS;
+    p->maxReach = m;
+}
+
 static inline void FgProbeField_Analyze(const FgBitGrid *g, FgProbeField *pf, bool fullRays)
 {
     pf->cols = (g->w - 1 - FG_PROBE_ORIGIN) / FG_PROBE_STRIDE + 1;
@@ -86,26 +110,9 @@ static inline void FgProbeField_Analyze(const FgBitGrid *g, FgProbeField *pf, bo
             FgProbe *p = &pf->probes[j * pf->cols + i];
             p->tileX = FG_PROBE_ORIGIN + FG_PROBE_STRIDE * i;
             p->tileZ = FG_PROBE_ORIGIN + FG_PROBE_STRIDE * j;
-            p->active = !FgBitGrid_Test(g, p->tileX, p->tileZ);
-            if (!p->active) {
-                p->reachE = p->reachW = p->reachN = p->reachS = 0;
-                p->spanX = p->spanZ = p->meanReach = p->maxReach = 0;
-                continue;
-            }
-            p->reachE = FgProbe_AxisReach(FgBitGrid_RunE(g, p->tileX, p->tileZ));
-            p->reachW = FgProbe_AxisReach(FgBitGrid_RunW(g, p->tileX, p->tileZ));
-            p->reachS = FgProbe_AxisReach(FgBitGrid_RunS(g, p->tileX, p->tileZ));
-            p->reachN = FgProbe_AxisReach(FgBitGrid_RunN(g, p->tileX, p->tileZ));
-            p->spanX = p->reachE + p->reachW;
-            p->spanZ = p->reachN + p->reachS;
-            if (!fullRays) {
-                p->meanReach = (p->reachE + p->reachW + p->reachN + p->reachS) >> 2;
-                Fx m = p->reachE;
-                if (p->reachW > m) m = p->reachW;
-                if (p->reachN > m) m = p->reachN;
-                if (p->reachS > m) m = p->reachS;
-                p->maxReach = m;
-            } else {
+            FgProbe_FillAxes(g, p);
+            if (!p->active || !fullRays) continue;
+            {
                 int32_t sum = 0;
                 Fx m = 0;
                 for (int k = 0; k < FG_PROBE_RAYS; ++k) {
@@ -117,6 +124,22 @@ static inline void FgProbeField_Analyze(const FgBitGrid *g, FgProbeField *pf, bo
                 p->maxReach = m;
             }
         }
+}
+
+// After the tile (x, z) of the grid changed, refreshes the axis fields (fullRays false) of exactly the probes that can have changed:
+// the ones on the same row or the same column of the probe lattice. The result equals FgProbeField_Analyze(g, pf, false) on the new
+// grid, at a few dozen probes of work instead of all of them.
+static inline void FgProbeField_TileChanged(const FgBitGrid *g, FgProbeField *pf, int x, int z)
+{
+    const int dz = z - FG_PROBE_ORIGIN, dx = x - FG_PROBE_ORIGIN;
+    if (dz >= 0 && dz % FG_PROBE_STRIDE == 0 && dz / FG_PROBE_STRIDE < pf->rows) {
+        FgProbe *row = &pf->probes[(dz / FG_PROBE_STRIDE) * pf->cols];
+        for (int i = 0; i < pf->cols; ++i) FgProbe_FillAxes(g, &row[i]);
+    }
+    if (dx >= 0 && dx % FG_PROBE_STRIDE == 0 && dx / FG_PROBE_STRIDE < pf->cols) {
+        const int i = dx / FG_PROBE_STRIDE;
+        for (int j = 0; j < pf->rows; ++j) FgProbe_FillAxes(g, &pf->probes[j * pf->cols + i]);
+    }
 }
 
 #endif

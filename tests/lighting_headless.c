@@ -19,6 +19,7 @@
 
 #include "dungeon/dungeon_generator.h"
 #include "dungeon/dungeon_raycast.h"
+#include "dungeon/floor_access.h"
 #include "lighting/lighting.h"
 
 void rlBegin(int mode) { (void)mode; }
@@ -60,7 +61,7 @@ int main(void)
         if (!f->hasPanel) { ++lamps; continue; }
         ++panels;
         if (Tile_IsSolid(&g_floor, f->tx, f->tz)) onOpen = 0;
-        if (!Dungeon_HasCeiling(f->tx, f->tz)) hasCeiling = 0;
+        if (!Floor_HasCeiling(&g_floor, f->tx, f->tz)) hasCeiling = 0;
         for (int j = 0; j < i; ++j) {
             const Fixture *g = Lighting_Fixture(j);
             if (!g->hasPanel) continue;
@@ -216,6 +217,67 @@ int main(void)
     const double ms = 1000.0 * (double)(clock() - t0) / CLOCKS_PER_SEC / 2000.0;
     printf("    Lighting_Update: %.3f ms per call on this machine\n", ms);
     Check(ms < 1.0, "updating the whole floor's light takes under a millisecond here");
+
+    // ---- floors bigger than 45 by 45 ----------------------------------------------------------------------------------------
+    printf("Floors bigger than 45 by 45\n");
+    {
+        static const int SIZES[3] = { 64, 100, 128 };
+        static float fullT[MAP_MAX][MAP_MAX], staleT[MAP_MAX][MAP_MAX], fullC[MAP_MAX + 1][MAP_MAX + 1];
+        int capOk = 1, windowSame = 1, outsideKept = 1, changedSomething = 0;
+        for (int si = 0; si < 3; ++si) {
+            const int sz = SIZES[si];
+            for (int k = 0; k < 4; ++k) {
+                GenerateFloorMapSized(&g_floor, 1 + k, 6000u + (unsigned)(si * 10 + k), sz, sz);
+                Lighting_BuildForFloor(&g_floor, 1 + k);
+                long pool = 0;
+                for (int i = 0; i < Lighting_FixtureCount(); ++i) pool += Lighting_Fixture(i)->count;
+                if (Lighting_FixtureCount() > LIGHT_MAX_FIXTURES - 4 || pool > LIGHT_POOL_ENTRIES * 95L / 100L) capOk = 0;
+                // Viewers: the south-east corner, the middle, the north-west corner, on the stairs, and far outside the floor.
+                const float views[5][2] = { { (float)(sz - 3) * TILE_SIZE, (float)(sz - 3) * TILE_SIZE }, { (float)(sz / 2) * TILE_SIZE, (float)(sz / 2) * TILE_SIZE },
+                                            { 2.0f, 2.0f }, { (float)(sz - 5) * TILE_SIZE, 4.0f * TILE_SIZE }, { -400.0f, -400.0f } };
+                for (int v = 0; v < 5; ++v) {
+                    const float tOld = 3.0f + (float)k, tNew = 11.37f + (float)v;
+                    Lighting_Update(tNew);                                      // the answer: the whole floor at tNew
+                    for (int z = 0; z < sz; ++z) for (int x = 0; x < sz; ++x) fullT[z][x] = Lighting_Tile(x, z);
+                    for (int cj = 0; cj <= sz; ++cj) for (int ci = 0; ci <= sz; ++ci) fullC[cj][ci] = Lighting_Corner(ci, cj);
+                    Lighting_Update(tOld);                                      // stale values, as at an earlier frame
+                    for (int z = 0; z < sz; ++z) for (int x = 0; x < sz; ++x) staleT[z][x] = Lighting_Tile(x, z);
+                    Lighting_UpdateAround(tNew, views[v][0], views[v][1]);
+                    const int cx = (int)floorf(views[v][0] / TILE_SIZE + 0.5f), cz = (int)floorf(views[v][1] / TILE_SIZE + 0.5f);
+                    for (int z = 0; z < sz; ++z)
+                        for (int x = 0; x < sz; ++x) {
+                            const float now = Lighting_Tile(x, z);
+                            const int inWin = abs(x - cx) <= LIGHT_WINDOW_TILES && abs(z - cz) <= LIGHT_WINDOW_TILES;
+                            const int farOut = abs(x - cx) > LIGHT_WINDOW_TILES + 2 * 6 + 1 || abs(z - cz) > LIGHT_WINDOW_TILES + 2 * 6 + 1;
+                            if (inWin && now != fullT[z][x]) windowSame = 0;
+                            if (farOut && now != staleT[z][x]) outsideKept = 0;
+                            if (now != staleT[z][x]) changedSomething = 1;
+                        }
+                    for (int cj = 0; cj <= sz; ++cj)
+                        for (int ci = 0; ci <= sz; ++ci) {
+                            const float now = Lighting_Corner(ci, cj);
+                            const int inWin = ci >= cx - LIGHT_WINDOW_TILES && ci <= cx + LIGHT_WINDOW_TILES + 1 && cj >= cz - LIGHT_WINDOW_TILES && cj <= cz + LIGHT_WINDOW_TILES + 1;
+                            if (inWin && now != fullC[cj][ci]) windowSame = 0;
+                        }
+                }
+            }
+        }
+        Check(capOk, "a 64, 100 or 128 floor stays inside the fixture cap and the influence pool (95 percent of it at most)");
+        Check(changedSomething, "the windowed update does change the light (the comparison below is not of two stale floors)");
+        Check(windowSame, "inside the window the windowed update gives exactly the whole-floor update's tile and corner light, for five viewer places on 12 floors (a corner on the window's edge reads the tile outside it, so that one is fresh too)");
+        Check(outsideKept, "and far outside it nothing is touched");
+
+        GenerateFloorMapSized(&g_floor, 3, 777u, 128, 128);
+        Lighting_BuildForFloor(&g_floor, 3);
+        clock_t b0 = clock();
+        for (int k = 0; k < 1000; ++k) Lighting_Update(0.016f * (float)k);
+        const double fullMs = 1000.0 * (double)(clock() - b0) / CLOCKS_PER_SEC / 1000.0;
+        b0 = clock();
+        for (int k = 0; k < 1000; ++k) Lighting_UpdateAround(0.016f * (float)k, 128.0f, 128.0f);
+        const double winMs = 1000.0 * (double)(clock() - b0) / CLOCKS_PER_SEC / 1000.0;
+        printf("    128 by 128: whole floor %.3f ms, window %.3f ms per call on this machine\n", fullMs, winMs);
+        Check(winMs < 0.5, "on 128 by 128 the window update takes under half a millisecond here");
+    }
 
     if (getenv("LIGHT_DUMP")) {
         Lighting_Update(10.0f);

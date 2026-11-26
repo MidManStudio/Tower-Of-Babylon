@@ -25,6 +25,7 @@ static const float R_EPS = 0.01f;
 static void Walls(void)
 {
     memset(&g_map, 0, sizeof g_map);
+    g_map.w = MAP_WIDTH; g_map.h = MAP_HEIGHT;      // a floor built by hand has the size of the solo floor
     g_map.seed = 7; g_map.floorNumber = 1;
     for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) g_map.grid[z][x].type = TILE_WALL;
 }

@@ -16,6 +16,7 @@
 #include "../enemies/enemy_manager.h"
 #include "../floor/floor_game.h"
 #include "../swarm/swarm_config.h"
+#include "../dungeon/staircase.h"
 
 // This file is what SimTick and the functions around it in main.c became, moved as they were (docs/sim.md, "How it was moved"). The
 // three differences, all in how the outside world is told: a message is Say(), a sound is Snd(), and the lights, the fade and the
@@ -540,12 +541,15 @@ void GameSim_TorchFrame(GameSim *s, float dt)
 }
 
 // ---- start ---------------------------------------------------------------------------------------------
-void GameSim_Init(GameSim *s, uint32_t towerSeed)
+void GameSim_Init(GameSim *s, uint32_t towerSeed) { GameSim_InitSized(s, towerSeed, TOWER_FLOOR_TILES); }
+
+void GameSim_InitSized(GameSim *s, uint32_t towerSeed, int tiles)
 {
     memset(s, 0, sizeof *s);
     Flashlight_Init(&s->torch);
     s->shotRng = towerSeed * 2654435761u | 1u;
-    FloorWindow_Init(&s->window, towerSeed, 1);
+    FloorWindow_InitSized(&s->window, towerSeed, 1, tiles);
+    Staircase_SetFrame(s->window.tiles, s->window.tiles);       // the stair code lays itself out for the floor in play
     s->map = FloorWindow_Current(&s->window);
 }
 

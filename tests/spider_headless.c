@@ -38,6 +38,7 @@ static FloorMap g_floor;
 static void MakeRoom(FloorMap *f, int x0, int z0, int x1, int z1)
 {
     memset(f, 0, sizeof *f);
+    f->w = MAP_WIDTH; f->h = MAP_HEIGHT;            // a floor built by hand has the size of the solo floor
     for (int z = 0; z < MAP_HEIGHT; ++z)
         for (int x = 0; x < MAP_WIDTH; ++x) { f->grid[z][x].type = TILE_WALL; f->grid[z][x].variant = WALL_SHELL; }
     for (int z = z0; z <= z1; ++z)

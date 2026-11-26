@@ -100,21 +100,22 @@ void Pickups_SpawnForFloor(const FloorMap *f, int floorNumber, unsigned owned)
     g_rng = (f->seed ^ ((uint32_t)floorNumber * 2654435761u)) | 1u;
 
     // Walking distance from the arrival point over open tiles.
-    static int dist[MAP_HEIGHT][MAP_WIDTH];
-    static int queue[MAP_WIDTH * MAP_HEIGHT];
-    for (int z = 0; z < MAP_HEIGHT; ++z) for (int x = 0; x < MAP_WIDTH; ++x) dist[z][x] = -1;
+    static int dist[MAP_MAX][MAP_MAX];
+    static int queue[MAP_MAX * MAP_MAX];
+    const int W = f->w, H = f->h;
+    for (int z = 0; z < H; ++z) for (int x = 0; x < W; ++x) dist[z][x] = -1;
     const int sx = (int)(f->startX / TILE_SIZE + 0.5f), sz = (int)(f->startZ / TILE_SIZE + 0.5f);
     int head = 0, tail = 0;
-    if (!Floor_Solid(f, 0, sx, sz)) { dist[sz][sx] = 0; queue[tail++] = sz * MAP_WIDTH + sx; }
+    if (!Floor_Solid(f, 0, sx, sz)) { dist[sz][sx] = 0; queue[tail++] = sz * W + sx; }
     while (head < tail) {
-        const int cz = queue[head] / MAP_WIDTH, cx = queue[head] % MAP_WIDTH;
+        const int cz = queue[head] / W, cx = queue[head] % W;
         ++head;
         const int dx[4] = { 1, -1, 0, 0 }, dz[4] = { 0, 0, 1, -1 };
         for (int k = 0; k < 4; ++k) {
             const int nx = cx + dx[k], nz = cz + dz[k];
             if (Floor_Solid(f, 0, nx, nz) || dist[nz][nx] >= 0) continue;
             dist[nz][nx] = dist[cz][cx] + 1;
-            queue[tail++] = nz * MAP_WIDTH + nx;
+            queue[tail++] = nz * W + nx;
         }
     }
 
@@ -152,7 +153,7 @@ void Pickups_SpawnForFloor(const FloorMap *f, int floorNumber, unsigned owned)
     int placedX[MAX_PICKUPS], placedZ[MAX_PICKUPS], placed = 0;
     for (int i = 0; i < n; ++i) {
         for (int tries = 0; tries < 400; ++tries) {
-            const int tx = 1 + (int)(Rand() % (uint32_t)(MAP_WIDTH - 2)), tz = 1 + (int)(Rand() % (uint32_t)(MAP_HEIGHT - 2));
+            const int tx = 1 + (int)(Rand() % (uint32_t)(W - 2)), tz = 1 + (int)(Rand() % (uint32_t)(H - 2));
             if (dist[tz][tx] < 10) continue;
             if (Floor_Reserved(f, tx, tz)) continue;
             bool apart = true;

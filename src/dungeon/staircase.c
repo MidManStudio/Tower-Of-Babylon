@@ -26,10 +26,20 @@ static const DoorDef k_doors[DOOR_COUNT] = {
     { ALC_X1, -1.0f, 80.0f, 0.0f },
 };
 
+// A door of the floor in use: the up door stands in the north alcove and moves with the east edge, the down door on the east wall
+// of the south alcove and moves with both.
+static DoorDef DoorOf(DoorId id)
+{
+    DoorDef d = k_doors[id];
+    d.wallX += Stair_FrameX();
+    if (id == DOOR_DOWN) d.cz += Stair_FrameZ();
+    return d;
+}
+
 // ---- Doors -----------------------------------------------------------------
 bool Staircase_DoorInRange(DoorId id, Vector3 p)
 {
-    const DoorDef *d = &k_doors[id];
+    const DoorDef dd = DoorOf(id), *d = &dd;
     if (fabsf(p.z - d->cz) > DOOR_W * 0.5f + 0.9f) return false;
     if (fabsf(p.x - d->wallX) >= DOOR_USE_DIST) return false;
     return p.y > d->baseY - 0.6f && p.y < d->baseY + 1.2f;
@@ -38,7 +48,7 @@ bool Staircase_DoorInRange(DoorId id, Vector3 p)
 static bool g_upDoorLocked = false;
 void Staircase_SetUpDoorLocked(bool locked) { g_upDoorLocked = locked; }
 
-void Staircase_DoorPosition(DoorId id, float *x, float *z) { *x = k_doors[id].wallX; *z = k_doors[id].cz; }
+void Staircase_DoorPosition(DoorId id, float *x, float *z) { const DoorDef d = DoorOf(id); *x = d.wallX; *z = d.cz; }
 
 bool Staircase_DoorLocked(DoorId id, const FloorMap *floor)
 {
@@ -48,14 +58,14 @@ bool Staircase_DoorLocked(DoorId id, const FloorMap *floor)
 
 void Staircase_SpawnBelow(Vector3 *pos, float *yaw)
 {
-    const DoorDef *d = &k_doors[DOOR_DOWN];
+    const DoorDef dd = DoorOf(DOOR_DOWN), *d = &dd;
     *pos = (Vector3){ d->wallX + d->nx * (DOOR_USE_DIST + 0.4f), d->baseY, d->cz };
     *yaw = -PI / 2.0f;     // west, away from the door and into the hall
 }
 
 void Staircase_SpawnAbove(Vector3 *pos, float *yaw)
 {
-    const DoorDef *d = &k_doors[DOOR_UP];
+    const DoorDef dd = DoorOf(DOOR_UP), *d = &dd;
     *pos = (Vector3){ d->wallX + d->nx * (DOOR_USE_DIST + 0.2f), d->baseY, d->cz };
     *yaw = PI / 2.0f;      // east, along the flight that leads down
 }
@@ -65,7 +75,8 @@ void Staircase_SpawnAbove(Vector3 *pos, float *yaw)
 
 static void Slab(float x0, float x1, float y0, float y1, float z0, float z1, Color c)
 {
-    DrawCube((Vector3){ 0.5f * (x0 + x1), 0.5f * (y0 + y1), 0.5f * (z0 + z1) }, x1 - x0, y1 - y0, z1 - z0, c);
+    const float ox = Stair_FrameX();                       // the shell of the floor in use (drawing is laid out for 45 by 45)
+    DrawCube((Vector3){ 0.5f * (x0 + x1) + ox, 0.5f * (y0 + y1), 0.5f * (z0 + z1) }, x1 - x0, y1 - y0, z1 - z0, c);
 }
 
 static void DrawShaft(void)
@@ -106,12 +117,13 @@ static void DrawFlightRail(bool runA, float z)
     const float xe = runA ? RUN_X_HIGH - STEP_TREAD * 0.5f : RUN_X_LOW + STEP_TREAD * 0.5f;
     const float y0 = (runA ? 0.0f : RUN_RISE) + STEP_RISE;
     const float y1 = (runA ? 0.0f : RUN_RISE) + RUN_RISE;
+    const float ox = Stair_FrameX();
 
-    DrawCylinderEx((Vector3){ xs, y0 + RAIL_HEIGHT, z }, (Vector3){ xe, y1 + RAIL_HEIGHT, z }, 0.04f, 0.04f, 6, rail);
+    DrawCylinderEx((Vector3){ xs + ox, y0 + RAIL_HEIGHT, z }, (Vector3){ xe + ox, y1 + RAIL_HEIGHT, z }, 0.04f, 0.04f, 6, rail);
     const int posts[5] = { 0, 4, 8, 12, 15 };
     for (int k = 0; k < 5; ++k) {
         const float t = (float)posts[k] / (float)(RUN_STEPS - 1);
-        const float x = xs + (xe - xs) * t;
+        const float x = xs + (xe - xs) * t + ox;
         const float top = y0 + (y1 - y0) * t;
         DrawCube((Vector3){ x, top + RAIL_HEIGHT * 0.5f, z }, 0.07f, RAIL_HEIGHT, 0.07f, rail);
     }
@@ -120,6 +132,8 @@ static void DrawFlightRail(bool runA, float z)
 static void DrawLevelRail(float x0, float z0, float x1, float z1, float y)
 {
     const Color rail = (Color){ 120, 30, 30, 255 };
+    x0 += Stair_FrameX();
+    x1 += Stair_FrameX();
     DrawCylinderEx((Vector3){ x0, y + RAIL_HEIGHT, z0 }, (Vector3){ x1, y + RAIL_HEIGHT, z1 }, 0.04f, 0.04f, 6, rail);
     DrawCube((Vector3){ x0, y + RAIL_HEIGHT * 0.5f, z0 }, 0.07f, RAIL_HEIGHT, 0.07f, rail);
     DrawCube((Vector3){ x1, y + RAIL_HEIGHT * 0.5f, z1 }, 0.07f, RAIL_HEIGHT, 0.07f, rail);
@@ -141,7 +155,7 @@ static Color Mix(Color a, Color b, float t)
 
 static void DrawDoor(DoorId id, float open, bool locked)
 {
-    const DoorDef *d = &k_doors[id];
+    const DoorDef dd = DoorOf(id), *d = &dd;
     const float y0 = d->baseY, y1 = d->baseY + DOOR_H;
     const Color frame = (Color){ 36, 36, 42, 255 };
 
@@ -168,7 +182,7 @@ static void DrawDoor(DoorId id, float open, bool locked)
 void DrawStairs(const FloorMap *floor, const float doorOpen[DOOR_COUNT], Vector3 viewer)
 {
     // The flight, shaft and rails are a few thousand vertices. Skip them when they are far away.
-    if (hypotf(viewer.x - 80.0f, viewer.z - 8.0f) < STAIRS_DRAW_RANGE) {
+    if (hypotf(viewer.x - (80.0f + Stair_FrameX()), viewer.z - 8.0f) < STAIRS_DRAW_RANGE) {
         DrawShaft();
         DrawFlight();
 
@@ -181,7 +195,7 @@ void DrawStairs(const FloorMap *floor, const float doorOpen[DOOR_COUNT], Vector3
     }
 
     for (int i = 0; i < DOOR_COUNT; ++i) {
-        const DoorDef *d = &k_doors[i];
+        const DoorDef dd = DoorOf((DoorId)i), *d = &dd;
         if (hypotf(viewer.x - d->wallX, viewer.z - d->cz) > STAIRS_DRAW_RANGE) continue;
         DrawDoor((DoorId)i, doorOpen[i], Staircase_DoorLocked((DoorId)i, floor));
     }

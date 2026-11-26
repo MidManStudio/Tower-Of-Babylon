@@ -18,9 +18,14 @@ typedef struct {
     int      currentFloor;
     uint32_t towerSeed;
     int      generations;                 // floors generated so far
+    int      tiles;                       // every floor of the window is this many tiles on a side
 } FloorWindow;
 
-void      FloorWindow_Init(FloorWindow *w, uint32_t towerSeed, int startFloor);
+void      FloorWindow_Init(FloorWindow *w, uint32_t towerSeed, int startFloor);       // 45 by 45 floors
+
+// The same with floors of tiles by tiles (FLOOR_TILES_MIN to FLOOR_TILES_MAX). The stair code has to be told the size of the floor in
+// play as well (Staircase_SetFrame); GameSim_Init does both.
+void      FloorWindow_InitSized(FloorWindow *w, uint32_t towerSeed, int startFloor, int tiles);
 FloorMap *FloorWindow_Current(FloorWindow *w);
 
 // NULL when floorNumber is outside the window or below floor 1.

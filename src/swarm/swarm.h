@@ -33,8 +33,9 @@ typedef struct {
     Vector3     r[SWARM_MAX_DOTS];         // where it was when the last step began (drawing blends from here: Swarm_BeginTick)
     float       wormSpeed[SWARM_MAX_WORMS], wormPhase[SWARM_MAX_WORMS];
     int         head[SWARM_HASH], next[SWARM_MAX_DOTS];      // the grid that finds a dot's neighbours
-    int16_t     flow[MAP_HEIGHT][MAP_WIDTH];                 // steps to the player's tile by open tiles, -1 for wall or unreachable
+    int16_t     flow[MAP_MAX][MAP_MAX];                      // steps to the player's tile by open tiles, -1 for wall or unreachable (the floor's w by h corner)
     int         flowTx, flowTz, flowFloor;
+    int         flowW, flowH;                                // the size of the floor the field was made for; 0 until the first field
     uint32_t    flowSeed;
     Vector3     core;                      // the middle of the swarm: the centre of its health box
     float       coreHalf;

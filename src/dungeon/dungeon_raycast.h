@@ -22,8 +22,6 @@ typedef struct {
     Vector3 normal;   // unit, pointing out of the surface
 } DungeonHit;
 
-// The two stair alcoves are open to the shaft above, so they have no ceiling.
-bool Dungeon_HasCeiling(int tileX, int tileZ);
 
 // Nearest surface along the ray, up to maxDist. dir must be a unit vector. A ray
 // that starts inside a solid tile reports no hit for that tile.

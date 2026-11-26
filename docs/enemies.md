@@ -149,3 +149,5 @@ Not verified: how the spider looks and moves on screen, speed on the phone, and 
 
 ### Drawing between steps
 `Enemies_BeginTick` (before each simulation step: remembers each monster's and spider's position) and `Enemies_SetRenderAlpha` (before drawing: how far between the last two steps) let the picture blend monsters between 30 Hz steps (`sim.md`). A new monster starts with nothing to blend from. Spiders: the body and the hips blend, the planted feet do not.
+
+**Floors of any size (round R1a).** The spiders' nav field and the monster spawn candidate lists are sized for 128 by 128 floors (`MAX_CANDIDATES` 1,024 for spiders, 2,048 for `enemy_manager`) and use the floor's own size and shell (the arrival and safe-distance points). A nav field over a whole 128 by 128 floor takes about 0.27 ms on x86, when the player changes tile or at most every 0.5 s. The counts of monsters are not scaled with the area yet.

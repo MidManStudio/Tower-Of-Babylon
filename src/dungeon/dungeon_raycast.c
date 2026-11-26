@@ -12,12 +12,6 @@
 
 static int TileOfWorld(float w) { return Floor_TileOfWorld(w); }
 
-bool Dungeon_HasCeiling(int tx, int tz)
-{
-    if (tx < 0 || tx >= MAP_WIDTH || tz < 0 || tz >= MAP_HEIGHT) return false;
-    return !(tx >= STAIR_WALL_X && (tz <= UP_ALCOVE_Z1 || tz >= DOWN_ALCOVE_Z0));
-}
-
 static bool InsideMapXZ(const FloorMap *f, float x, float z)
 {
     return x >= -HALF && x <= ((float)Floor_Width(f) - 0.5f) * TILE_SIZE && z >= -HALF && z <= ((float)Floor_Depth(f) - 0.5f) * TILE_SIZE;
