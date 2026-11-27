@@ -53,6 +53,8 @@ lib="${CARGO_TARGET_DIR:-$me/target}/release/$libname"
 [ -f "$lib" ] || { echo "build_server: cargo finished but $lib is missing (is CARGO_TARGET_DIR set somewhere else?)"; exit 1; }
 libs=("$lib" -lm -lpthread -ldl)
 set -e
-$cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_SERVER_MAIN -Isrc -Iraylib/src src/server/server_main.c src/net/net_host.c src/net/net_server.c src/net/net_history.c "${common[@]}" "${libs[@]}" -o "$out/tower_server"
+# The server runs the creatures of the game (src/gvex/gvex_world.c, on Flecs): Flecs is one translation unit built on its own (it wants -std=gnu99; docs/gvex_session.md).
+$cc -O2 -std=gnu99 -Ithird_party/flecs -c third_party/flecs/tob_flecs.c -o "$out/tob_flecs.o" || exit 1
+$cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_GVEX=1 -DTOWER_SERVER_MAIN -Isrc -Iraylib/src -Ithird_party/flecs src/server/server_main.c src/net/net_host.c src/net/net_server.c src/net/net_history.c src/gvex/gvex_world.c "$out/tob_flecs.o" "${common[@]}" "${libs[@]}" -o "$out/tower_server"
 $cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_BOT_MAIN -Isrc -Iraylib/src src/server/bot_main.c src/net/net_client.c src/net/net_dial.c "${common[@]}" "${libs[@]}" -o "$out/tower_bot"
 echo "built $out/tower_server and $out/tower_bot$([ $quic -eq 1 ] && echo ' (with QUIC)')"

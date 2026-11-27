@@ -4,9 +4,12 @@
 // ============================================================================
 #include "net_server.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "../dungeon/dungeon_generator.h"
+#include "../gvex/gvex_world.h"
+#include "../platform/platform.h"
 #include "net_driver.h"
 
 static void Send(NetTransport *tp, const NetMsg *m, bool reliable)
@@ -23,6 +26,17 @@ void NetServer_Init(NetServer *s, uint32_t floorSeed, int floorNumber)
     s->floorSeed = floorSeed;
     s->floorNumber = floorNumber;
     GenerateFloorMap(&s->map, floorNumber, floorSeed);
+#if TOWER_GVEX
+    s->gvex = GvexWorld_Create(&s->map, floorNumber);                 // the creatures of the floor, where the single-player game would put its cylinders
+#endif
+}
+
+void NetServer_Free(NetServer *s)
+{
+#if TOWER_GVEX
+    GvexWorld_Destroy(s->gvex);
+#endif
+    s->gvex = NULL;
 }
 
 bool NetServer_RewoundPose(const NetServer *s, uint8_t viewLag, int id, Vector3 *pos, float *yaw)
@@ -143,6 +157,35 @@ static bool TakeCmd(NetServerClient *cl, uint32_t t, NetCmd *out)
     return true;
 }
 
+#if TOWER_GVEX
+// The creatures' tick: they sense the players that are in the game (started, with the noise each makes) and move; what they are after it goes to the clients.
+static int StepCreatures(NetServer *s, NetMonster *out)
+{
+    if (!s->gvex) return 0;
+    GvexTarget targets[GVEX_MAX_TARGETS];
+    memset(targets, 0, sizeof targets);
+    for (int i = 0; i < NET_MAX_PLAYERS && i < GVEX_MAX_TARGETS; ++i) {
+        const NetServerClient *cl = &s->c[i];
+        if (!cl->used || !cl->welcomed || !cl->started) continue;
+        targets[i] = (GvexTarget){ true, cl->player.position.x, cl->player.position.y, cl->player.position.z, PlayerNoise(&cl->player) };
+    }
+    GvexWorld_Step(s->gvex, targets, GVEX_MAX_TARGETS, NET_TICK_SECS);
+    GvexRecord recs[NET_MAX_MONSTERS];
+    const int n = GvexWorld_Records(s->gvex, recs, NET_MAX_MONSTERS);
+    for (int i = 0; i < n; ++i) {
+        const GvexRecord *r = &recs[i];
+        float yaw = fmodf(r->yaw, 6.28318531f); if (yaw < 0.0f) yaw += 6.28318531f;
+        float hp = r->maxHealth > 0.0f ? r->health / r->maxHealth : 0.0f;
+        if (hp < 0.0f) hp = 0.0f;
+        if (hp > 1.0f) hp = 1.0f;
+        out[i] = (NetMonster){ r->id, r->kind, NET_MON_FLAGS(r->state, r->variant),
+                               (int32_t)lroundf(r->x * 1000.0f), (int32_t)lroundf(r->y * 1000.0f), (int32_t)lroundf(r->z * 1000.0f),
+                               (uint16_t)((uint32_t)lroundf(yaw / 6.28318531f * 65536.0f) & 0xFFFFu), (uint8_t)lroundf(hp * 255.0f) };
+    }
+    return n;
+}
+#endif
+
 void NetServer_Tick(NetServer *s, double nowMs)
 {
     s->nowMs = nowMs;
@@ -165,6 +208,10 @@ void NetServer_Tick(NetServer *s, double nowMs)
         }
         NetSim_Step(&cl->player, &cmd, &s->map);
     }
+#if TOWER_GVEX
+    NetMonster mons[NET_MAX_MONSTERS];
+    const int nMons = StepCreatures(s, mons);
+#endif
     NetHistory_Begin(&s->hist, T);                                                          // where everyone is after this tick, for the shots of the next ones
     for (int i = 0; i < NET_MAX_PLAYERS; ++i) {
         const NetServerClient *cl = &s->c[i];
@@ -181,6 +228,10 @@ void NetServer_Tick(NetServer *s, double nowMs)
             if (j == i || !s->c[j].used || !s->c[j].welcomed) continue;
             NetSim_Remote(&s->c[j].player, s->c[j].id, &m.u.snap.remote[m.u.snap.nRemote++]);
         }
+#if TOWER_GVEX
+        memcpy(m.u.snap.monster, mons, sizeof(NetMonster) * (size_t)nMons);
+        m.u.snap.nMonster = (uint8_t)nMons;
+#endif
         Send(&cl->tp, &m, false);
         ++s->snapshotsSent;
     }

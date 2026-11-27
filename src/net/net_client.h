@@ -25,7 +25,10 @@
 typedef enum { NETC_IDLE = 0, NETC_HELLO, NETC_PLAYING, NETC_CLOSED } NetClientState;
 typedef NetCmd (*NetCmdFn)(void *user, uint32_t tick);       // the player's wishes for a tick
 
-typedef struct { uint32_t serverTick; double arrivedMs; int n; NetRemote r[NET_MAX_PLAYERS - 1]; } NetClientSnap;
+typedef struct { uint32_t serverTick; double arrivedMs; int n; NetRemote r[NET_MAX_PLAYERS - 1]; int nm; NetMonster m[NET_MAX_MONSTERS]; } NetClientSnap;
+
+// A creature of the server's world as the screen draws it (NetClient_MonsterViews). health is 0 to 1.
+typedef struct { uint16_t id; uint8_t kind, variant, state; Vector3 pos; float yaw; float health; } NetMonsterView;
 
 typedef struct {
     NetTransport    tp;
@@ -69,6 +72,9 @@ int  NetClient_Update(NetClient *c, double nowMs, NetCmdFn fn, void *user);
 void NetClient_Leave(NetClient *c);                                                         // tells the server and closes
 // How the connection stands (NETLINK_NO_SIGNAL is what to show as NO SIGNAL), when the transport watches it (net_driver.h): false for a transport that does not.
 bool NetClient_Link(const NetClient *c, NetLinkInfo *out);
+// The creatures the server told us about, interpolated like the other players (shown NET_INTERP_TICKS behind the newest snapshot). A creature is shown once two
+// snapshots have it (or held where the newest one has it, when only one does); one that is gone from the newest snapshots goes at once. Returns how many were written.
+int  NetClient_MonsterViews(const NetClient *c, double nowMs, NetMonsterView *out, int max);
 
 Vector3 NetClient_ViewPos(const NetClient *c);                                              // where to draw the player: predicted, plus the fading jump
 // The same, between the last two ticks: alpha is 0 at the older and 1 at the newest (NetClient_Alpha is how far the next tick has got), so

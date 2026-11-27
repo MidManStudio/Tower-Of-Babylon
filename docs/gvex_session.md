@@ -1,6 +1,6 @@
 # Two players and the G.V.E.X. in one session: the plan
 
-**Decided (2026-11-25):** monsters come into sessions, and they are the G.V.E.X. (`design/10-gvex-dossier.md`); the game uses an ECS for them, **Flecs** (chosen earlier; mid-ecs cannot do this use yet, see mid-engine's `docs/research-ecs-from-a-c-game.md`). This file is the plan from what the code is today to "two players on two phones fighting the same creatures". Nothing in it is built yet except where it says so.
+**Decided (2026-11-25):** monsters come into sessions, and they are the G.V.E.X. (`design/10-gvex-dossier.md`); the game uses an ECS for them, **Flecs** (chosen earlier; mid-ecs cannot do this use yet, see mid-engine's `docs/research-ecs-from-a-c-game.md`). This file is the plan from what the code was to "two players on two phones fighting the same creatures", and says what is built. **Built and tested: slice S1** (the same ghouls on both screens). Not built: S2 to S5, and what the weapons need (the end of this file).
 
 ## Where things stand (checked in the code)
 
@@ -16,13 +16,14 @@ Flecs worlds are **instances**: a server's world of creatures and a client's wor
 
 ## The path, in slices (each ends in something two phones can check)
 
-**S1: the same ghouls on both screens.**
-- Vendor a pinned custom build of Flecs under `third_party/flecs/` (see the decision below).
-- A `gvex` module (C, in `src/gvex/`) owns a Flecs world for a session: components `Pos`, `Yaw`, `Health`, `Tier`, `Specimen`, `Variant`, `Senses`; the first system set is the Ghoul (`X0-01`): wake, sense (sight and hearing, the rules of `design/03`), chase the nearest player, step.
-- The server world is spawned from the floor seed like the single-player enemies (same lattice rule, `enemies.md`), so the same seed gives the same ghouls.
-- Snapshots carry them: one record per creature (id, designation byte, variant and state byte, position, yaw, health in a byte: about 16 to 19 bytes each by the player records' own sizes), so roughly 55 creatures fit in one datagram beside four players (an estimate to measure); more than that needs the nearest N per recipient. The protocol version goes to 5.
-- Clients keep a **view world** of what the server said, interpolated like the other players (`NetClient_RemoteView`), and draw from it.
-- Test: a headless run with two players and a few ghouls over the pretend network, checking that both views agree with the server's within the interpolation delay, with loss and reordering; and that two worlds in one process do not touch.
+**S1: the same ghouls on both screens (built, round 9).**
+- Flecs is vendored (`third_party/flecs/`, below). `src/gvex/gvex_world.c` owns **one Flecs world per game**: components `GvPos`, `GvYaw`, `GvBody`, `GvHealth`, `GvIdent`, `GvSenses`, `GvMove`, `GvState`, `GvTarget`, two systems in the update phase (`GhoulSense`, then `GhoulMove`), a query that reads the creatures out in id order, `GvexWorld_Damage` (a creature at 0 health is deleted).
+- The Ghoul (`X0-01`) follows the single-player cylinder enemies' rules, over every player at once: it **sees** a player within 14 m with a clear line, **hears** one whose noise (`PlayerNoise`) reaches it, even through walls, **stays** after what it sensed for 3 s, **chases** the nearest player it senses (or, while it is staying, the nearest), **attacks** within 1.8 m (no damage yet) and walks a wall at a time so it slides along walls. The three **mobility grades** of the dossier come from the creature's hash (slow, medium, runner) and scale the single-player chase speed by 0.75, 1.0 and 1.25: **placeholders**, the dossier gives no numbers (`Gvex_GradeSpeedFactor`; yours to tune, they will move into `monsters.mdix`).
+- The spawns are `EnemyPlan_Spawns` (`src/enemies/enemy_plan.h`, header-only), which `enemy_manager.c` now uses too: **one copy of where cylinders spawn, what they look like, where they can stand and what they can see**, so a session and the solo game cannot drift (the single-player tests pass unchanged).
+- Snapshots carry them (protocol 5, `net.md`): 19 bytes a creature, 32 at most, 754 bytes for a full snapshot. The server (`NetServer`) steps the world every tick with the started players as targets; the client keeps what the server said in its snapshot ring and interpolates it (`NetClient_MonsterViews`). **The client's view is plain arrays, not a Flecs world** (the plan said a view world): a view has no systems to run, so an ECS would only be a second place to keep the same numbers. Where the ECS earns its keep is the server.
+- `PlayUI_Draw3D` draws them with `EnemyLook` from the floor map's seed and the id, lit like the other players.
+- **Limits of S1:** the floor only (no stairs: the stair modules are process-global too, `sim.md`), no damage to players, no way to hurt a creature except `GvexWorld_Damage` from code, one kind. A host with `TOWER_GVEX` 0 sends no creatures and the format is the same.
+- Tests: `tests/gvex_check.sh` (`testing.md`): 72 checks under the sanitizers (38 for the world, 34 for the wire and the two screens), the earlier 60 of them also run on 32-bit ARM under qemu; a mutation pass over the glue: 29 of 30 caught, the survivor is equivalent (`net.md`, `tests/net_gvex_test.c`).
 
 **S2: they hurt.** The server applies a ghoul's attack to the player's health (the same `DamagePlayer` rules as single player), the owner's state carries health, and death does something. **Needs a decision** (below).
 
@@ -36,13 +37,26 @@ Single-player keeps its own enemy modules until the Flecs ones reach parity, the
 
 ## Decisions (mine, to be confirmed or changed)
 
-1. **Vendor Flecs or fetch it.** Recommended: vendor the pinned, custom-built amalgamation under `third_party/flecs/` (about 5 MB of source in the repo), because the work happens on a phone over GitHub and a build that needs the network for a dependency is the build that fails at the wrong moment. Not decided; it changes the repository's size.
+1. **Vendor Flecs or fetch it.** Done as recommended: the pinned amalgamation is in `third_party/flecs/` (5.2 MB of source in the repository), because the work happens on a phone over GitHub and a build that needs the network for a dependency is the build that fails at the wrong moment. Say if you would rather have it fetched.
 2. **Death in a session** (needed before S2): down and out of the match, back at the start of the floor after a delay (single player's rule), or spectating (`design/06-multiplayer.md`, "The audience"). The design already leans to the audience.
 3. **Hit testing for S3** (`net_shots.md`, decision 4): hitscan against rewound poses first, projectiles judged for their whole flight later. Recommended because it is the smaller step and the shot seed already makes every pellet reproducible.
 4. **Teams** (players hurt each other but not teammates, as you decided) are a relationship too; they are not needed for S1 to S3 if a session starts with one team.
 
+## Flecs in the repository
+
+`third_party/flecs/` holds `flecs.c` and `flecs.h` unchanged from the Flecs 4.2.0 distribution (commit `7d1bc7d`, 2026-11-24, MIT licence kept), a wrapper `tob_flecs.h` that defines the custom build (`FLECS_CUSTOM_BUILD` and only `FLECS_SYSTEM`, `FLECS_PIPELINE`, `FLECS_TIMER`, `FLECS_MODULE`, `FLECS_PARSER`, `FLECS_QUERY_DSL`, `FLECS_LOG`, `FLECS_OS_API_IMPL`) and **must be included instead of `flecs.h`** (the same macros have to be defined where `flecs.c` is compiled and where `flecs.h` is read), and `tob_flecs.c`, the one translation unit that compiles it (`-std=gnu99`; about 10 seconds, a 1.4 MB object on x86; 0.5 MB of code on armv7). `build_server.sh` compiles it on its own; `build_android.sh` compiles it as a separate unit when the driver library is in (`-DTOWER_GVEX=1`), with `-w` for Flecs's own warnings; the web build does not have it. `third_party/flecs/README.md` says how to refresh it.
+
+## `gvex_world.h` and `gvex_world.c`
+
+**What it does:** one Flecs world per `GvexWorld`, no file-scope state (two worlds in one process do not touch: tested), compiled only with `TOWER_GVEX` (`platform.h`: native only, an `#error` on the web; otherwise an empty unit). `GvexWorld_Create(map, tier)` spawns the floor's ghouls from `EnemyPlan_Spawns`; `GvexWorld_Step(w, targets, n, dt)` runs the pipeline once with the players as `GvexTarget`s (a position and the noise they make); `GvexWorld_Records` reads the living out in id order; `GvexWorld_Damage` hurts or kills one; `Gvex_Designation` and `Gvex_Name` give the dossier's words for a kind.
+**Decisions:** components are plain data and are defined from C by name and size (`ecs_component`), the ids kept in the world so that two worlds never share a global; systems are declared with a query string, which needs the query DSL addon; the targets reach the systems through the system context, not through globals; a creature's id is its spawn index, which both ends know and which seeds its looks; the world does not know about the network.
+
+## Not built: what the weapons need
+
+The weapon code of the solo game (`weapons.c`, `gunfire.c`, `projectiles`, `pickups.c`) keeps its state at file scope like the monsters did, and a session starts with nothing but hands (your decision), so a gun has to be **found**. The slices that follow S1 and S2: **S3a** the fists and the shot on the server (hitscan against the creatures' rewound positions, an `Arsenal` per player, ammo and cooldowns on the server, the shot made at once on the shooter's screen, tracers to the others), **S3b** weapons on the floor as replicated pickups and the pick-up, drop and swap as requests the server checks (`net_shots.md` step 5 is what makes those cheap to add). The reading of the weapon code that decides how is the next piece of work.
+
 ## Not verified
 
-- **Flecs on the other targets:** the web build (emscripten) is not needed for sessions, which are native only, but single-player will use Flecs once the old modules go and that has not been tried; the Android armv7 build with the NDK compiler has not been tried either, and neither has the cost on a phone.
+- **Flecs on the other targets:** compiled cleanly with `-Wall -Wextra` for 32-bit ARM (gcc), and both creature tests pass there under qemu; **not tried with the NDK's clang** (the Android workflow is the first time), nor on a phone; the cost on a phone is not measured. The web build (emscripten) does not have sessions, and single-player will need Flecs for the web once the old modules go: not tried.
 - **The snapshot size estimate** and how many creatures one datagram holds.
 - **The Rust driver's cost with a larger snapshot** on a phone's radio.

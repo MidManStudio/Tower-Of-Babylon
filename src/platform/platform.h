@@ -94,6 +94,15 @@
 #if TOWER_NETDRIVER && !TOWER_NET_UDP
     #error "TOWER_NETDRIVER needs a native platform (the library is not built for the browser)"
 #endif
+// TOWER_GVEX: the server of a session runs a world of creatures, the G.V.E.X. (src/gvex/gvex_world.c, on Flecs, third_party/flecs), and the snapshots
+// carry them. Sessions are native and need the driver; a build that does not play sessions (the web) has none. Off unless the build passes
+// -DTOWER_GVEX=1 (build_server.sh always does, build_android.sh does with the driver); a build without it has the same wire format and sends no creatures.
+#ifndef TOWER_GVEX
+    #define TOWER_GVEX 0
+#endif
+#if TOWER_GVEX && !TOWER_NET_UDP
+    #error "TOWER_GVEX needs a native platform (sessions are not played in the browser)"
+#endif
 
 // The browser drives the frame loop (emscripten_set_main_loop); everywhere else main() runs its own while loop.
 #define TOWER_MAIN_LOOP_CALLBACK TOWER_PLATFORM_WEB

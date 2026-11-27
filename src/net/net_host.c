@@ -100,6 +100,7 @@ void NetHost_Close(NetHost *h, int lingerMs)
     if (!h->open) return;
     for (int i = 0; i < NET_MAX_PLAYERS; ++i) NetServer_Drop(&h->server, i, NET_DISC_NORMAL);
     if (lingerMs > 0) PumpFor(h, lingerMs);
+    NetServer_Free(&h->server);                                            // the creatures' world (nothing is simulated from here on; the goodbyes above are already sent)
     if (h->discoveryOpen) NetDiscHost_Close(&h->disc);
     if (h->transport == NET_TRANSPORT_QUIC) NetMidHost_Close(&h->mid); else NetUdpHost_Close(&h->udp);
     h->discoveryOpen = false;

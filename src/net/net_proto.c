@@ -113,6 +113,13 @@ size_t NetProto_Encode(const NetMsg *m, uint8_t *buf, size_t cap)
             const NetRemote *r = &s->remote[i];
             NetW_U8(&w, r->id); NetW_I32(&w, r->px); NetW_I32(&w, r->py); NetW_I32(&w, r->pz); NetW_U16(&w, r->yaw); NetW_I16(&w, r->pitch); NetW_U8(&w, r->flags);
         }
+        if (s->nMonster > NET_MAX_MONSTERS) return 0;
+        NetW_U8(&w, s->nMonster);
+        for (int i = 0; i < s->nMonster; ++i) {
+            const NetMonster *m2 = &s->monster[i];
+            NetW_U16(&w, m2->id); NetW_U8(&w, m2->kind); NetW_U8(&w, m2->flags);
+            NetW_I32(&w, m2->px); NetW_I32(&w, m2->py); NetW_I32(&w, m2->pz); NetW_U16(&w, m2->yaw); NetW_U8(&w, m2->health);
+        }
         break; }
     default: return 0;
     }
@@ -167,6 +174,14 @@ bool NetProto_Decode(const uint8_t *buf, size_t len, NetMsg *out)
             NetRemote *m = &s->remote[i];
             m->id = NetR_U8(&r); m->px = NetR_I32(&r); m->py = NetR_I32(&r); m->pz = NetR_I32(&r); m->yaw = NetR_U16(&r); m->pitch = NetR_I16(&r); m->flags = NetR_U8(&r);
             if (m->id >= NET_MAX_PLAYERS || (m->flags & ~(NET_REM_SPRINTING | NET_REM_SLIDING | NET_REM_GROUNDED))) return false;
+        }
+        s->nMonster = NetR_U8(&r);
+        if (s->nMonster > NET_MAX_MONSTERS) return false;
+        for (int i = 0; i < s->nMonster; ++i) {
+            NetMonster *m2 = &s->monster[i];
+            m2->id = NetR_U16(&r); m2->kind = NetR_U8(&r); m2->flags = NetR_U8(&r);
+            m2->px = NetR_I32(&r); m2->py = NetR_I32(&r); m2->pz = NetR_I32(&r); m2->yaw = NetR_U16(&r); m2->health = NetR_U8(&r);
+            if (m2->kind >= NET_MON_KINDS || NET_MON_STATE(m2->flags) > 2 || (m2->flags & ~0x0F)) return false;
         }
         break; }
     default: return false;

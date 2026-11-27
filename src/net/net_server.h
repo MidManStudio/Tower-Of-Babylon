@@ -48,9 +48,11 @@ typedef struct {
     NetServerClient c[NET_MAX_PLAYERS];
     unsigned    snapshotsSent;
     NetHistory  hist;                // where everyone was at each of the last ticks (net_history.h)
+    struct GvexWorld *gvex;          // the creatures of the game (src/gvex/gvex_world.h, docs/gvex_session.md): NULL in a build without TOWER_GVEX
 } NetServer;
 
-void NetServer_Init(NetServer *s, uint32_t floorSeed, int floorNumber);                 // makes the floor from the seed, the way every client will
+void NetServer_Init(NetServer *s, uint32_t floorSeed, int floorNumber);                 // makes the floor from the seed, the way every client will (and, with TOWER_GVEX, the creatures)
+void NetServer_Free(NetServer *s);                                                       // frees what Init made that is not in the struct (the creatures' world); safe twice
 int  NetServer_AddClient(NetServer *s, NetTransport tp, double nowMs);                  // the slot, or -1 when full (the newcomer is told)
 void NetServer_Drop(NetServer *s, int slot, uint8_t reason);                            // tells the client, frees the slot
 void NetServer_Poll(NetServer *s, double nowMs);                                         // reads what has arrived; drops clients that went quiet

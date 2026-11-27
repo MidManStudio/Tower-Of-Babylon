@@ -20,6 +20,10 @@ Spawn counts: cylinder enemies `6 + 2 * floor` up to 24, spiders `1 + floor / 4`
 
 `Enemy` and `EnemyState`. The fields are `id`, `position` (centre of the base), `radius`, `height`, `tint`, `health`, `state`, `aggroRange`, `attackRange`, `moveSpeed`, `alertTimer` and `active`.
 
+### `enemy_plan.h` (round 9)
+**What it does:** the rules a cylinder enemy (a ghoul, `G.V.E.X.-X0-01`) shares between the solo game (`enemy_manager.c`) and the server's world of creatures (`src/gvex/gvex_world.c`, `gvex_session.md`): `EnemyPlan_Spawns(map, tier, out, max)` (where they spawn: `6 + 2 * tier` of them on a lattice of every third tile of the floor's own size, shuffled from the floor's seed, never within 16 tiles of an arrival point (`Floor_Shell`), and the hash that gives each its looks and its mobility grade), `EnemyLook(hash, ...)` (height, radius and colour), `EnemyWalk_Blocked` (the cylinder's footprint against the walls) and `EnemyWalk_LineOfSight` (one ray with the dungeon's DDA), and the small hash.
+**Decisions:** header-only and `static inline`, because every test and program lists its sources and these need nothing but the floor; moved out of `enemy_manager.c` unchanged (the enemy, game-sim, sim, spider and swarm tests pass without a change), so there is one copy of the rules and a session cannot drift from the solo game. Rebased on the floors of any size (round R1a): the candidate list holds 2,048 and the walk reads `map->w` and `map->h`.
+
 ### `enemy_manager.h` and `enemy_manager.c`
 
 The enemy system. `InitEnemiesSystem`, `SpawnEnemiesForFloor(floorMap, tier)`, `UpdateEnemiesSystem(dt, playerPos, floorMap)`, `DrawEnemiesSystem`, `UnloadEnemiesSystem`, `CheckAndHandleEnemyDamage(pos, radius, damage)` and `CountActiveEnemies`. Each call also drives the spider system, so `main.c` never touches spiders directly. A damage check tests cylinders first and then spiders. The pool holds `MAX_FLOOR_ENEMIES` cylinders in static storage.

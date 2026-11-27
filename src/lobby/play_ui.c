@@ -9,6 +9,8 @@
 
 #include "../dungeon/dungeon_renderer.h"
 #include "../dungeon/staircase.h"
+#include "../enemies/enemy_plan.h"
+#include "../gvex/gvex_world.h"
 #include "../hud/hud.h"
 #include "../input/input.h"
 #include "../lighting/lighting.h"
@@ -45,6 +47,25 @@ static void DrawFigure(Vector3 feet, float yaw, int id)
     DrawCube((Vector3){ feet.x + fx * 0.10f, feet.y + 0.62f, feet.z + fz * 0.10f }, 0.05f, 0.05f, 0.05f, Lit(WHITE, Lighting_AtPoint(feet)));
 }
 
+// One creature of the server's world (the G.V.E.X., docs/design/10-gvex-dossier.md). Its size and colour come from the same hash the single-player game uses for its
+// cylinder enemies (enemy_plan.h: the floor map's seed and the creature's id, which both ends know), so the server only sends where it is and what it is doing.
+// Before a blow it crouches and swells and turns warm, as the single-player cylinders do.
+static void DrawCreature(const NetMonsterView *m, uint32_t mapSeed)
+{
+    float height, radius; Color tint;
+    EnemyLook(EnemyHash32(mapSeed + (uint32_t)m->id * 0x9e3779b1U), &height, &radius, &tint);
+    const float rear = m->state == GVEX_STATE_ATTACK ? 1.0f : 0.0f;
+    const float light = Lighting_AtPoint(m->pos);
+    Color col = Lit(tint, light);
+    if (rear > 0.0f) {
+        const Color warm = Lit((Color){ 255, 140, 90, 255 }, light);
+        col = (Color){ (unsigned char)(((int)col.r * 4 + (int)warm.r * 6) / 10), (unsigned char)(((int)col.g * 4 + (int)warm.g * 6) / 10), (unsigned char)(((int)col.b * 4 + (int)warm.b * 6) / 10), 255 };
+    }
+    const float r = radius * (1.0f + 0.22f * rear), h = height * (1.0f - 0.10f * rear);
+    DrawCylinder(m->pos, r, r, h, 8, col);
+    DrawCylinderWires(m->pos, r * 1.02f, r * 1.02f, h, 8, BLACK);        // a little outside, so the lines are not in the surface's depth
+}
+
 void PlayUI_Draw3D(const NetSession *s, const Camera3D *cam, double nowMs)
 {
     const NetClient *c = &s->client;
@@ -58,6 +79,12 @@ void PlayUI_Draw3D(const NetSession *s, const Camera3D *cam, double nowMs)
         if (id == c->id) continue;
         Vector3 pos; float yaw;
         if (NetClient_RemoteView(c, (uint8_t)id, nowMs, &pos, &yaw)) DrawFigure(pos, yaw, id);
+    }
+    NetMonsterView creatures[NET_MAX_MONSTERS];                          // empty when the server has no world of creatures (a build without TOWER_GVEX)
+    const int n = NetClient_MonsterViews(c, nowMs, creatures, NET_MAX_MONSTERS);
+    for (int i = 0; i < n; ++i) {
+        if (hypotf(creatures[i].pos.x - cam->position.x, creatures[i].pos.z - cam->position.z) > 40.0f) continue;
+        DrawCreature(&creatures[i], c->map.seed);
     }
 }
 

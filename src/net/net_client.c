@@ -58,6 +58,8 @@ static void AddSnapshot(NetClient *c, const NetSnapshot *s, double nowMs)
 {
     NetClientSnap e; e.serverTick = s->serverTick; e.arrivedMs = nowMs; e.n = s->nRemote;
     memcpy(e.r, s->remote, sizeof e.r);
+    e.nm = s->nMonster;
+    memcpy(e.m, s->monster, sizeof e.m);
     int at = 0;                                                         // newest first, by tick
     while (at < c->snapCount && c->snaps[at].serverTick > e.serverTick) ++at;
     if (at < c->snapCount && c->snaps[at].serverTick == e.serverTick) return;       // a doubled datagram
@@ -275,6 +277,44 @@ bool NetClient_RemoteView(const NetClient *c, uint8_t id, double nowMs, Vector3 
     const NetRemote *r = Find(hold, id);
     *pos = RemotePos(r); *yaw = RemoteYaw(r);
     return true;
+}
+
+static const NetMonster *FindMon(const NetClientSnap *s, uint16_t id) { for (int i = 0; i < s->nm; ++i) if (s->m[i].id == id) return &s->m[i]; return NULL; }
+static Vector3 MonPos(const NetMonster *m) { return (Vector3){ (float)m->px / 1000.0f, (float)m->py / 1000.0f, (float)m->pz / 1000.0f }; }
+static float MonYaw(const NetMonster *m) { return (float)m->yaw / 65536.0f * 6.28318531f; }
+
+int NetClient_MonsterViews(const NetClient *c, double nowMs, NetMonsterView *out, int max)
+{
+    if (c->snapCount == 0 || !out || max < 1) return 0;
+    const double est = (double)c->lastServerTick + (nowMs - c->lastSnapMs) / TICK_MS;       // the server's tick, about now
+    const double want = est - (double)NET_INTERP_TICKS;
+    const NetClientSnap *after = NULL, *before = NULL;                                      // the snapshots round `want`
+    for (int i = 0; i < c->snapCount; ++i) {                                                // newest first
+        if ((double)c->snaps[i].serverTick > want) after = &c->snaps[i];
+        else { before = &c->snaps[i]; break; }
+    }
+    const NetClientSnap *newest = &c->snaps[0];
+    const NetClientSnap *base = before ? before : after;                                    // the one whose creatures are listed
+    int n = 0;
+    for (int i = 0; i < base->nm && n < max; ++i) {
+        const NetMonster *a = &base->m[i];
+        if (!FindMon(newest, a->id)) continue;                                              // gone from the newest: gone now (killed, or no longer told about)
+        NetMonsterView v;
+        v.id = a->id; v.kind = a->kind; v.state = (uint8_t)NET_MON_STATE(a->flags); v.variant = (uint8_t)NET_MON_VARIANT(a->flags);
+        v.pos = MonPos(a); v.yaw = MonYaw(a); v.health = (float)a->health / 255.0f;
+        const NetMonster *b = (before && after) ? FindMon(after, a->id) : NULL;
+        if (b) {
+            const double span = (double)after->serverTick - (double)before->serverTick;
+            const float u = (float)(((double)want - (double)before->serverTick) / span);
+            const Vector3 pb = MonPos(b);
+            v.pos = (Vector3){ v.pos.x + (pb.x - v.pos.x) * u, v.pos.y + (pb.y - v.pos.y) * u, v.pos.z + (pb.z - v.pos.z) * u };
+            v.yaw = LerpAngle(v.yaw, MonYaw(b), u);
+            v.state = (uint8_t)NET_MON_STATE(b->flags);                                     // what it is doing in the later snapshot
+            v.health = (float)b->health / 255.0f;
+        }
+        out[n++] = v;
+    }
+    return n;
 }
 
 bool NetClient_Link(const NetClient *c, NetLinkInfo *out)

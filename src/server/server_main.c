@@ -18,7 +18,9 @@
 #include <string.h>
 #include <time.h>
 
+#include "../gvex/gvex_world.h"
 #include "../net/net_host.h"
+#include "../platform/platform.h"
 
 // The player controller draws debug shapes and asks the props where they are; a server does neither. NO PROPS YET: the game's props are
 // a list built while the floor is drawn, and the simulation that owns them has not been moved out of main.c (docs/net.md).
@@ -71,6 +73,9 @@ int main(int argc, char **argv)
     if (!NetHost_Open(&g_host, &cfg, NetUdp_NowMs())) { fprintf(stderr, "tower_server: %s\n", g_host.error); return 2; }
     const uint16_t gamePort = g_host.port;
     printf("tower_server: floor %d, seed %u, listening on UDP port %u (%s), %d players at most\n", floorNumber, seed, (unsigned)gamePort, useQuic ? "QUIC, mid-net, through its driver" : "plain UDP, through mid-net's driver", NET_MAX_PLAYERS);
+#if TOWER_GVEX
+    printf("tower_server: %d creatures on this floor (Ghouls, G.V.E.X.-X0-01; docs/gvex_session.md)\n", g_host.server.gvex ? GvexWorld_Count(g_host.server.gvex) : 0);
+#endif
     {   // where this machine can be reached, best first (a browser player, who cannot search, types one of these)
         NetDiscIface ifs[16];
         uint32_t addrs[16];

@@ -104,6 +104,7 @@ check "and gone from the mid-engine checkout afterwards" test ! -e "$T/me/Cargo.
 check "the library cargo built (not an empty file) is copied to build/android/midnet" has "$T/proj/build/android/midnet/libmid_net_quic.a" FAKE-LIB-CONTENT
 check "every game source is compiled with -DTOWER_MIDNET=1" bash -c "test \"\$(grep -c -- ' -c ' '$T/log/cc.log')\" -ge 3 && test \"\$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=1')\" -eq \"\$(grep -c -- ' -c ' '$T/log/cc.log')\""
 check "every game source is compiled with -DTOWER_NETDRIVER=1 (the driver is in the same library)" bash -c "test \"\$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_NETDRIVER=1')\" -eq \"\$(grep -c -- ' -c ' '$T/log/cc.log')\""
+check "every game source is compiled with -DTOWER_GVEX=1 (the server of a session runs the creatures' world), and Flecs is compiled once, as its own unit" bash -c "test \"\$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_GVEX=1')\" -eq \"\$(grep -c -- ' -c ' '$T/log/cc.log')\" && test \"\$(grep -c -- 'third_party/flecs/tob_flecs.c' '$T/log/cc.log')\" -eq 1"
 check "the QUIC link strips the debug info of Rust's precompiled parts" bash -c "grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q -- '--strip-debug'"
 check "the link line has the QUIC library, before raylib" bash -c "linkline=\$(grep -- '-shared' '$T/log/cc.log' | tail -1); case \"\$linkline\" in *libmid_net_quic.a*libraylib.a*) true ;; *) false ;; esac"
 check "the link stage reports the library is inside and nothing extra is needed" has "$T/out.txt" "QUIC library linked in"
@@ -121,6 +122,7 @@ check "a warning says the APK is built WITHOUT QUIC" has "$T/out.txt" "WITHOUT Q
 check "cargo's output is kept in build/android/midnet.log" has "$T/proj/build/android/midnet.log" "fake cargo failure"
 check "no library, so compile says -DTOWER_MIDNET=0" bash -c "test ! -e '$T/proj/build/android/midnet/libmid_net_quic.a' && grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=0' && ! grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_MIDNET=1'"
 check "and -DTOWER_NETDRIVER=0 (no library, no multiplayer), with the warning saying so" bash -c "grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_NETDRIVER=0' && ! grep -- ' -c ' '$T/log/cc.log' | grep -q -- '-DTOWER_NETDRIVER=1' && grep -q 'WITHOUT MULTIPLAYER' '$T/out.txt'"
+check "and no -DTOWER_GVEX=1 and no Flecs without the library" bash -c "! grep -q -- 'TOWER_GVEX=1' '$T/log/cc.log' && ! grep -q 'tob_flecs' '$T/log/cc.log'"
 check "and the link line has no QUIC library and no --strip-debug" bash -c "! grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q 'libmid_net_quic\\|strip-debug'"
 check "the lock file is taken away even when cargo failed" test ! -e "$T/me/Cargo.lock"
 
@@ -171,7 +173,7 @@ check "libmain.so needs a library the phone lacks: APK without QUIC, the library
 reset_project; run "midnet compile link" FAKE_NEEDED_EXTRA=libc++_shared.so TOWER_MIDNET_REQUIRED=1
 check "the same with TOWER_MIDNET_REQUIRED=1 stops the build" bash -c "test $rc -ne 0 && grep -q 'libc++_shared.so' '$T/out.txt'"
 reset_project; run "midnet compile link" FAKE_LINK_FAIL_QUIC=1
-check "the link with QUIC fails: the sources are compiled again with -DTOWER_MIDNET=0 and linked without the library" bash -c "test $rc -eq 0 && grep -q 'WITHOUT QUIC' '$T/out.txt' && ! grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q libmid_net_quic.a && grep -- ' -c ' '$T/log/cc.log' | tail -1 | grep -q -- '-DTOWER_MIDNET=0' && test \$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=1') -eq 3 && test \$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=0') -eq 3"
+check "the link with QUIC fails: the sources are compiled again with -DTOWER_MIDNET=0 and linked without the library" bash -c "test $rc -eq 0 && grep -q 'WITHOUT QUIC' '$T/out.txt' && ! grep -- '-shared' '$T/log/cc.log' | tail -1 | grep -q libmid_net_quic.a && grep -- ' -c ' '$T/log/cc.log' | tail -1 | grep -q -- '-DTOWER_MIDNET=0' && test \$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=1') -eq 4 && test \$(grep -- ' -c ' '$T/log/cc.log' | grep -c -- '-DTOWER_MIDNET=0') -eq 3"
 check "the linker's complaint is kept in build/android/midnet-link.log and the library is deleted" bash -c "grep -q '_Unwind_Resume' '$T/proj/build/android/midnet-link.log' && test ! -e '$T/proj/build/android/midnet/libmid_net_quic.a'"
 reset_project; run "midnet compile link" FAKE_LINK_FAIL_QUIC=1 TOWER_MIDNET_REQUIRED=1
 check "the link with QUIC fails and TOWER_MIDNET_REQUIRED=1: the build stops" bash -c "test $rc -ne 0 && grep -q 'linking the QUIC library failed' '$T/out.txt'"

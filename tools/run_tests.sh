@@ -27,6 +27,10 @@ bash tests/net_session_check.sh >/tmp/net_session_out.txt 2>&1; nrc=$?
 if [ $nrc -eq 77 ]; then echo "SKIP  tests/net_session_check.sh ($(head -1 /tmp/net_session_out.txt))"
 elif [ $nrc -eq 0 ]; then echo "PASS  tests/net_session_check.sh  (real games over real sockets through the driver: host, join, walk, a link that goes quiet, a full game, leaving, the host leaving; sanitizers, no leaks)"
 else echo "FAIL  tests/net_session_check.sh"; tail -8 /tmp/net_session_out.txt; fail=1; fi
+bash tests/gvex_check.sh >/tmp/gvex_out.txt 2>&1; grc=$?
+if [ $grc -eq 77 ]; then echo "SKIP  tests/gvex_check.sh ($(head -1 /tmp/gvex_out.txt))"
+elif [ $grc -eq 0 ]; then echo "PASS  tests/gvex_check.sh  (the creatures of a session on Flecs: spawns, senses, walking, two worlds in one process, hurting; two clients over a bad link shown the same creatures; sanitizers, no leaks)"
+else echo "FAIL  tests/gvex_check.sh"; tail -8 /tmp/gvex_out.txt; fail=1; fi
 bash tests/server_smoke_quic.sh >/tmp/smoke_quic_out.txt 2>&1; qrc=$?
 if [ $qrc -eq 77 ]; then echo "SKIP  tests/server_smoke_quic.sh ($(head -1 /tmp/smoke_quic_out.txt))"
 elif [ $qrc -eq 0 ]; then echo "PASS  tests/server_smoke_quic.sh  (the server and bots over mid-net's QUIC, with discovery)"

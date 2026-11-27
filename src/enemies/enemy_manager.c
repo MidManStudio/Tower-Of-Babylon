@@ -11,59 +11,14 @@
 #include "../dungeon/floor_access.h"
 #include "../dungeon/stair_collision.h"
 #include "../dungeon/staircase.h"
+#include "enemy_plan.h"
 #include "spider.h"
 
-#define ENEMY_LATTICE     3      // candidate spawn tiles sit on every third tile
-#define ENEMY_SAFE_TILES  16.0f  // no spawns this close to either arrival point
 #define ENEMY_ALERT_SECS  3.0f
-#define MAX_CANDIDATES    2048              // 256 was enough for 45 by 45; the lattice of a 128 by 128 floor has about 1,700 points
 
 static Enemy g_enemies[MAX_FLOOR_ENEMIES];
 
-static uint32_t Hash32(uint32_t x)
-{
-    x ^= x >> 16; x *= 0x7feb352dU;
-    x ^= x >> 15; x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return x;
-}
-
-static int TileOf(float world) { return (int)floorf((world + TILE_SIZE * 0.5f) / TILE_SIZE); }
-
-// A cylinder of the given radius is blocked if any corner of its bounding
-// square lies in a solid tile.
-static bool Blocked(const FloorMap *map, float x, float z, float r)
-{
-    return Floor_Solid(map, 0, TileOf(x - r), TileOf(z - r)) || Floor_Solid(map, 0, TileOf(x + r), TileOf(z - r)) ||
-           Floor_Solid(map, 0, TileOf(x - r), TileOf(z + r)) || Floor_Solid(map, 0, TileOf(x + r), TileOf(z + r));
-}
-
-// One ray along the line between the two points, cast with the same DDA the
-// dungeon generator uses. Ray space is tile units with tile centres at +0.5.
-static bool HasLineOfSight(const FloorMap *map, Vector3 from, Vector3 to)
-{
-    const float ox = from.x / TILE_SIZE + 0.5f, oz = from.z / TILE_SIZE + 0.5f;
-    const float dx = (to.x - from.x) / TILE_SIZE, dz = (to.z - from.z) / TILE_SIZE;
-    const float len = sqrtf(dx * dx + dz * dz);
-    if (len < 1e-4f) return true;
-    return Probe_CastRay(map, ox, oz, dx / len, dz / len, len) >= len;
-}
-
-static float DistTiles(int x, int z, int ax, int az)
-{
-    return hypotf((float)(x - ax), (float)(z - az));
-}
-
-static bool SpawnCandidate(const FloorMap *map, int x, int z)
-{
-    if (Floor_Reserved(map, x, z)) return false;
-    const TileType type = Floor_Type(map, 0, x, z);
-    if (type != TILE_FLOOR && type != TILE_CORRIDOR) return false;
-    const FloorShell sh = Floor_Shell(map);
-    if (DistTiles(x, z, sh.arriveBelowX, sh.arriveBelowZ) < ENEMY_SAFE_TILES) return false;
-    if (DistTiles(x, z, sh.arriveAboveX, sh.arriveAboveZ) < ENEMY_SAFE_TILES) return false;
-    return true;
-}
+static uint32_t Hash32(uint32_t x) { return EnemyHash32(x); }
 
 static float g_rage = 1.0f;     // the stair clock raises it when the top door opens (Enemies_SetRage)
 
@@ -73,14 +28,7 @@ static void InitEnemy(Enemy *e, uint32_t id, float x, float z, uint32_t h, int t
     e->id = id;
     e->position = (Vector3){ x, 0.0f, z };
     e->prevPosition = e->position;
-    e->height = 2.0f + (float)(h % 100) * 0.018f;
-    e->radius = 0.40f + (float)((h >> 8) % 100) * 0.003f;
-
-    switch ((h >> 16) % 3) {
-        case 0:  e->tint = (Color){ 210, 60, 40, 255 };   break;  // hazard orange
-        case 1:  e->tint = (Color){ 95, 105, 115, 255 };  break;  // inmate steel
-        default: e->tint = (Color){ 140, 40, 160, 255 };  break;  // alien mutation
-    }
+    EnemyLook(h, &e->height, &e->radius, &e->tint);
 
     InitHealth(&e->health, 40.0f + 20.0f * (float)tier);
     e->state = ENEMY_STATE_IDLE;
@@ -108,31 +56,9 @@ void SpawnEnemiesForFloor(const FloorMap *floorMap, int tier)
     if (!floorMap) return;
     if (tier < 1) tier = 1;
 
-    int cand[MAX_CANDIDATES];
-    int n = 0;
-    const int W = floorMap->w;
-    for (int z = ENEMY_LATTICE; z < floorMap->h - 2 && n < MAX_CANDIDATES; z += ENEMY_LATTICE)
-        for (int x = ENEMY_LATTICE; x < W - 2 && n < MAX_CANDIDATES; x += ENEMY_LATTICE)
-            if (SpawnCandidate(floorMap, x, z)) cand[n++] = z * W + x;
-
-    // Shuffle so the enemies spread over the whole floor instead of filling one corner.
-    uint32_t rng = Hash32(floorMap->seed ^ 0xE4E31E5Du);
-    if (rng == 0) rng = 1;
-    for (int i = n - 1; i > 0; --i) {
-        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
-        const int j = (int)(rng % (uint32_t)(i + 1));
-        const int t = cand[i]; cand[i] = cand[j]; cand[j] = t;
-    }
-
-    int target = 6 + 2 * tier;
-    if (target > MAX_FLOOR_ENEMIES) target = MAX_FLOOR_ENEMIES;
-    if (target > n) target = n;
-
-    for (int i = 0; i < target; ++i) {
-        const int x = cand[i] % W, z = cand[i] / W;
-        InitEnemy(&g_enemies[i], (uint32_t)i, (float)x * TILE_SIZE, (float)z * TILE_SIZE,
-                  Hash32(floorMap->seed + (uint32_t)i * 0x9e3779b1U), tier);
-    }
+    EnemySpawn plan[MAX_FLOOR_ENEMIES];
+    const int count = EnemyPlan_Spawns(floorMap, tier, plan, MAX_FLOOR_ENEMIES);      // enemy_plan.h: shared with the server's world of creatures
+    for (int i = 0; i < count; ++i) InitEnemy(&g_enemies[i], (uint32_t)i, plan[i].x, plan[i].z, plan[i].hash, tier);
 }
 
 // One more enemy at a place chosen by the game (the unlock console calls them). Returns its slot, or -1 when all are in use.
@@ -210,7 +136,7 @@ void UpdateEnemiesSystem(float dt, Vector3 playerPos, const FloorMap *floorMap)
         const float dz = playerPos.z - e->position.z;
         const float dist = sqrtf(dx * dx + dz * dz);
 
-        const bool sees = dist <= e->aggroRange && floorMap && HasLineOfSight(floorMap, e->position, playerPos);
+        const bool sees = dist <= e->aggroRange && floorMap && EnemyWalk_LineOfSight(floorMap, e->position, playerPos);
         const bool hears = dist <= g_playerNoise;          // noise carries through walls
         if (sees || hears) e->alertTimer = ENEMY_ALERT_SECS;
         else if (e->alertTimer > 0.0f) e->alertTimer -= dt;
@@ -236,9 +162,9 @@ void UpdateEnemiesSystem(float dt, Vector3 playerPos, const FloorMap *floorMap)
         // stops it like a wall, unless it is a step it can climb.
         const float step = e->moveSpeed * g_rage * dt;
         const float nx = e->position.x + mx * step;
-        if (!Blocked(floorMap, nx, e->position.z, e->radius) && !StairBlocked(e, nx, e->position.z)) e->position.x = nx;
+        if (!EnemyWalk_Blocked(floorMap, nx, e->position.z, e->radius) && !StairBlocked(e, nx, e->position.z)) e->position.x = nx;
         const float nz = e->position.z + mz * step;
-        if (!Blocked(floorMap, e->position.x, nz, e->radius) && !StairBlocked(e, e->position.x, nz)) e->position.z = nz;
+        if (!EnemyWalk_Blocked(floorMap, e->position.x, nz, e->radius) && !StairBlocked(e, e->position.x, nz)) e->position.z = nz;
         FollowGround(e, dt);
     }
 }
@@ -317,8 +243,8 @@ int EnemiesMeleeHit(const FloorMap *floorMap, Vector3 eye, float fx, float fz, f
         // Knock it back along the line from the player, one axis at a time so it slides along walls.
         if (floorMap && knockback > 0.0f && dist > 0.01f) {
             const float nx = e->position.x + dx / dist * knockback, nz = e->position.z + dz / dist * knockback;
-            if (!Blocked(floorMap, nx, e->position.z, e->radius) && !StairBlocked(e, nx, e->position.z)) e->position.x = nx;
-            if (!Blocked(floorMap, e->position.x, nz, e->radius) && !StairBlocked(e, e->position.x, nz)) e->position.z = nz;
+            if (!EnemyWalk_Blocked(floorMap, nx, e->position.z, e->radius) && !StairBlocked(e, nx, e->position.z)) e->position.x = nx;
+            if (!EnemyWalk_Blocked(floorMap, e->position.x, nz, e->radius) && !StairBlocked(e, e->position.x, nz)) e->position.z = nz;
         }
     }
 

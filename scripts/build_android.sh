@@ -275,13 +275,20 @@ stage_compile() {
     # -DTOWER_MIDNET: src/net/net_mid.c talks to the QUIC library when this is 1, and has stubs that say "not built in" when it is 0.
     # -DTOWER_NETDRIVER: every connection of the game goes through mid-net's driver (src/net/net_driver.c), which is in the SAME library (libmid_net_quic.a carries
     # QUIC and the driver: two Rust static libraries cannot be linked together). Without the library the APK has no multiplayer at all, and says so in the lobby.
-    if midnet_active; then cflags+=(-DTOWER_MIDNET=1 -DTOWER_NETDRIVER=1); echo "TOWER_MIDNET=1 TOWER_NETDRIVER=1 (QUIC and driver library: $MIDNET_LIB)"; else cflags+=(-DTOWER_MIDNET=0 -DTOWER_NETDRIVER=0); echo "TOWER_MIDNET=0 TOWER_NETDRIVER=0 (no QUIC library: the APK has no multiplayer)"; fi
+    # -DTOWER_GVEX: the server of a session (a phone can host) runs the creatures' world, src/gvex/gvex_world.c on Flecs (third_party/flecs, compiled below as one unit);
+    # sessions need the driver, so it comes with it.
+    if midnet_active; then cflags+=(-DTOWER_MIDNET=1 -DTOWER_NETDRIVER=1 -DTOWER_GVEX=1 -I"$root/third_party/flecs"); echo "TOWER_MIDNET=1 TOWER_NETDRIVER=1 TOWER_GVEX=1 (QUIC and driver library: $MIDNET_LIB)"; else cflags+=(-DTOWER_MIDNET=0 -DTOWER_NETDRIVER=0); echo "TOWER_MIDNET=0 TOWER_NETDRIVER=0 (no QUIC library: the APK has no multiplayer)"; fi
     local sources=(main.c)
     while IFS= read -r f; do sources+=("$f"); done < <(find src -name '*.c' | sort)
     local f
     for f in "${sources[@]}"; do
         "$CC" "${cflags[@]}" -c "$f" -o "$OUT/obj/${f//\//__}.o"
     done
+    # Flecs is one translation unit of its own (4 MB of C); warnings are Flecs's to have (-w), but an implicit declaration is still an error.
+    if midnet_active; then
+        "$CC" "${cflags[@]}" -w -c third_party/flecs/tob_flecs.c -o "$OUT/obj/third_party__flecs__tob_flecs.c.o"
+        sources+=(third_party/flecs/tob_flecs.c)
+    fi
     echo "${#sources[@]} sources compiled"
 }
 

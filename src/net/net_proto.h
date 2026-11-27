@@ -13,7 +13,7 @@
 // replaced by the next, and the client repeats its last few commands in every Input so that a lost one is rarely missed) and a reliable,
 // ordered channel (Hello, Welcome, Disconnect). Every packet starts with 'T' 'B' and a kind byte. Decoding checks everything (lengths,
 // counts, finite numbers, known flag bits, leftover bytes) and refuses what is wrong; nothing a stranger sends can run off a buffer.
-#define NET_PROTOCOL_VERSION 4             // 4: every connection goes through mid-net's driver (net_driver.h), a different wire format that a build of version 3 cannot speak (it shows in the lobby as another version, and is refused with VERSION); 3: every command says how far behind the server the player saw the others (viewLag, for lag compensation); 2: the buttons are 16 bits and the owner's state carries a dive
+#define NET_PROTOCOL_VERSION 5             // 5: snapshots carry the creatures of the server's world (nMonster and the NetMonster list, 19 bytes each); 4: every connection goes through mid-net's driver (net_driver.h), a different wire format that a build of version 3 cannot speak (it shows in the lobby as another version, and is refused with VERSION); 3: every command says how far behind the server the player saw the others (viewLag, for lag compensation); 2: the buttons are 16 bits and the owner's state carries a dive
 #define NET_TICK_RATE        30
 #define NET_TICK_SECS        (1.0f / 30.0f)
 #define NET_MAX_PLAYERS      4
@@ -53,6 +53,21 @@ typedef struct {
 enum { NET_REM_SPRINTING = 1, NET_REM_SLIDING = 2, NET_REM_GROUNDED = 4 };
 typedef struct { uint8_t id; int32_t px, py, pz; uint16_t yaw; int16_t pitch; uint8_t flags; } NetRemote;
 
+// A creature of the server's world (src/gvex/gvex_world.h, G.V.E.X.): what a client needs to draw it. 19 bytes on the wire.
+#define NET_MAX_MONSTERS 32                 // one snapshot carries at most this many (GVEX_MAX_CREATURES)
+#define NET_MON_KINDS    16                 // a kind byte at or above this is refused: the registry of docs/design/10-gvex-dossier.md has room for 16 to start with
+// flags: bits 0-1 the state (0 idle, 1 chase, 2 attack), bits 2-3 the variant (a Ghoul's mobility grade, 0 to 2). Nothing else is set.
+#define NET_MON_STATE(f)   ((f) & 3)
+#define NET_MON_VARIANT(f) (((f) >> 2) & 3)
+#define NET_MON_FLAGS(state, variant) ((uint8_t)(((state) & 3) | (((variant) & 3) << 2)))
+typedef struct {
+    uint16_t id;                            // the spawn index: the same on every machine; it seeds the creature's looks (enemy_plan.h)
+    uint8_t  kind, flags;
+    int32_t  px, py, pz;                    // millimetres, like the players'
+    uint16_t yaw;                           // 0 to 65535 for 0 to 2 pi
+    uint8_t  health;                        // 0 to 255 for 0 to its full health
+} NetMonster;
+
 enum { NET_DISC_NORMAL = 0, NET_DISC_VERSION = 1, NET_DISC_FULL = 2, NET_DISC_TIMEOUT = 3, NET_DISC_BAD = 4 };
 
 typedef struct { uint8_t version; char character[NET_CHARACTER_LEN]; } NetHello;
@@ -74,6 +89,8 @@ typedef struct {
     NetOwnerState owner;
     uint8_t  nRemote;
     NetRemote remote[NET_MAX_PLAYERS - 1];
+    uint8_t  nMonster;                      // the creatures of the server's world (0 in a build without TOWER_GVEX)
+    NetMonster monster[NET_MAX_MONSTERS];
 } NetSnapshot;
 typedef struct { uint8_t reason; } NetDisconnect;
 
