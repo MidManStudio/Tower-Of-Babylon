@@ -4,6 +4,7 @@
 // ============================================================================
 #include "hud_layout.h"
 
+UiRect HudLayout_StaminaBar(void)     { return (UiRect){ 300.0f, 436.0f, 200.0f, 10.0f }; }     // 200 x 10 (the thin 5 and 6 px bars it replaces were hard to read); clear of the weapon readout (x 520 to 620), the RELOAD, SLIDE and fire-pad circles, and the toast above it
 UiRect HudLayout_StatsButton(void)    { return (UiRect){ 8.0f, 8.0f, 78.0f, 32.0f }; }
 UiRect HudLayout_StatsPanel(void)     { return (UiRect){ 236.0f, 10.0f, 330.0f, 270.0f }; }
 UiRect HudLayout_StatsClose(void)     { const UiRect p = HudLayout_StatsPanel(); return (UiRect){ p.x + p.w - 52.0f, p.y + 6.0f, 46.0f, 36.0f }; }

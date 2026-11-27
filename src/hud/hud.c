@@ -89,6 +89,18 @@ static void WeaponReadout(const HudView *v)
     }
 }
 
+// The stamina bar, always on the screen (the owner asked for it out of the stats popup): 200 x 10 at the bottom centre, with the word STAMINA at its left
+// that turns into an orange TIRED while the player is exhausted. The bar itself is ScreenFx_DrawStaminaBar: blue, amber under a quarter, pulsing red
+// when exhausted with a tick for how far the recovery has to go.
+void HudStamina_Draw(float stamina01, bool exhausted, float exhaustRecover01)
+{
+    const UiRect b = HudLayout_StaminaBar();
+    const char *label = exhausted ? "TIRED" : "STAMINA";
+    const Color c = exhausted ? ORANGE : (Color){ 170, 170, 180, 255 };
+    DrawText(label, (int)b.x - 6 - MeasureText(label, 12), (int)b.y - 1, 12, c);
+    ScreenFx_DrawStaminaBar((int)b.x, (int)b.y, (int)b.w, (int)b.h, stamina01, exhausted, exhaustRecover01, (float)GetTime());
+}
+
 void Hud_Draw(const HudView *v)
 {
 #if TOWER_INPUT_TOUCH
@@ -103,18 +115,17 @@ void Hud_Draw(const HudView *v)
 
     if (!v->invOpen) HudRun_Draw(v);
     if (!v->invOpen && v->alive) WeaponReadout(v);
+    if (!v->invOpen && v->alive) HudStamina_Draw(v->stamina01, v->exhausted, v->exhaustRecover01);
     if (!v->invOpen && v->alive && v->stim01 > 0.0f) {                  // a stim shot: its time left, and the stamina it is filling
         const int w = 200, x = (800 - w) / 2, y = 450 - 26;
         const Color cyan = (Color){ 90, 220, 230, 255 };
         DrawText("STIM", x, y - 14, 12, cyan);
         DrawRectangle(x, y, w, 3, Fade(BLACK, 0.6f));
         DrawRectangle(x, y, (int)((float)w * (v->stim01 > 1.0f ? 1.0f : v->stim01)), 3, cyan);
-        ScreenFx_DrawStaminaBar(x, y + 6, w, 6, v->stamina01, v->exhausted, v->exhaustRecover01, (float)GetTime());
-    }
+    }                                                                   // (the stamina it fills is the always-on bar below)
 
 #if HUD_VITALS_ALWAYS_ON
-    ScreenFx_DrawHealthBar(800 / 2 - 100, 450 - 22, 200, 14, v->hp, v->maxHp);
-    ScreenFx_DrawStaminaBar(800 / 2 - 100, 450 - 6, 200, 5, v->stamina01, v->exhausted, v->exhaustRecover01, (float)GetTime());
+    ScreenFx_DrawHealthBar(800 / 2 - 100, 450 - 54, 200, 12, v->hp, v->maxHp);          // above the stamina bar and its label's row
 #endif
 
     if (g_toastT > 0.0f) {

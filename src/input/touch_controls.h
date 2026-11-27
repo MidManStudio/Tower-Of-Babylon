@@ -40,6 +40,8 @@ typedef struct {
     float    knobRadius;                    // 30 (drawing)
     float    deadzone;                      // 0.04 of the radius: the knob has to leave this before anything moves
     float    stickFullAt;                   // 0.50 of the radius: the knob distance that is already full speed (the rest of the ring is a safe margin and the sprint's run-up)
+    float    stickGlideRate;                // 12: how fast the stick's value chases the finger, in ring radii per SECOND (not per frame): the stick ramps up instead of stepping. 0 turns the glide off
+    float    stickReleaseRate;              // 6: how fast it falls back when the finger comes in or lifts, in ring radii per second (the stick coasts to rest for about 0.1 s instead of stopping dead)
     UiRect   stickZone;                     // where a stick may begin: the left half, below the STATS button
     float    stickMinX, stickMaxX, stickMinY, stickMaxY;   // where the stick's centre may sit, so the whole ring stays on screen
     float    sprintOn, sprintOff;           // push beyond 0.92 of the radius to start a sprint (any direction), drop under 0.80 to end it
@@ -74,7 +76,7 @@ typedef struct {
     bool   diveAvailable;     // airborne after a sprinting jump: the DIVE button exists (in SLIDE's place)
     UiRect blocked[TC_MAX_BLOCKED];    // regions that only take taps (STATS, INV, the popup, the diagnostic rows): no finger there
     int    blockedCount;               // becomes a stick, a look finger, or a press
-    float  dt;                 // seconds since the last frame: the joystick aim turns the camera at a RATE, so it needs the time (0 turns nothing)
+    float  dt;                 // seconds since the last frame: the joystick aim turns the camera at a RATE and the move stick glides at one, so both need the time (0 turns nothing, and 0 makes the stick follow the finger exactly)
     TcAimMode aimMode;         // how the fire pad aims (0 = TC_AIM_DRAG)
 } TcContext;
 
@@ -86,8 +88,8 @@ typedef struct {
     bool  fireHeld, jumpHeld, useHeld, swapHeld;
     bool  lightPressed, slidePressed, reloadPressed, divePressed;   // once, on the frame the finger lands
     // for drawing
-    bool  stickActive;
-    float anchorX, anchorY, knobX, knobY;
+    bool  stickActive;                      // a finger is on the stick, or the stick is still gliding back to rest after it lifted (drawn either way)
+    float anchorX, anchorY, knobX, knobY;   // the knob is drawn at the smoothed value, so what you see is what moves you
     float sprintFill;                       // 0..1: how close the knob is to starting a sprint
     bool  aimActive;                        // TC_AIM_JOYSTICK only: a finger is on the fire pad and its knob follows it (in TC_AIM_DRAG the disc stays put)
     float aimKnobX, aimKnobY;               // where the pad's knob is drawn: under the finger, held inside the ring
@@ -97,7 +99,7 @@ typedef struct {
 typedef enum { TC_ROLE_NONE = 0, TC_ROLE_IGNORE, TC_ROLE_STICK, TC_ROLE_LOOK, TC_ROLE_FIRE, TC_ROLE_JUMP, TC_ROLE_USE, TC_ROLE_SWAP,
                TC_ROLE_LIGHT, TC_ROLE_SLIDE, TC_ROLE_RELOAD, TC_ROLE_DIVE } TcRole;
 typedef struct { bool used, fresh; int id, role; float lastX, lastY; } TcSlot;
-typedef struct { TcSlot slot[TC_MAX_TOUCHES]; float anchorX, anchorY; bool sprinting, prevWalkOnly; } TcState;
+typedef struct { TcSlot slot[TC_MAX_TOUCHES]; float anchorX, anchorY; bool sprinting, prevWalkOnly; float glideX, glideY; } TcState;   // glide: the move stick's smoothed deflection, in ring radii
 
 void Tc_Init(TcState *s);
 // Once per frame, with every finger that is down (an empty list when none is: that is what lifts them).

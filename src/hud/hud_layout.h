@@ -10,6 +10,7 @@
 // Where the parts of the HUD sit on the 800 x 450 canvas, as plain rectangles with no raylib in them, so the drawing, the
 // tap handling and the tests all use the same numbers.
 
+UiRect HudLayout_StaminaBar(void);      // bottom centre: the stamina bar that is always on the screen (not only in the stats popup)
 UiRect HudLayout_StatsButton(void);     // top left: opens the stats popup
 UiRect HudLayout_StatsPanel(void);      // the popup
 UiRect HudLayout_StatsClose(void);      // the X in the popup's corner

@@ -115,6 +115,88 @@ int main(void)
     Step(NULL, 0);
     Check(!O.sprint && O.sprintFill == 0.0f, "lifting the finger ends it");
 
+    printf("The move stick glides (smooth: it ramps up and coasts to rest, by time, not by frame)\n");
+    {
+        const float dt = 1.0f / 60.0f;
+        // Landing and pushing out: the value chases the finger at stickGlideRate ring radii per second.
+        Reset(); C.dt = dt;
+        Step1(1, 200, 300);
+        Step1(1, 200 + R, 300);                                                   // the finger is at the rim at once; the stick is not
+        const float first = O.moveX;
+        Check(first > 0.0f && first < 0.9f && Near(hypotf(O.knobX - O.anchorX, O.knobY - O.anchorY), L->stickGlideRate * dt * R, 0.02f * R), "a thumb thrown to the rim moves the stick by one frame's worth, not all the way");
+        Check(O.sprint, "the sprint still starts the moment the finger reaches the rim (it follows the finger, not the glide)");
+        float prev = first; int mono = 1, frames = 1; float full = -1.0f;
+        for (; frames < 12; ++frames) { Step1(1, 200 + R, 300); if (O.moveX + 0.0001f < prev) mono = 0; prev = O.moveX; if (full < 0.0f && O.moveX >= 0.999f) full = (float)frames; }
+        Check(mono, "it only ever speeds up while the finger holds still at the rim");
+        Check(full > 0.0f && full * dt <= (L->stickFullAt / L->stickGlideRate) + 2.0f * dt, "and is at full speed after about stickFullAt / stickGlideRate seconds (a few frames)");
+        Check(Near(hypotf(O.knobX - O.anchorX, O.knobY - O.anchorY), R, 0.01f), "the knob, which is drawn from the same value, ends on the ring");
+
+        // The same elapsed time gives the same stick at 20, 40, 100 and 200 frames a second: it is a rate per second, not a step per frame.
+        const float fps[4] = { 20.0f, 40.0f, 100.0f, 200.0f }; const int frs[4] = { 1, 2, 5, 10 };       // each is 0.05 s
+        float seen[4];
+        for (int k = 0; k < 4; ++k) {
+            Reset(); C.dt = 1.0f / fps[k];
+            Step1(1, 200, 300);
+            for (int f = 0; f < frs[k]; ++f) Step1(1, 200 + R, 300);
+            seen[k] = hypotf(O.knobX - O.anchorX, O.knobY - O.anchorY) / R;
+        }
+        Check(Near(seen[0], 0.6f, 0.01f) && Near(seen[1], 0.6f, 0.01f) && Near(seen[2], 0.6f, 0.01f) && Near(seen[3], 0.6f, 0.01f), "0.05 s after the thumb lands the stick is at 12 * 0.05 = 0.6 of the ring at every frame rate");
+
+        // Lifting: the stick coasts to rest instead of stopping dead, and the sprint ends at once.
+        Reset(); C.dt = dt;
+        Step1(1, 200, 300);
+        for (int f = 0; f < 20; ++f) Step1(1, 200 + R, 300);
+        Check(O.sprint && Near(O.moveX, 1.0f, 0.01f), "(set up: at the rim, sprinting)");
+        Step(NULL, 0);
+        Check(!O.sprint, "the thumb lifts: the sprint ends on that frame");
+        Check(O.stickActive && O.moveX > 0.0f && O.moveX < 1.0f + 0.001f, "but the stick is still drawn and still moving the player, a little less");
+        prev = O.moveX; mono = 1; int n = 0;
+        while (O.stickActive && n < 60) { Step(NULL, 0); if (O.moveX > prev + 0.0001f) mono = 0; prev = O.moveX; ++n; }
+        Check(mono, "it only ever slows");
+        Check(!O.stickActive && O.moveX == 0.0f && O.moveY == 0.0f, "and comes to rest");
+        Check((float)n * dt <= (1.0f / L->stickReleaseRate) + 2.0f * dt && (float)n * dt >= 0.5f * (1.0f / L->stickReleaseRate), "in about 1 / stickReleaseRate seconds from the rim (a tenth to a fifth of a second), not instantly and not slowly");
+
+        // A drag back in is also smoothed, but a finger that stays put leaves it alone.
+        Reset(); C.dt = dt;
+        Step1(1, 200, 300);
+        for (int f = 0; f < 20; ++f) Step1(1, 200 + R, 300);
+        Step1(1, 200, 300);                                                       // thumb snaps back to the middle
+        Check(O.moveX > 0.0f, "a thumb that snaps back to the middle does not stop the player in one frame");
+        for (int f = 0; f < 30; ++f) Step1(1, 200, 300);
+        Check(O.moveX == 0.0f, "and the stick is at rest a moment later");
+
+        // Swinging the stick from one side to the other passes through the middle.
+        Reset(); C.dt = dt;
+        Step1(1, 200, 300);
+        for (int f = 0; f < 20; ++f) Step1(1, 200 + R, 300);
+        float least = 1.0f; float ymax = 0.0f;
+        for (int f = 0; f < 30; ++f) { Step1(1, 200 - R, 300); if (fabsf(O.moveX) < least) least = fabsf(O.moveX); if (fabsf(O.moveY) > ymax) ymax = fabsf(O.moveY); }
+        Check(least < 0.15f && ymax < 0.01f && Near(O.moveX, -1.0f, 0.01f), "swinging the thumb from right to left glides across the middle in a straight line and ends full speed the other way");
+
+        // A frame that took five seconds is not a reason to jump.
+        Reset(); C.dt = dt;
+        Step1(1, 200, 300);
+        for (int f = 0; f < 20; ++f) Step1(1, 200 + R, 300);
+        C.dt = 5.0f; Step(NULL, 0);
+        Check(O.stickActive && O.moveX > 0.0f, "one very long frame does not stop the stick: the step is capped at a tenth of a second");
+
+        // No frame time: the stick is the finger, exactly.
+        Reset();
+        Step1(1, 200, 300); Step1(1, 200 + R, 300);
+        Check(Near(O.moveX, 1.0f, 0.001f), "with no frame time the stick follows the finger exactly (every older test relies on it)");
+        Step(NULL, 0);
+        Check(!O.stickActive && O.moveX == 0.0f, "and lifting stops it at once");
+
+        // Locked: nothing moves, but the stick carries on being tracked, so unlocking does not start from nothing.
+        Reset(); C.dt = dt;
+        Step1(1, 200, 300);
+        C.locked = true;
+        for (int f = 0; f < 20; ++f) Step1(1, 200 + R, 300);
+        Check(O.moveX == 0.0f && O.moveY == 0.0f && !O.sprint, "locked: no movement while the thumb is down");
+        C.locked = false; Step1(1, 200 + R, 300);
+        Check(Near(O.moveX, 1.0f, 0.01f), "unlocked: the stick is already where the thumb is");
+    }
+
     printf("Fingers keep their jobs\n");
     Reset();
     Step1(1, 200, 300);
@@ -359,6 +441,13 @@ int main(void)
         int popupOnControl = 0;
         for (int i = 0; i < nr; ++i) if (UiCircle_OverlapsRect(round[i], p)) { ++popupOnControl; printf("      the popup covers: %s\n", rnames[i]); }
         Check(popupOnControl == 0, "the popup leaves every touch control free (you can still move, shoot and jump with it open)");
+        const UiRect sb = HudLayout_StaminaBar();
+        int barOnControl = 0;
+        for (int i = 0; i < nr; ++i) if (UiCircle_OverlapsRect(round[i], sb)) { ++barOnControl; printf("      the stamina bar covers: %s\n", rnames[i]); }
+        Check(sb.x >= 0 && sb.y >= 0 && sb.x + sb.w <= TC_SCREEN_W && sb.y + sb.h <= TC_SCREEN_H, "the always-on stamina bar is inside the screen");
+        Check(barOnControl == 0 && !UiRect_Overlaps(sb, inv) && !UiRect_Overlaps(sb, b) && !UiRect_Overlaps(sb, p), "and clear of every control, the INV and STATS buttons and the popup");
+        Check(sb.w >= 150.0f && sb.h >= 8.0f, "and big enough to read (the old bars were 5 and 6 px high)");
+        Check(sb.x + sb.w <= 520.0f, "and clear of the weapon readout (right-aligned at x 620, about 100 wide)");
     }
 
     printf("The layout is the one in the sketch\n");

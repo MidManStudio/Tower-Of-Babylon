@@ -50,11 +50,18 @@ static void DrawFigure(Vector3 feet, float yaw, int id)
 // One creature of the server's world (the G.V.E.X., docs/design/10-gvex-dossier.md). Its size and colour come from the same hash the single-player game uses for its
 // cylinder enemies (enemy_plan.h: the floor map's seed and the creature's id, which both ends know), so the server only sends where it is and what it is doing.
 // Before a blow it crouches and swells and turns warm, as the single-player cylinders do.
-static void DrawCreature(const NetMonsterView *m, uint32_t mapSeed)
+static float g_rear[NET_MAX_MONSTERS];      // drawing only: how far into its attack pose each creature is shown, 0 to 1, so a change of state eases instead of popping
+
+static void DrawCreature(const NetMonsterView *m, uint32_t mapSeed, float dt)
 {
     float height, radius; Color tint;
     EnemyLook(EnemyHash32(mapSeed + (uint32_t)m->id * 0x9e3779b1U), &height, &radius, &tint);
-    const float rear = m->state == GVEX_STATE_ATTACK ? 1.0f : 0.0f;
+    float rear = m->state == GVEX_STATE_ATTACK ? 1.0f : 0.0f;
+    if (m->id < NET_MAX_MONSTERS) {
+        const float k = dt * 14.0f > 1.0f ? 1.0f : dt * 14.0f;                     // about 70 ms to cover two thirds of the way
+        g_rear[m->id] += (rear - g_rear[m->id]) * k;
+        rear = g_rear[m->id];
+    }
     const float light = Lighting_AtPoint(m->pos);
     Color col = Lit(tint, light);
     if (rear > 0.0f) {
@@ -80,11 +87,16 @@ void PlayUI_Draw3D(const NetSession *s, const Camera3D *cam, double nowMs)
         Vector3 pos; float yaw;
         if (NetClient_RemoteView(c, (uint8_t)id, nowMs, &pos, &yaw)) DrawFigure(pos, yaw, id);
     }
+    static double lastMs = 0.0;                                          // the screen's frame time, for easing the attack pose
+    float dt = (float)((nowMs - lastMs) / 1000.0);
+    lastMs = nowMs;
+    if (dt < 0.0f) dt = 0.0f;
+    if (dt > 0.1f) dt = 0.1f;
     NetMonsterView creatures[NET_MAX_MONSTERS];                          // empty when the server has no world of creatures (a build without TOWER_GVEX)
     const int n = NetClient_MonsterViews(c, nowMs, creatures, NET_MAX_MONSTERS);
     for (int i = 0; i < n; ++i) {
         if (hypotf(creatures[i].pos.x - cam->position.x, creatures[i].pos.z - cam->position.z) > 40.0f) continue;
-        DrawCreature(&creatures[i], c->map.seed);
+        DrawCreature(&creatures[i], c->map.seed, dt);
     }
 }
 
@@ -134,7 +146,7 @@ void PlayUI_DrawOverlay(const NetSession *s, bool showKeys, bool leaveArmed)
         DrawText(k, 790 - MeasureText(k, 12), 44, 12, leaveArmed ? RED : Fade(WHITE, 0.6f));
     }
 
-    ScreenFx_DrawStaminaBar(800 / 2 - 100, 450 - 14, 200, 6, p->stamina / PLAYER_STAMINA_MAX, p->exhausted, STAMINA_EXHAUST_RECOVER / PLAYER_STAMINA_MAX, (float)GetTime());
+    HudStamina_Draw(p->stamina / PLAYER_STAMINA_MAX, p->exhausted, STAMINA_EXHAUST_RECOVER / PLAYER_STAMINA_MAX);      // the same always-on bar the single-player HUD draws
 
 #if TOWER_INPUT_TOUCH
     if (Input_Scheme() == INPUT_SCHEME_TOUCH) {

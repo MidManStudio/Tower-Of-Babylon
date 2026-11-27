@@ -249,6 +249,87 @@ int main(void)
         Check(fabsf(a->yaw - atan2f(1.0f, 0.0f)) < 1e-4f, "and it faces the player (yaw is atan2(dx, dz), like the players')");
         GvexWorld_Destroy(w);
 
+        // the edge of its reach: a player wobbling across the 1.8 m line must not make it flicker between attacking and chasing (the glitch seen on the phones)
+        {
+            int hid = -1; float hdx = 0.0f, hdz = 0.0f;
+            for (int cand = 0; cand < 24 && hid < 0; ++cand) {
+                GvexWorld *hw = GvexWorld_Create(&g_map, tier);
+                const int hn = GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                const GvexRecord *c = ById(rec, hn, cand);
+                if (c) {
+                    static const float dirs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+                    for (int k = 0; k < 4 && hid < 0; ++k) {
+                        int clear = 1;
+                        for (float dd = 0.8f; dd <= 3.0f; dd += 0.2f) {
+                            const float px = c->x + dirs[k][0] * dd, pz = c->z + dirs[k][1] * dd;
+                            if (EnemyWalk_Blocked(&g_map, px, pz, 0.5f) || !EnemyWalk_LineOfSight(&g_map, (Vector3){ c->x, 0, c->z }, (Vector3){ px, 0, pz })) { clear = 0; break; }
+                        }
+                        if (clear) { hid = cand; hdx = dirs[k][0]; hdz = dirs[k][1]; }
+                    }
+                }
+                GvexWorld_Destroy(hw);
+            }
+            Check(hid >= 0, "(set up: a creature with 3 m of clear floor to one side was found)");
+            if (hid >= 0) {
+                #define HOLD_AT(world, dist) Target(hx + hdx * (dist), hz + hdz * (dist), 0.0f)
+                GvexWorld *hw = GvexWorld_Create(&g_map, tier);
+                GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                const float hx = ById(rec, GvexWorld_Count(hw), hid)->x, hz = ById(rec, GvexWorld_Count(hw), hid)->z;
+
+                // a player at 2.2 m who never came closer is chased, not attacked
+                GvexTarget far2 = HOLD_AT(hw, 2.2f);
+                GvexWorld_Step(hw, &far2, 1, DT);
+                GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                Check(ById(rec, GvexWorld_Count(hw), hid)->state == GVEX_STATE_CHASE, "a player 2.2 m away who never came closer is chased, not attacked");
+                GvexWorld_Destroy(hw);
+
+                // one at 1.7 m, then wobbling between 1.7 and 1.95 m for two seconds: it attacks the whole time
+                hw = GvexWorld_Create(&g_map, tier);
+                int changes = 0, chased = 0; uint8_t last = 255;
+                for (int i = 0; i < 60; ++i) {
+                    GvexTarget wob = HOLD_AT(hw, (i & 1) ? 1.95f : 1.7f);
+                    GvexWorld_Step(hw, &wob, 1, DT);
+                    GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                    const uint8_t st = ById(rec, GvexWorld_Count(hw), hid)->state;
+                    if (i > 0 && st != last) ++changes;
+                    if (st == GVEX_STATE_CHASE) ++chased;
+                    last = st;
+                }
+                Check(changes == 0 && chased == 0 && last == GVEX_STATE_ATTACK, "a player wobbling across 1.8 m for 60 ticks: the state never changes, it attacks throughout");
+                GvexWorld_Destroy(hw);
+
+                // attacking, then the player steps back to 2.2 m: it stays in the attack and closes up to its reach, no nearer than 98% of it
+                hw = GvexWorld_Create(&g_map, tier);
+                GvexTarget near = HOLD_AT(hw, 1.5f);
+                GvexWorld_Step(hw, &near, 1, DT);
+                GvexTarget back = HOLD_AT(hw, 2.2f);
+                float least = 99.0f; int attackTicks = 0;
+                for (int i = 0; i < 12; ++i) {
+                    GvexWorld_Step(hw, &back, 1, DT);
+                    GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                    const GvexRecord *r = ById(rec, GvexWorld_Count(hw), hid);
+                    if (r->state == GVEX_STATE_ATTACK) ++attackTicks;
+                    const float dd = Dist(r, back.x, back.z); if (dd < least) least = dd;
+                }
+                GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                const float endDist = Dist(ById(rec, GvexWorld_Count(hw), hid), back.x, back.z);
+                Check(attackTicks == 12, "a player who steps back to 2.2 m is still being attacked (it holds the attack across the band)");
+                Check(endDist <= 1.8f + 1e-3f && least >= 1.8f * 0.98f - 1e-3f, "and it closes up to its reach, no nearer than 98% of it: it does not stand swinging at the air, and does not walk through the player");
+                GvexWorld_Destroy(hw);
+
+                // far enough (2.6 m, past 1.35 reaches) it gives up the attack and chases
+                hw = GvexWorld_Create(&g_map, tier);
+                GvexTarget near2 = HOLD_AT(hw, 1.5f);
+                GvexWorld_Step(hw, &near2, 1, DT);
+                GvexTarget gone = HOLD_AT(hw, 2.6f);
+                GvexWorld_Step(hw, &gone, 1, DT);
+                GvexWorld_Records(hw, rec, GVEX_MAX_CREATURES);
+                Check(ById(rec, GvexWorld_Count(hw), hid)->state == GVEX_STATE_CHASE, "a player who gets away to 2.6 m ends the attack: it chases");
+                GvexWorld_Destroy(hw);
+                #undef HOLD_AT
+            }
+        }
+
         // 800 ticks after a player who walks in circles: nobody is ever inside a wall
         w = GvexWorld_Create(&g_map, tier);
         int inside = 0;

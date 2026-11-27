@@ -20,6 +20,7 @@
 #define GVEX_ALERT_SECS     3.0f    // keeps chasing this long after it last saw or heard a player (the cylinder enemies' ENEMY_ALERT_SECS)
 #define GVEX_SIGHT_RANGE   14.0f    // the cylinder enemies' aggroRange
 #define GVEX_ATTACK_RANGE   1.8f
+#define GVEX_ATTACK_HOLD    1.35f   // once it is attacking it keeps at it until the player is this many reaches away (2.43 m), so a player wobbling across the 1.8 m line does not make it flicker between attacking and chasing
 
 // Placeholders, not the dossier's: it names the three grades and gives no numbers. Medium is the single-player cylinder's chase speed for the floor's
 // tier; slow and runner scale it. A runner at the top tier (4.5 m/s * 1.25) is quicker than a walking player (4.5) and slower than a sprinting one (7.6).
@@ -89,7 +90,8 @@ static void GhoulSense(ecs_iter_t *it)
         const int pick = nearestSensed >= 0 ? nearestSensed : nearest;
         const float d = nearestSensed >= 0 ? dSensed : dNearest;
         tg[i].has = 1; tg[i].x = g->targets[pick].x; tg[i].z = g->targets[pick].z; tg[i].dist = d;
-        if (d <= mv[i].attackRange)      st[i].v = GVEX_STATE_ATTACK;
+        const bool attacking = st[i].v == GVEX_STATE_ATTACK;                    // the state it had last tick: a creature that is attacking holds on to it across a wider band than it started in
+        if (d <= mv[i].attackRange || (attacking && d <= mv[i].attackRange * GVEX_ATTACK_HOLD)) st[i].v = GVEX_STATE_ATTACK;
         else if (sn[i].alert > 0.0f)     st[i].v = GVEX_STATE_CHASE;
         else                             st[i].v = GVEX_STATE_IDLE;
     }
@@ -112,8 +114,12 @@ static void GhoulMove(ecs_iter_t *it)
         if (ml < 0.01f) continue;
         mx /= ml; mz /= ml;
         yaw[i].v = atan2f(mx, mz);
-        if (st[i].v != GVEX_STATE_CHASE) continue;
-        const float step = mv[i].speed * it->delta_time;
+        // It walks while chasing, and also while attacking a player who is in the hold band (past its reach, not yet far enough to give up the attack):
+        // it closes up to its reach and no further, so it neither stands swinging at the air nor walks into the player.
+        const bool closing = st[i].v == GVEX_STATE_ATTACK && tg[i].dist > mv[i].attackRange;
+        if (st[i].v != GVEX_STATE_CHASE && !closing) continue;
+        float step = mv[i].speed * it->delta_time;
+        if (closing) { const float room = tg[i].dist - mv[i].attackRange * 0.98f; if (step > room) step = room; }
         const float nx = pos[i].x + mx * step;
         if (!EnemyWalk_Blocked(g->map, nx, pos[i].z, body[i].radius)) pos[i].x = nx;
         const float nz = pos[i].z + mz * step;

@@ -13,6 +13,7 @@
 // leaves the pad for a moment) and LIGHT above them, both away from where the look finger works.
 static const TcLayout g_layout = {
     .stickRadius = 87.0f, .stickBaseRadius = 56.0f, .knobRadius = 30.0f, .deadzone = 0.04f, .stickFullAt = 0.50f,
+    .stickGlideRate = 12.0f, .stickReleaseRate = 6.0f,
     .stickZone = { 0.0f, 44.0f, 400.0f, 406.0f },
     .stickMinX = 99.0f, .stickMaxX = 340.0f, .stickMinY = 160.0f, .stickMaxY = 363.0f,
     .sprintOn = 0.92f, .sprintOff = 0.80f,
@@ -38,6 +39,22 @@ void Tc_Init(TcState *s)
 }
 
 static float Clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+// The move stick's value is not the finger's position but a point that chases it at a fixed speed in ring radii per SECOND, and falls back to
+// the centre at another when the finger comes in or lifts. That is what makes a stick feel smooth: a thumb that lands or flicks does not turn
+// the player from stopped to full speed in one frame, and one that lifts does not stop it dead. (The same idea as the Unity MID_Joystick, whose
+// stick image slews toward the finger by a step per frame and whose axis is read from the image; here the step is per second, so a 30, 60 or 120
+// Hz screen feels the same.) With no frame time, or a rate of 0, it is the finger exactly.
+static void Glide(TcState *s, float tx, float ty, float dt, const TcLayout *L)
+{
+    if (dt <= 0.0f || L->stickGlideRate <= 0.0f || L->stickReleaseRate <= 0.0f) { s->glideX = tx; s->glideY = ty; return; }
+    if (dt > 0.1f) dt = 0.1f;                                           // a frame that took long (the tab was away) is not a reason to jump
+    const float dx = tx - s->glideX, dy = ty - s->glideY, d = sqrtf(dx * dx + dy * dy);
+    const float tm = sqrtf(tx * tx + ty * ty), cm = sqrtf(s->glideX * s->glideX + s->glideY * s->glideY);
+    const float step = (tm >= cm ? L->stickGlideRate : L->stickReleaseRate) * dt;      // going out (or round) is quick, coming in is a little slower
+    if (d <= step) { s->glideX = tx; s->glideY = ty; return; }
+    s->glideX += dx / d * step; s->glideY += dy / d * step;
+}
 
 static bool HasRole(const TcState *s, int role)
 {
@@ -105,6 +122,7 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
 
     // 4. What each finger is doing now.
     float mag = 0.0f, ux = 0.0f, uy = 0.0f;
+    bool stickDown = false;
     for (int i = 0; i < TC_MAX_TOUCHES; ++i) {
         TcSlot *sl = &s->slot[i];
         if (!sl->used) continue;
@@ -113,16 +131,9 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
         switch (sl->role) {
             case TC_ROLE_STICK: {
                 const float dx = px - s->anchorX, dy = py - s->anchorY, d = sqrtf(dx * dx + dy * dy);
-                out->stickActive = true;
-                out->anchorX = s->anchorX; out->anchorY = s->anchorY;
+                stickDown = true;
                 mag = Clampf(d / L->stickRadius, 0.0f, 1.0f);
                 if (d > 0.001f) { ux = dx / d; uy = dy / d; }
-                const float shown = d < L->stickRadius ? d : L->stickRadius;
-                out->knobX = s->anchorX + ux * shown; out->knobY = s->anchorY + uy * shown;
-                if (mag > L->deadzone) {                                                   // full speed at stickFullAt of the ring, not at its rim
-                    const float scaled = Clampf((mag - L->deadzone) / (L->stickFullAt - L->deadzone), 0.0f, 1.0f);
-                    out->moveX = ux * scaled; out->moveY = uy * scaled;
-                }
                 break;
             }
             case TC_ROLE_LOOK:
@@ -160,9 +171,27 @@ void Tc_Update(TcState *s, const TcTouch *touches, int count, const TcContext *c
         sl->lastX = px; sl->lastY = py; sl->fresh = false;
     }
 
+    // 4b. The move stick: the value that moves the player and draws the knob is the finger's deflection, smoothed (Glide). It keeps going for a
+    // moment after the finger lifts, and the stick stays drawn until it has come to rest.
+    Glide(s, stickDown ? ux * mag : 0.0f, stickDown ? uy * mag : 0.0f, ctx->dt, L);
+    {
+        const float gm = sqrtf(s->glideX * s->glideX + s->glideY * s->glideY);
+        if (stickDown || gm > 0.0f) {
+            out->stickActive = true;
+            out->anchorX = s->anchorX; out->anchorY = s->anchorY;
+            const float shown = gm < 1.0f ? gm : 1.0f;
+            const float gx = gm > 0.0001f ? s->glideX / gm : 0.0f, gy = gm > 0.0001f ? s->glideY / gm : 0.0f;
+            out->knobX = s->anchorX + gx * shown * L->stickRadius; out->knobY = s->anchorY + gy * shown * L->stickRadius;
+            if (gm > L->deadzone) {                                                        // full speed at stickFullAt of the ring, not at its rim
+                const float scaled = Clampf((gm - L->deadzone) / (L->stickFullAt - L->deadzone), 0.0f, 1.0f);
+                out->moveX = gx * scaled; out->moveY = gy * scaled;
+            }
+        }
+    }
+
     // 5. Sprint: the knob out at the rim, in any direction (omni sprint: how fast each direction goes is up to the player controller).
     // Once started it holds until the knob comes back in.
-    if (!out->stickActive) {
+    if (!stickDown) {                                                       // the finger lifted: the sprint ends now, even while the stick coasts to rest
         s->sprinting = false;
     } else {
         if (!s->sprinting) { if (mag >= L->sprintOn) s->sprinting = true; }

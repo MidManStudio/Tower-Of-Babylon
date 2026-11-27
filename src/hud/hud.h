@@ -16,8 +16,9 @@
 // game for nothing and keeps no pointer into it.
 //
 // The stats (health, stamina, weapon and ammo, flashlight charge, the floor and its generator numbers, enemies, FPS) are in a
-// popup behind the STATS button, so the screen stays clear to play on. Set HUD_VITALS_ALWAYS_ON to 1 to keep a health and a
-// stamina bar and the weapon with its ammo on the screen as well.
+// popup behind the STATS button, so the screen stays clear to play on. The STAMINA bar is the exception: it is always on the screen
+// (HudStamina_Draw, bottom centre), because running, sliding and diving are all paid for with it. Set HUD_VITALS_ALWAYS_ON to 1 to
+// keep a health bar on the screen as well.  The weapon with its ammo is always on the screen too.
 #define HUD_VITALS_ALWAYS_ON 0
 
 typedef struct {
@@ -70,6 +71,8 @@ void HudControls_Draw(const HudView *v);
 void HudStats_Draw(const HudView *v);
 void HudRun_Draw(const HudView *v);
 void HudDebug_Draw(const HudView *v);
+// The always-on stamina bar, from plain values: the solo HUD and a session's screen both call it, so there is one bar, in one place (HudLayout_StaminaBar).
+void HudStamina_Draw(float stamina01, bool exhausted, float exhaustRecover01);
 bool HudDebug_HandleTap(Vector2 where);
 
 #endif
