@@ -63,6 +63,30 @@ bool NetHistory_PoseAtF(const NetHistory *h, double tick, int id, Vector3 *pos, 
     return true;
 }
 
+void NetMonHistory_Begin(NetMonHistory *h, uint32_t tick)
+{
+    NetMonFrame *f = &h->f[tick % NET_HIST_FRAMES];
+    memset(f, 0, sizeof *f);
+    f->tick = tick;
+}
+
+void NetMonHistory_Set(NetMonHistory *h, uint32_t tick, int id, Vector3 pos)
+{
+    if (id < 0 || id >= NET_MAX_MONSTERS || tick == 0) return;
+    NetMonFrame *f = &h->f[tick % NET_HIST_FRAMES];
+    if (f->tick != tick) return;                                // the frame was never begun (or has been replaced)
+    f->present[id] = 1; f->pos[id] = pos;
+}
+
+bool NetMonHistory_PosAt(const NetMonHistory *h, uint32_t tick, int id, Vector3 *pos)
+{
+    if (id < 0 || id >= NET_MAX_MONSTERS || tick == 0) return false;
+    const NetMonFrame *f = &h->f[tick % NET_HIST_FRAMES];
+    if (f->tick != tick || !f->present[id]) return false;
+    if (pos) *pos = f->pos[id];
+    return true;
+}
+
 uint32_t NetHistory_RewindTick(uint32_t nowTick, uint8_t viewLag)
 {
     uint32_t lag = viewLag > NET_REWIND_MAX ? NET_REWIND_MAX : viewLag;

@@ -51,5 +51,8 @@ int  GvexWorld_Count(const GvexWorld *w);                            // creature
 int  GvexWorld_Records(GvexWorld *w, GvexRecord *out, int max);      // the living, in id order; returns how many were written
 // Hurts creature `id`; true when that killed it (it is gone from then on). False for an unknown or dead id. (Slice S3 calls this.)
 bool GvexWorld_Damage(GvexWorld *w, int id, float amount);
+// Pushes creature `id` `metres` away from the point (fromX, fromZ), along the line between them, one axis at a time so it slides along walls instead of
+// going into them (the single-player knockback). True when it moved. False for an unknown or dead id, no push, or when it is on the point.
+bool GvexWorld_Knock(GvexWorld *w, int id, float fromX, float fromZ, float metres);
 
 #endif

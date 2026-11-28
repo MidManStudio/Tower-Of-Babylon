@@ -51,6 +51,8 @@ static void DrawFigure(Vector3 feet, float yaw, int id)
 // cylinder enemies (enemy_plan.h: the floor map's seed and the creature's id, which both ends know), so the server only sends where it is and what it is doing.
 // Before a blow it crouches and swells and turns warm, as the single-player cylinders do.
 static float g_rear[NET_MAX_MONSTERS];      // drawing only: how far into its attack pose each creature is shown, 0 to 1, so a change of state eases instead of popping
+static float g_lastHp[NET_MAX_MONSTERS];    // drawing only: the health each creature was last drawn with (0: not seen yet), to see a blow land
+static float g_hurt[NET_MAX_MONSTERS];      // and how much of a flash it is still showing after one, 1 down to 0
 
 static void DrawCreature(const NetMonsterView *m, uint32_t mapSeed, float dt)
 {
@@ -64,6 +66,17 @@ static void DrawCreature(const NetMonsterView *m, uint32_t mapSeed, float dt)
     }
     const float light = Lighting_AtPoint(m->pos);
     Color col = Lit(tint, light);
+    if (m->id < NET_MAX_MONSTERS) {                                                // a blow that landed (on anyone's punch) flashes it red for about a sixth of a second
+        if (g_lastHp[m->id] > 0.0f && m->health < g_lastHp[m->id] - 0.004f) g_hurt[m->id] = 1.0f;
+        g_lastHp[m->id] = m->health;
+        const float flash = g_hurt[m->id];
+        if (flash > 0.0f) {
+            const Color hit = Lit((Color){ 255, 70, 60, 255 }, light);
+            col = (Color){ (unsigned char)((float)col.r + ((float)hit.r - (float)col.r) * flash), (unsigned char)((float)col.g + ((float)hit.g - (float)col.g) * flash),
+                           (unsigned char)((float)col.b + ((float)hit.b - (float)col.b) * flash), 255 };
+            g_hurt[m->id] = flash - dt * 6.0f > 0.0f ? flash - dt * 6.0f : 0.0f;
+        }
+    }
     if (rear > 0.0f) {
         const Color warm = Lit((Color){ 255, 140, 90, 255 }, light);
         col = (Color){ (unsigned char)(((int)col.r * 4 + (int)warm.r * 6) / 10), (unsigned char)(((int)col.g * 4 + (int)warm.g * 6) / 10), (unsigned char)(((int)col.b * 4 + (int)warm.b * 6) / 10), 255 };

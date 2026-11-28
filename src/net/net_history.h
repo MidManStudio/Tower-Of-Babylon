@@ -40,4 +40,20 @@ bool NetHistory_PoseAtF(const NetHistory *h, double tick, int id, Vector3 *pos, 
 // NET_REWIND_MAX back and never before tick 1.
 uint32_t NetHistory_RewindTick(uint32_t nowTick, uint8_t viewLag);
 
+// The same for the creatures of the server's world (docs/gvex_session.md, slice S3): where each was after each of the last ticks, as the snapshot of that
+// tick says (millimetres, so what the client drew). A punch is judged against these at the tick the puncher's screen was showing. Creatures are told apart
+// by their id (the spawn index, below NET_MAX_MONSTERS).
+typedef struct {
+    uint32_t tick;                 // 0: an unused frame
+    uint8_t  present[NET_MAX_MONSTERS];
+    Vector3  pos[NET_MAX_MONSTERS];
+} NetMonFrame;
+
+typedef struct { NetMonFrame f[NET_HIST_FRAMES]; } NetMonHistory;
+
+void NetMonHistory_Begin(NetMonHistory *h, uint32_t tick);
+void NetMonHistory_Set(NetMonHistory *h, uint32_t tick, int id, Vector3 pos);
+// Where creature `id` was at exactly `tick`; false if that tick is no longer (or not yet) kept, or the creature was not in it (dead by then, or never there).
+bool NetMonHistory_PosAt(const NetMonHistory *h, uint32_t tick, int id, Vector3 *pos);
+
 #endif

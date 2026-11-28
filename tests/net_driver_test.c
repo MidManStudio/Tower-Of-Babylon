@@ -4,7 +4,7 @@
 // refused, a full server saying so. No window, no real network. This needs the Rust library, so it is not one of the *_headless tests: run
 //   bash tests/net_driver_check.sh
 // which builds the library from the mid-engine checkout (exit 77 = skipped when there is none) and compiles and runs this with the line below.
-//   cc -O1 -g -std=c99 -Wall -Wextra -DNET_DRIVER_TEST -DTOWER_NETDRIVER=1 -Isrc -Iraylib/src tests/net_driver_test.c src/net/net_driver.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c LIBMIDNET -lm -lpthread -ldl -o net_driver_test
+//   cc -O1 -g -std=c99 -Wall -Wextra -DNET_DRIVER_TEST -DTOWER_NETDRIVER=1 -Isrc -Iraylib/src tests/net_driver_test.c src/net/net_driver.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/net/net_history.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c LIBMIDNET -lm -lpthread -ldl -o net_driver_test
 #ifdef NET_DRIVER_TEST
 
 #include <math.h>

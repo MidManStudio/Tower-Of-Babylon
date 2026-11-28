@@ -2,7 +2,7 @@
 // one process talk through actual packets: the reliable layer over real sockets, the handshake, a few seconds of play with prediction,
 // packets lost and doubled on the way out (the transport's own debug switch), a full server, closing, and strangers' packets. No window,
 // no raylib calls. It takes about fifteen seconds (the clock is the real one). Run from the project root:
-//   cc -O2 -std=c99 -DNET_UDP_HEADLESS_TEST -Isrc -Iraylib/src tests/net_udp_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_udp_headless
+//   cc -O2 -std=c99 -DNET_UDP_HEADLESS_TEST -Isrc -Iraylib/src tests/net_udp_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/net/net_history.c src/net/net_client.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_udp_headless
 #ifdef NET_UDP_HEADLESS_TEST
 
 #define _POSIX_C_SOURCE 200809L

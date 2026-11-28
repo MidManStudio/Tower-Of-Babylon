@@ -18,6 +18,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "../config/game_config.h"
 #include "../gvex/gvex_world.h"
 #include "../net/net_host.h"
 #include "../platform/platform.h"
@@ -37,6 +38,7 @@ static void SleepMs(double ms) { struct timespec ts; ts.tv_sec = 0; ts.tv_nsec =
 
 int main(int argc, char **argv)
 {
+    GameConfig_LoadBaked();                  // the weapon numbers the players' hands use (weapons.mdix, baked into the build: no file needed on a server)
     unsigned port = 7777, seed = 12345, discPort = NET_DISC_PORT;
     const char *lobbyName = "tower";
     int floorNumber = 1, quiet = 0, discovery = 1, useQuic = -1;

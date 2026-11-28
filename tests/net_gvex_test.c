@@ -6,18 +6,20 @@
 // latency, jitter and loss, and what each client is shown. The same ghouls on both screens, where the server has them (a tick or three behind),
 // the same looks as the single-player game gives its cylinders, a creature killed on the server gone from both screens, and the wire format of a
 // full snapshot. It needs the Flecs object, so it is built by tests/gvex_check.sh (exit 77, SKIP, where that is not possible; its name ends in _test so that run_tests.sh does not build it with a plain line):
-//   cc -O1 -std=c99 -DNET_GVEX_HEADLESS_TEST -DTOWER_GVEX=1 -Isrc -Iraylib/src -Ithird_party/flecs tests/net_gvex_test.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/gvex/gvex_world.c third_party/flecs/tob_flecs.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -lpthread -o net_gvex_test
+//   cc -O1 -std=c99 -DNET_GVEX_HEADLESS_TEST -DTOWER_GVEX=1 -Isrc -Iraylib/src -Ithird_party/flecs tests/net_gvex_test.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/config/game_config.c src/config/config_baked.c src/config/mdix_doc.c src/config/mdix_web.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/flashlight/flashlight.c src/net/net_history.c src/net/net_client.c src/gvex/gvex_world.c third_party/flecs/tob_flecs.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -lpthread -o net_gvex_test
 #ifdef NET_GVEX_HEADLESS_TEST
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "config/game_config.h"
 #include "enemies/enemy_plan.h"
 #include "gvex/gvex_world.h"
 #include "net/net_client.h"
 #include "net/net_loopback.h"
 #include "net/net_server.h"
 #include "net/net_wire.h"
+#include "weapons/weapons.h"
 
 void DrawCube(Vector3 p, float w, float h, float l, Color c) { (void)p; (void)w; (void)h; (void)l; (void)c; }
 void DrawCylinderEx(Vector3 a, Vector3 b, float r0, float r1, int sides, Color c) { (void)a; (void)b; (void)r0; (void)r1; (void)sides; (void)c; }
@@ -38,13 +40,22 @@ static GvexRecord g_hist[4096][GVEX_MAX_CREATURES];       // what the server's w
 static int g_histN[4096];
 
 static int g_sprint[2];                                    // set by the test: the client holds forward and sprint (what the player's fingers would do)
-static NetCmd Cmd(void *user, uint32_t tick) { (void)tick; return *(int *)user ? NetCmd_Make(0, 1, 0, 0, NET_BTN_SPRINT) : NetCmd_Make(0, 0, 0, 0, 0); }
+static int g_fire[2];                                      // set by the test: the client holds the fire button
+static float g_yaw[2];                                     // and which way it looks (radians)
+static NetCmd Cmd(void *user, uint32_t tick)
+{
+    (void)tick;
+    const int k = (int)((int *)user - g_sprint), sprint = *(int *)user;
+    return NetCmd_Make(0, sprint ? 1.0f : 0.0f, g_yaw[k], 0, (uint16_t)((sprint ? NET_BTN_SPRINT : 0) | (g_fire[k] ? NET_BTN_FIRE : 0)));
+}
 
 static void World(float latency, float jitter, float loss)
 {
     g_now = 1000.0; g_nextTick = g_now + TICK_MS;
     memset(g_histN, 0, sizeof g_histN);
     memset(g_sprint, 0, sizeof g_sprint);
+    memset(g_fire, 0, sizeof g_fire);
+    memset(g_yaw, 0, sizeof g_yaw);
     NetServer_Init(&g_srv, SEED, FLOOR);
     for (int k = 0; k < 2; ++k) {
         NetLoopback_Init(&g_lb[k], 31u + (uint32_t)k);
@@ -70,6 +81,41 @@ static void Step1ms(void)
 }
 static void Run(double ms) { const double end = g_now + ms; while (g_now < end) Step1ms(); }
 static void Finish(void) { NetServer_Free(&g_srv); }
+
+// A creature (other than skipId) with clear floor to one side of it, and which side: (dx, dz) points from the creature to where a player can stand.
+static int FindSide(int *outId, float *dx, float *dz, int skipId)
+{
+    GvexRecord rec[GVEX_MAX_CREATURES];
+    const int n = GvexWorld_Records(g_srv.gvex, rec, GVEX_MAX_CREATURES);
+    static const float dirs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+    for (int i = 0; i < n; ++i) {
+        if (rec[i].id == skipId) continue;
+        for (int k = 0; k < 4; ++k) {
+            int clear = 1;
+            for (float d = 0.8f; d <= 3.0f; d += 0.2f) {
+                const float px = rec[i].x + dirs[k][0] * d, pz = rec[i].z + dirs[k][1] * d;
+                if (EnemyWalk_Blocked(&g_srv.map, px, pz, 0.7f) || !EnemyWalk_LineOfSight(&g_srv.map, (Vector3){ rec[i].x, 0, rec[i].z }, (Vector3){ px, 0, pz })) { clear = 0; break; }
+            }
+            if (clear) { *outId = rec[i].id; *dx = dirs[k][0]; *dz = dirs[k][1]; return 1; }
+        }
+    }
+    return 0;
+}
+static int RecOf(int id, GvexRecord *out)
+{
+    GvexRecord rec[GVEX_MAX_CREATURES];
+    const int n = GvexWorld_Records(g_srv.gvex, rec, GVEX_MAX_CREATURES);
+    for (int i = 0; i < n; ++i) if (rec[i].id == id) { *out = rec[i]; return 1; }
+    return 0;
+}
+// Stands player pl `dist` metres from the creature on the side (dx, dz), looking at it (towards = 1) or away from it (0). The server owns the position, so the test sets it there.
+static void Stand(int pl, const GvexRecord *c, float dx, float dz, float dist, int towards)
+{
+    g_srv.c[pl].player.position = (Vector3){ c->x + dx * dist, c->y, c->z + dz * dist };
+    float yaw = towards ? atan2f(-dx, -dz) : atan2f(dx, dz);
+    if (yaw < 0.0f) yaw += 6.28318531f;
+    g_yaw[pl] = yaw;
+}
 
 static const GvexRecord *Hist(uint32_t tick, int id) { if (tick >= 4096) return NULL; for (int i = 0; i < g_histN[tick]; ++i) if (g_hist[tick][i].id == id) return &g_hist[tick][i]; return NULL; }
 static const NetMonsterView *View(const NetMonsterView *v, int n, int id) { for (int i = 0; i < n; ++i) if (v[i].id == id) return &v[i]; return NULL; }
@@ -99,6 +145,7 @@ static float ShownYawError(const NetClient *c, const NetMonsterView *v)
 
 int main(void)
 {
+    GameConfig_LoadBaked();                      // the hands' numbers, as the server program installs them
     printf("the wire format\n");
     {
         NetMsg m; memset(&m, 0, sizeof m);
@@ -294,6 +341,109 @@ int main(void)
         const int na = NetClient_MonsterViews(&g_cl[0], g_now, va, NET_MAX_MONSTERS), nb = NetClient_MonsterViews(&g_cl[1], g_now, vb, NET_MAX_MONSTERS);
         Check(na == n0 - 1 && nb == n0 - 1 && !View(va, na, 2) && !View(vb, nb, 2), "it is gone from both screens");
         Check(View(va, na, 1) && View(va, na, 3) && View(vb, nb, 1) && View(vb, nb, 3), "and the creatures with the ids on either side of it are still there");
+        Finish();
+    }
+
+    printf("fists: the server runs the players' hands\n");
+    {
+        const WeaponDef *hands = Weapon_Def(WEAPON_HANDS);
+        Check(hands->damage > 0.0f && hands->reach > 0.0f && hands->cooldown > 0.0f && hands->kind == WEAPON_KIND_UNARMED, "(set up: the baked config gives the hands a punch)");
+        World(30.0f, 4.0f, 0.0f);
+        Run(600.0);
+        int id = -1; float dx = 0.0f, dz = 0.0f;
+        Check(FindSide(&id, &dx, &dz, -1), "(set up: a creature with clear floor to one side was found)");
+        GvexRecord c;
+        RecOf(id, &c);
+        const float maxHp = c.maxHealth;
+        Check(Arsenal_OwnedCount(&g_srv.c[0].arsenal) == 1 && g_srv.c[0].arsenal.current == WEAPON_HANDS && Arsenal_EquippedCount(&g_srv.c[0].arsenal) == 0 && g_srv.c[1].arsenal.current == WEAPON_HANDS, "a player in a session starts with their hands and nothing else, in hand");
+        Stand(0, &c, dx, dz, 1.2f, 1);
+        Run(1500.0);
+        RecOf(id, &c);
+        Check(c.health == maxHp, "a player standing in front of a creature, not firing, does it no harm (1.5 s)");
+
+        g_fire[0] = 1; Run(2000.0); g_fire[0] = 0; Run(500.0);
+        Check(RecOf(id, &c), "(it is still alive after five blows or so)");
+        const float lost = maxHp - c.health, blows = lost / hands->damage;
+        Check(fabsf(blows - roundf(blows)) < 1e-3f && blows >= 4.0f && blows <= 5.0f, "holding fire for two seconds: four or five blows landed, each the hands' damage, and no blow in between (a blow every 0.45 s, the first after its windup)");
+        {
+            NetMonsterView va[NET_MAX_MONSTERS], vb[NET_MAX_MONSTERS];
+            const int na = NetClient_MonsterViews(&g_cl[0], g_now, va, NET_MAX_MONSTERS), nb = NetClient_MonsterViews(&g_cl[1], g_now, vb, NET_MAX_MONSTERS);
+            const NetMonsterView *a = View(va, na, id), *b = View(vb, nb, id);
+            Check(a && b && fabsf(a->health - c.health / maxHp) < 0.008f && fabsf(b->health - c.health / maxHp) < 0.008f, "the puncher's screen and the other player's both show the creature with the health the server left it");
+            Check(a && b && hypotf(a->pos.x - c.x, a->pos.z - c.z) < 1.0f, "and it is still where the punches left it (knocked back and closing in, not thrown away)");
+            const float away = hypotf(c.x - g_srv.c[0].player.position.x, c.z - g_srv.c[0].player.position.z);
+            Check(away > 1.35f && away < 2.6f, "the blows knocked it back from the 1.2 m it started at (and it closes up to its reach again: not flung away)");
+            Vector3 hp3;
+            Check(NetMonHistory_PosAt(&g_srv.mhist, g_srv.tick, id, &hp3) && fabsf(hp3.x - c.x) < 0.002f && fabsf(hp3.z - c.z) < 0.002f, "the server's history of the creature has where it is (to the millimetre the snapshot carries)");
+        }
+
+        g_fire[0] = 1;
+        int gone = 0;
+        for (int i = 0; i < 80 && !gone; ++i) { Run(100.0); gone = !RecOf(id, &c); }
+        g_fire[0] = 0;
+        Check(gone, "held on, the creature dies (it has 100 health: ten blows)");
+        Run(300.0);
+        {
+            NetMonsterView va[NET_MAX_MONSTERS], vb[NET_MAX_MONSTERS];
+            const int na = NetClient_MonsterViews(&g_cl[0], g_now, va, NET_MAX_MONSTERS), nb = NetClient_MonsterViews(&g_cl[1], g_now, vb, NET_MAX_MONSTERS);
+            Check(!View(va, na, id) && !View(vb, nb, id) && na == GvexWorld_Count(g_srv.gvex) && nb == na, "and it is gone from both screens, the others still there");
+        }
+        Finish();
+
+        // behind the player, close enough to be in reach but not in the arc: nothing
+        World(30.0f, 4.0f, 0.0f);
+        Run(600.0);
+        Check(FindSide(&id, &dx, &dz, -1), "(set up again)");
+        RecOf(id, &c);
+        Stand(0, &c, dx, dz, 1.7f, 0);
+        g_fire[0] = 1; Run(1500.0); g_fire[0] = 0; Run(200.0);
+        GvexRecord c2;
+        Check(RecOf(id, &c2) && c2.health == maxHp, "a creature 1.7 m behind a player who is punching the other way is not hit");
+        Finish();
+
+        // nobody firing: a player can walk through a crowd of creatures and the hands do nothing (the arsenal only works on the fire button)
+        World(30.0f, 4.0f, 0.0f);
+        Run(600.0);
+        g_sprint[0] = 1; Run(3000.0);
+        int whole = 1; GvexRecord all[GVEX_MAX_CREATURES]; const int n = GvexWorld_Records(g_srv.gvex, all, GVEX_MAX_CREATURES);
+        for (int i = 0; i < n; ++i) whole &= all[i].health == all[i].maxHealth;
+        Check(whole, "a player sprinting about for three seconds without the fire button hurts nobody");
+        Finish();
+    }
+
+    printf("fists are judged where the puncher saw the creature\n");
+    {
+        World(30.0f, 4.0f, 0.0f);
+        Run(2500.0);
+        int id = -1; float dx = 0.0f, dz = 0.0f;
+        Check(FindSide(&id, &dx, &dz, -1), "(set up: a creature with clear floor to one side was found)");
+        GvexRecord c;
+        RecOf(id, &c);
+        const WeaponDef *hands = Weapon_Def(WEAPON_HANDS);
+        const Vector3 P = { c.x, c.y, c.z };
+        const Vector3 farX = { P.x + 12.0f, P.y, P.z }, farZ = { P.x, P.y, P.z + 12.0f };
+        const uint32_t T = g_srv.tick;
+        Check(T >= 60, "(set up: the server has run long enough to have history to rewind into)");
+        for (uint32_t t = T - 40; t < T; ++t) {                               // far along z until 21 ticks ago, far along x until 8 ago, here since
+            NetMonHistory_Begin(&g_srv.mhist, t);
+            NetMonHistory_Set(&g_srv.mhist, t, id, t < T - 20 ? farZ : (t < T - 7 ? farX : P));
+        }
+        const float yaw = atan2f(-dx, -dz);                                   // looking at the creature from one metre away on its side
+        const Vector3 nearP = { P.x + dx, P.y + 1.0f, P.z + dz };
+        const Vector3 nearFarX = { farX.x + dx, farX.y + 1.0f, farX.z + dz };
+        uint16_t ids[8];
+        Check(NetServer_MeleeTargets(&g_srv, 0, nearP, yaw, hands, ids, 8) == 1 && ids[0] == id, "with no lag the creature is judged where it is now (there is no frame for this tick)");
+        Check(NetServer_MeleeTargets(&g_srv, 3, nearP, yaw, hands, ids, 8) == 1, "a lag of 3 ticks: it was here then too: hit");
+        Check(NetServer_MeleeTargets(&g_srv, 10, nearP, yaw, hands, ids, 8) == 0, "a lag of 10 ticks: it was 12 m away then, and the screen showed it there: miss");
+        Check(NetServer_MeleeTargets(&g_srv, 10, nearFarX, yaw, hands, ids, 8) == 1 && ids[0] == id, "a puncher whose screen showed it 12 m along x ten ticks ago and who swung at it there: hit, though it is not there now");
+        Check(NetServer_MeleeTargets(&g_srv, 0, nearFarX, yaw, hands, ids, 8) == 0, "(the same swing with no lag misses: the rewind is what makes it land)");
+        Check(NetServer_MeleeTargets(&g_srv, 30, nearFarX, yaw, hands, ids, 8) == 1, "a lag of 30 is held to NET_REWIND_MAX (20 ticks): it is judged at 20 ticks ago (along x), not at 30 (along z)");
+        Check(NetServer_MeleeTargets(&g_srv, 255, nearFarX, yaw, hands, ids, 8) == 1, "and a lag of 255 is the same: a cheat or a bad link gets no further back");
+        const Vector3 farther = { P.x + dx * 1.7f, P.y + 1.0f, P.z + dz * 1.7f };        // 1.7 m from its centre: its surface is over half a metre away at any size
+        Check(NetServer_MeleeTargets(&g_srv, 3, farther, yaw, hands, ids, 8) == 1, "(from 1.7 m, looking at it: hit)");
+        Check(NetServer_MeleeTargets(&g_srv, 3, farther, yaw + 3.14159265f, hands, ids, 8) == 0, "and looking the other way from there: miss"); 
+        Check(NetServer_MeleeTargets(&g_srv, 3, nearP, yaw, hands, ids, 0) == 0 && NetServer_MeleeTargets(&g_srv, 3, nearP, yaw, NULL, ids, 8) == 0 && NetServer_MeleeTargets(&g_srv, 3, nearP, yaw, hands, NULL, 8) == 0, "no room for results, no weapon, or nowhere to write: nothing, and no crash");
+        Check(GvexWorld_Damage(g_srv.gvex, id, 10000.0f) && NetServer_MeleeTargets(&g_srv, 3, nearP, yaw, hands, ids, 8) == 0, "a creature that has died since is not a target, however far back the puncher's screen shows it alive");
         Finish();
     }
 

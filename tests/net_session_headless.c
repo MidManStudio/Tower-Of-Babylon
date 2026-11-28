@@ -4,7 +4,7 @@
 // seconds (the clock is the real one). Every connection of the game goes through mid-net's driver (net_driver.h), a Rust library: built as below there is
 // none (TOWER_NETDRIVER 0), and the test checks that hosting and joining say so; tests/net_session_check.sh builds the same file against the library
 // and runs the real games. Run from the project root:
-//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_driver.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
+//   cc -O2 -std=c99 -DNET_SESSION_HEADLESS_TEST -Isrc -Iraylib/src tests/net_session_headless.c src/net/net_session.c src/net/net_host.c src/net/net_dial.c src/net/net_driver.c src/net/net_discovery.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_session_headless
 #ifdef NET_SESSION_HEADLESS_TEST
 
 #define _POSIX_C_SOURCE 200809L

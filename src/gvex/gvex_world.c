@@ -249,6 +249,22 @@ bool GvexWorld_Damage(GvexWorld *g, int id, float amount)
     return true;
 }
 
+bool GvexWorld_Knock(GvexWorld *g, int id, float fromX, float fromZ, float metres)
+{
+    if (!g || metres <= 0.0f || id < 0 || id >= GVEX_MAX_CREATURES || !g->byId[id] || !ecs_is_alive(g->w, g->byId[id])) return false;
+    GvPos *p = (GvPos *)ecs_get_mut_id(g->w, g->byId[id], g->cPos);
+    const GvBody *b = (const GvBody *)ecs_get_id(g->w, g->byId[id], g->cBody);
+    if (!p || !b) return false;
+    const float dx = p->x - fromX, dz = p->z - fromZ, d = sqrtf(dx * dx + dz * dz);
+    if (d < 0.01f) return false;
+    bool moved = false;
+    const float nx = p->x + dx / d * metres;
+    if (!EnemyWalk_Blocked(g->map, nx, p->z, b->radius)) { p->x = nx; moved = true; }
+    const float nz = p->z + dz / d * metres;
+    if (!EnemyWalk_Blocked(g->map, p->x, nz, b->radius)) { p->z = nz; moved = true; }
+    return moved;
+}
+
 #else
 typedef int GvexWorldDisabled;          // an empty translation unit is not allowed in ISO C
 const char *Gvex_Designation(uint8_t kind) { (void)kind; return "?"; }

@@ -6,7 +6,7 @@
 // history and its rewind, the view lag a client puts on every command, and, end to end on a real (loopback) link, that the pose the server
 // rewinds a player to is the pose the shooter's screen showed, and that without the rewind it is not.
 // Build and run from the project root (the raylib sources are only read for their headers):
-//   cc -O2 -std=c99 -DNET_SHOT_HEADLESS_TEST -Isrc -Iraylib/src tests/net_shot_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/net/net_shot.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_shot_headless
+//   cc -O2 -std=c99 -DNET_SHOT_HEADLESS_TEST -Isrc -Iraylib/src tests/net_shot_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/net/net_shot.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_shot_headless
 #ifdef NET_SHOT_HEADLESS_TEST
 #include <math.h>
 #include <stdio.h>
@@ -185,6 +185,29 @@ int main(void)
         Vector3 p; float yaw;
         Check(!NetServer_RewoundPose(&g_srv, 7, 3, &p, &yaw), "a player who is not in the game has no rewound pose");
         Check(NetServer_RewoundPose(&g_srv, 7, 0, &p, &yaw) && NetServer_RewoundPose(&g_srv, 250, 0, &p, &yaw), "and a lag of 250 still gets one (at the limit)");
+    }
+
+    printf("\nThe creature history\n");
+    {
+        static NetMonHistory mh;
+        memset(&mh, 0, sizeof mh);
+        for (uint32_t t = 100; t <= 103; ++t) {
+            NetMonHistory_Begin(&mh, t);
+            NetMonHistory_Set(&mh, t, 5, (Vector3){ (float)t, 0.0f, 1.0f });
+            if (t % 2) NetMonHistory_Set(&mh, t, 7, (Vector3){ 0.0f, 2.0f, 0.0f });
+        }
+        Vector3 p;
+        Check(NetMonHistory_PosAt(&mh, 101, 5, &p) && p.x == 101.0f && p.z == 1.0f, "a creature's position at a tick is what was set for that tick");
+        Check(NetMonHistory_PosAt(&mh, 103, 7, &p) && !NetMonHistory_PosAt(&mh, 102, 7, &p), "a creature that was not in a tick is not in its frame");
+        Check(!NetMonHistory_PosAt(&mh, 99, 5, &p) && !NetMonHistory_PosAt(&mh, 104, 5, &p) && !NetMonHistory_PosAt(&mh, 0, 5, &p), "a tick that is not kept (before the first, not yet, or 0) has no position");
+        Check(!NetMonHistory_PosAt(&mh, 101, NET_MAX_MONSTERS, &p) && !NetMonHistory_PosAt(&mh, 101, -1, &p), "and neither has an id that cannot be a creature");
+        NetMonHistory_Set(&mh, 101, NET_MAX_MONSTERS, (Vector3){ 9.0f, 9.0f, 9.0f });
+        NetMonHistory_Set(&mh, 200, 5, (Vector3){ 9.0f, 9.0f, 9.0f });
+        NetMonHistory_Set(&mh, 0, 5, (Vector3){ 9.0f, 9.0f, 9.0f });
+        Check(!NetMonHistory_PosAt(&mh, 200, 5, &p) && NetMonHistory_PosAt(&mh, 101, 5, &p) && p.x == 101.0f, "setting an impossible id, a tick that was never begun, or tick 0 changes nothing");
+        NetMonHistory_Begin(&mh, 100 + NET_HIST_FRAMES);
+        Check(!NetMonHistory_PosAt(&mh, 100, 5, &p) && NetMonHistory_PosAt(&mh, 101, 5, &p), "a frame a ring's length later takes the place of the old one, and only that one");
+        Check(sizeof mh == sizeof(NetMonFrame) * NET_HIST_FRAMES, "(the ring is NET_HIST_FRAMES frames)");
     }
 
     printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures, g_failures == 1 ? "" : "s");

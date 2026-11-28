@@ -105,4 +105,19 @@ static inline void EnemyLook(uint32_t h, float *height, float *radius, Color *ti
     }
 }
 
+// Whether a swing from `eye`, facing (fx, fz) on the floor plane, with `reach` metres (measured from the creature's surface) and a half-angle of arcDeg,
+// reaches a creature standing at `pos` with the given body: the eye is within a body's height of it (a little slack above and below), its surface is
+// within reach, and it is inside the arc, unless it is within half a metre of the surface (too close for the arc to matter). The rule of the
+// single-player EnemiesMeleeHit, taken out so the server judges a punch in a session the same way.
+static inline bool EnemyMelee_Reaches(Vector3 eye, float fx, float fz, float reach, float arcDeg, Vector3 pos, float radius, float height)
+{
+    if (eye.y < pos.y - 0.3f || eye.y > pos.y + height + 0.3f) return false;
+    const float dx = pos.x - eye.x, dz = pos.z - eye.z;
+    const float dist = sqrtf(dx * dx + dz * dz);
+    const float edge = dist - radius;
+    if (edge > reach) return false;
+    if (dist > 0.01f && edge > 0.5f && (dx * fx + dz * fz) / dist < cosf(arcDeg * (PI / 180.0f))) return false;     // outside the arc
+    return true;
+}
+
 #endif

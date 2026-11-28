@@ -6,7 +6,7 @@
 // the camera follows the prediction, and two players on a real (loopback) link walk, dive and see each other through that path. What it
 // cannot see is the screen: the floor, the other players' bodies and the buttons are drawn by src/lobby/play_ui.c (checked for compiling only).
 // Build and run from the project root (the raylib sources are only read for their headers):
-//   cc -O2 -std=c99 -DNET_PLAY_HEADLESS_TEST -Isrc -Iraylib/src tests/net_play_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_play_headless
+//   cc -O2 -std=c99 -DNET_PLAY_HEADLESS_TEST -Isrc -Iraylib/src tests/net_play_headless.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/net/net_history.c src/net/net_client.c src/net/net_play.c src/input/input_latch.c src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c -lm -o net_play_headless
 #ifdef NET_PLAY_HEADLESS_TEST
 #include <math.h>
 #include <stdio.h>

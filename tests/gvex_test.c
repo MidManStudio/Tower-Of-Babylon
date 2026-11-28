@@ -385,6 +385,58 @@ int main(void)
         GvexWorld_Destroy(x); GvexWorld_Destroy(y);
     }
 
+    printf("knocked back\n");
+    {
+        int kid = -1; float kdx = 0.0f, kdz = 0.0f;                  // a creature with 3 m of clear floor to one side
+        for (int cand = 0; cand < 24 && kid < 0; ++cand) {
+            GvexWorld *kw = GvexWorld_Create(&g_map, tier);
+            const int kn = GvexWorld_Records(kw, rec, GVEX_MAX_CREATURES);
+            const GvexRecord *c = ById(rec, kn, cand);
+            if (c) {
+                static const float dirs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+                for (int k = 0; k < 4 && kid < 0; ++k) {
+                    int clear = 1;
+                    for (float dd = 0.4f; dd <= 3.0f; dd += 0.2f)
+                        if (EnemyWalk_Blocked(&g_map, c->x + dirs[k][0] * dd, c->z + dirs[k][1] * dd, 0.7f)) { clear = 0; break; }
+                    if (clear) { kid = cand; kdx = dirs[k][0]; kdz = dirs[k][1]; }
+                }
+            }
+            GvexWorld_Destroy(kw);
+        }
+        Check(kid >= 0, "(set up: a creature with clear floor to one side was found)");
+        if (kid >= 0) {
+            GvexWorld *kw = GvexWorld_Create(&g_map, tier);
+            GvexWorld_Records(kw, rec, GVEX_MAX_CREATURES);
+            const GvexRecord g0 = *ById(rec, GvexWorld_Count(kw), kid);
+            Check(GvexWorld_Knock(kw, kid, g0.x - kdx * 1.0f, g0.z - kdz * 1.0f, 0.4f), "a push from a point one metre behind it moves it");
+            GvexWorld_Records(kw, rec, GVEX_MAX_CREATURES);
+            const GvexRecord *g1 = ById(rec, GvexWorld_Count(kw), kid);
+            Check(fabsf(g1->x - (g0.x + kdx * 0.4f)) < 1e-4f && fabsf(g1->z - (g0.z + kdz * 0.4f)) < 1e-4f && g1->y == g0.y, "by exactly that far, away from the point, along the line");
+            Check(!GvexWorld_Knock(kw, kid, g1->x, g1->z, 0.4f), "a push from the very spot it stands on has no direction: nothing");
+            Check(!GvexWorld_Knock(kw, kid, g1->x - 1.0f, g1->z, 0.0f) && !GvexWorld_Knock(kw, kid, g1->x - 1.0f, g1->z, -0.5f), "a push of no length, or a negative one, does nothing");
+            Check(!GvexWorld_Knock(kw, 99, 0.0f, 0.0f, 0.4f) && !GvexWorld_Knock(kw, -1, 0.0f, 0.0f, 0.4f) && !GvexWorld_Knock(NULL, kid, 0.0f, 0.0f, 0.4f), "an id that never was, or no world, does nothing");
+            GvexWorld_Damage(kw, kid, 1000.0f);
+            Check(!GvexWorld_Knock(kw, kid, g0.x - kdx, g0.z - kdz, 0.4f), "a dead creature is not pushed");
+            GvexWorld_Destroy(kw);
+        }
+        // from every side, a push of a metre never leaves a creature in a wall
+        GvexWorld *kw = GvexWorld_Create(&g_map, tier);
+        const int kn = GvexWorld_Records(kw, rec, GVEX_MAX_CREATURES);
+        GvexRecord start[GVEX_MAX_CREATURES]; memcpy(start, rec, sizeof(GvexRecord) * (size_t)kn);
+        int inWall = 0, tried = 0;
+        for (int i = 0; i < kn; ++i)
+            for (int a = 0; a < 16; ++a) {
+                const float ang = (float)a * 0.392699f;
+                GvexWorld_Knock(kw, start[i].id, start[i].x - cosf(ang), start[i].z - sinf(ang), 1.0f);
+                GvexRecord now[GVEX_MAX_CREATURES]; GvexWorld_Records(kw, now, GVEX_MAX_CREATURES);
+                const GvexRecord *r = ById(now, GvexWorld_Count(kw), start[i].id);
+                ++tried;
+                if (Floor_Solid(&g_map, 0, EnemyTileOf(r->x), EnemyTileOf(r->z))) ++inWall;
+            }
+        Check(tried > 100 && inWall == 0, "a metre's push from sixteen directions on every creature, one after another: nobody ever ends up in a wall");
+        GvexWorld_Destroy(kw);
+    }
+
     printf("hurting\n");
     {
         GvexWorld *w = GvexWorld_Create(&g_map, tier);

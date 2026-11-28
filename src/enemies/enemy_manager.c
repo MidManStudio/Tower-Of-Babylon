@@ -214,19 +214,14 @@ unsigned EnemyKillsLanded(void) { return g_killsLanded; }
 
 int EnemiesMeleeHit(const FloorMap *floorMap, Vector3 eye, float fx, float fz, float reach, float arcDeg, float damage, float knockback)
 {
-    const float cosArc = cosf(arcDeg * (PI / 180.0f));
     int hits = 0;
 
     for (int i = 0; i < MAX_FLOOR_ENEMIES; ++i) {
         Enemy *e = &g_enemies[i];
         if (!e->active) continue;
-        if (eye.y < e->position.y - 0.3f || eye.y > e->position.y + e->height + 0.3f) continue;
-
+        if (!EnemyMelee_Reaches(eye, fx, fz, reach, arcDeg, e->position, e->radius, e->height)) continue;     // the rule is shared with the server (enemy_plan.h)
         const float dx = e->position.x - eye.x, dz = e->position.z - eye.z;
         const float dist = sqrtf(dx * dx + dz * dz);
-        const float edge = dist - e->radius;
-        if (edge > reach) continue;
-        if (dist > 0.01f && edge > 0.5f && (dx * fx + dz * fz) / dist < cosArc) continue;   // outside the arc
 
         ++hits;
         ApplyDamage(&e->health, damage);

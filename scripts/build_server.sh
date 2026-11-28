@@ -20,6 +20,9 @@ out="${1:-build}"
 mkdir -p "$out" || exit 1
 common=(src/net/net_wire.c src/net/net_proto.c src/net/net_reliable.c src/net/net_udp.c src/net/net_discovery.c src/net/net_mid.c src/net/net_move_sim.c src/net/net_driver.c
         src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c)
+# The players' hands run on the server (weapons.c) with the weapon numbers baked into the build (game_config.c and config_baked.c; mdix_web.c is its stand-in for the
+# browser's DixScript and answers "no" outside one; the projectile and flashlight tables are installed by the same call).
+weapons=(src/weapons/weapons.c src/config/game_config.c src/config/config_baked.c src/config/mdix_doc.c src/config/mdix_web.c src/projectiles/projectile_config.c src/projectiles/projectile_patterns.c src/flashlight/flashlight.c)
 cc=${CC:-cc}
 # Every connection of the game goes through mid-net's driver (src/net/net_driver.c), which is Rust: cargo is always needed. Plain UDP is still what
 # carries the packets (or QUIC, with --quic), but the driver is on top of both, on the server and on the bot, so the two ends always agree.
@@ -55,6 +58,6 @@ libs=("$lib" -lm -lpthread -ldl)
 set -e
 # The server runs the creatures of the game (src/gvex/gvex_world.c, on Flecs): Flecs is one translation unit built on its own (it wants -std=gnu99; docs/gvex_session.md).
 $cc -O2 -std=gnu99 -Ithird_party/flecs -c third_party/flecs/tob_flecs.c -o "$out/tob_flecs.o" || exit 1
-$cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_GVEX=1 -DTOWER_SERVER_MAIN -Isrc -Iraylib/src -Ithird_party/flecs src/server/server_main.c src/net/net_host.c src/net/net_server.c src/net/net_history.c src/gvex/gvex_world.c "$out/tob_flecs.o" "${common[@]}" "${libs[@]}" -o "$out/tower_server"
+$cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_GVEX=1 -DTOWER_SERVER_MAIN -Isrc -Iraylib/src -Ithird_party/flecs src/server/server_main.c src/net/net_host.c src/net/net_server.c src/net/net_history.c src/gvex/gvex_world.c "${weapons[@]}" "$out/tob_flecs.o" "${common[@]}" "${libs[@]}" -o "$out/tower_server"
 $cc -O2 -std=c99 -Wall -Wextra "${defs[@]}" -DTOWER_BOT_MAIN -Isrc -Iraylib/src src/server/bot_main.c src/net/net_client.c src/net/net_dial.c "${common[@]}" "${libs[@]}" -o "$out/tower_bot"
 echo "built $out/tower_server and $out/tower_bot$([ $quic -eq 1 ] && echo ' (with QUIC)')"

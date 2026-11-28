@@ -15,6 +15,7 @@
 
 #include "dungeon/dungeon_generator.h"
 #include "enemies/enemy_manager.h"
+#include "enemies/enemy_plan.h"
 #include "enemies/spider.h"
 #include "dungeon/stair_collision.h"
 #include "dungeon/staircase.h"
@@ -370,6 +371,23 @@ int main(void)
         Check(made == MAX_FLOOR_ENEMIES && Enemies_SpawnAt((Vector3){ 20.0f, 0.0f, 20.0f }, 1, false) == -1, "Enemies_SpawnAt fills the slots and then says no (-1)");
         for (int i = 0; i < 400; ++i) CheckAndHandleEnemyDamage((Vector3){ 20.0f, 1.0f, 20.0f }, 0.4f, 50.0f);
         Check(Enemies_SpawnAt((Vector3){ 20.0f, 0.0f, 20.0f }, 1, false) >= 0, "and a killed enemy's slot is used again");
+    }
+
+    printf("the melee rule shared with the server (EnemyMelee_Reaches)\n");
+    {
+        const Vector3 eye = { 0.0f, 1.0f, 0.0f };                      // facing +z
+        const float r = 0.5f, h = 2.0f, reach = 1.7f, arc = 50.0f;
+        #define REACHES(x, y, z) EnemyMelee_Reaches(eye, 0.0f, 1.0f, reach, arc, (Vector3){ (x), (y), (z) }, r, h)
+        Check(REACHES(0.0f, 0.0f, 1.2f), "straight ahead and close: hit");
+        Check(REACHES(0.0f, 0.0f, 2.15f) && !REACHES(0.0f, 0.0f, 2.35f), "reach is measured to the creature's surface (centre 2.15 m, surface 1.65 m: hit; centre 2.35 m, surface 1.85 m: miss)");
+        Check(!REACHES(0.0f, 0.0f, -1.5f), "behind, with its surface a metre away: miss");
+        Check(REACHES(0.0f, 0.0f, -0.7f), "behind but within half a metre of the surface: hit (too close for the arc to matter)");
+        Check(!REACHES(1.5f, 0.0f, 0.0f), "square to the side: miss (outside a 50 degree arc)");
+        Check(REACHES(1.5f * sinf(0.45f), 0.0f, 1.5f * cosf(0.45f)) && !REACHES(1.5f * sinf(1.1f), 0.0f, 1.5f * cosf(1.1f)), "26 degrees off the line: hit; 63 degrees off: miss");
+        Check(!REACHES(0.0f, -1.5f, 1.2f) && !REACHES(0.0f, 1.6f, 1.2f), "a creature a floor below the eye, or one well above it, is not reached");
+        Check(REACHES(0.0f, 0.0f, 1.2f) && REACHES(0.0f, 0.75f, 1.2f), "one standing on a step a little higher is");
+        Check(!EnemyMelee_Reaches(eye, 0.0f, 1.0f, 0.0f, arc, (Vector3){ 0.0f, 0.0f, 1.2f }, r, h), "a weapon with no reach (an unloaded table) reaches nothing");
+        #undef REACHES
     }
 
     printf("\n%s\n", g_failures ? "FAIL" : "PASS");

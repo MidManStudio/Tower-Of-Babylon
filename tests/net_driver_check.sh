@@ -18,7 +18,7 @@ trap 'rm -rf "$dir"' EXIT
 (cd "$me" && cargo build --release -p mid-net >"$dir/cargo.txt" 2>&1) || { echo "building mid-net failed"; tail -15 "$dir/cargo.txt"; exit 1; }
 lib="${CARGO_TARGET_DIR:-$me/target}/release/libmid_net.a"
 [ -f "$lib" ] || { echo "cargo finished but $lib is missing (is CARGO_TARGET_DIR set somewhere else?)"; exit 1; }
-src=(tests/net_driver_test.c src/net/net_driver.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/net/net_history.c src/net/net_client.c
+src=(tests/net_driver_test.c src/net/net_driver.c src/net/net_mid.c src/net/net_wire.c src/net/net_proto.c src/net/net_loopback.c src/net/net_move_sim.c src/net/net_server.c src/weapons/weapons.c src/net/net_history.c src/net/net_client.c
      src/player/player_controller.c src/dungeon/staircase.c src/dungeon/stair_collision.c src/dungeon/dungeon_generator.c src/dungeon/dungeon_probes.c)
 san=""
 echo 'int main(void){return 0;}' > "$dir/s.c"

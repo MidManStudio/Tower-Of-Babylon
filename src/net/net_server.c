@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../dungeon/dungeon_generator.h"
+#include "../enemies/enemy_plan.h"
 #include "../gvex/gvex_world.h"
 #include "../platform/platform.h"
 #include "net_driver.h"
@@ -44,6 +45,29 @@ bool NetServer_RewoundPose(const NetServer *s, uint8_t viewLag, int id, Vector3 
     return NetHistory_PoseAt(&s->hist, NetHistory_RewindTick(s->tick, viewLag), id, pos, yaw);
 }
 
+int NetServer_MeleeTargets(const NetServer *s, uint8_t viewLag, Vector3 eye, float yaw, const WeaponDef *def, uint16_t *ids, int max)
+{
+#if TOWER_GVEX
+    if (!s->gvex || !def || !ids || max < 1) return 0;
+    GvexRecord recs[GVEX_MAX_CREATURES];
+    const int n = GvexWorld_Records(s->gvex, recs, GVEX_MAX_CREATURES);
+    const uint32_t when = NetHistory_RewindTick(s->tick, viewLag);
+    const float fx = sinf(yaw), fz = cosf(yaw);                                       // forward is sin, cos, as for the players and the creatures
+    int hits = 0;
+    for (int i = 0; i < n && hits < max; ++i) {
+        Vector3 pos = { recs[i].x, recs[i].y, recs[i].z };
+        NetMonHistory_PosAt(&s->mhist, when, recs[i].id, &pos);                      // where the puncher saw it; where it is now when that tick is not kept
+        float height, radius; Color tint;
+        EnemyLook(EnemyHash32(s->map.seed + (uint32_t)recs[i].id * 0x9e3779b1U), &height, &radius, &tint);   // the body the screens draw
+        if (EnemyMelee_Reaches(eye, fx, fz, def->reach, def->arcDeg, pos, radius, height)) ids[hits++] = recs[i].id;
+    }
+    return hits;
+#else
+    (void)s; (void)viewLag; (void)eye; (void)yaw; (void)def; (void)ids; (void)max;
+    return 0;
+#endif
+}
+
 int NetServer_PlayerCount(const NetServer *s) { int n = 0; for (int i = 0; i < NET_MAX_PLAYERS; ++i) if (s->c[i].used && s->c[i].welcomed) ++n; return n; }
 
 int NetServer_AddClient(NetServer *s, NetTransport tp, double nowMs)
@@ -77,6 +101,7 @@ static void OnHello(NetServer *s, NetServerClient *cl, const NetHello *h)
     if (h->version != NET_PROTOCOL_VERSION) { NetServer_Drop(s, cl->id, NET_DISC_VERSION); return; }
     memcpy(cl->character, h->character, sizeof cl->character);
     NetSim_Spawn(&cl->player, s->map.startX, s->map.startZ);
+    Arsenal_Init(&cl->arsenal);                                                       // hands only: a player starts with nothing else
     cl->welcomed = true;
     NetMsg m; memset(&m, 0, sizeof m);
     m.kind = NET_MSG_WELCOME;
@@ -186,6 +211,27 @@ static int StepCreatures(NetServer *s, NetMonster *out)
 }
 #endif
 
+// The player's hands for this tick: the fire button works the arsenal (the same timing as the single-player game: a windup, then the blow connects, then a
+// cooldown), and when a blow connects it is judged against the creatures as the puncher's screen showed them and does its damage and knockback.
+// Hands only for now; a player at the eye height of a standing one (height * 0.4, as the single-player camera starts).
+static void RunHands(NetServer *s, NetServerClient *cl, const NetCmd *cmd)
+{
+    ArsenalEvents ev;
+    Arsenal_Update(&cl->arsenal, NET_TICK_SECS, (cmd->buttons & NET_BTN_FIRE) != 0, &ev);
+#if TOWER_GVEX
+    if (!ev.impact || !ev.def || !s->gvex) return;
+    const Vector3 eye = { cl->player.position.x, cl->player.position.y + cl->player.height * 0.4f, cl->player.position.z };
+    uint16_t ids[NET_MAX_MONSTERS];
+    const int n = NetServer_MeleeTargets(s, cmd->viewLag, eye, cl->player.yaw, ev.def, ids, NET_MAX_MONSTERS);
+    for (int i = 0; i < n; ++i) {
+        if (GvexWorld_Damage(s->gvex, ids[i], ev.def->damage)) continue;              // killed: gone
+        GvexWorld_Knock(s->gvex, ids[i], eye.x, eye.z, ev.def->knockback);
+    }
+#else
+    (void)s; (void)ev;
+#endif
+}
+
 void NetServer_Tick(NetServer *s, double nowMs)
 {
     s->nowMs = nowMs;
@@ -207,12 +253,17 @@ void NetServer_Tick(NetServer *s, double nowMs)
             ++cl->ticksNeutral;
         }
         NetSim_Step(&cl->player, &cmd, &s->map);
+        RunHands(s, cl, &cmd);
     }
 #if TOWER_GVEX
     NetMonster mons[NET_MAX_MONSTERS];
     const int nMons = StepCreatures(s, mons);
 #endif
     NetHistory_Begin(&s->hist, T);                                                          // where everyone is after this tick, for the shots of the next ones
+#if TOWER_GVEX
+    NetMonHistory_Begin(&s->mhist, T);                                                      // and every creature, as the snapshot below says (millimetres)
+    for (int i = 0; i < nMons; ++i) NetMonHistory_Set(&s->mhist, T, mons[i].id, (Vector3){ (float)mons[i].px / 1000.0f, (float)mons[i].py / 1000.0f, (float)mons[i].pz / 1000.0f });
+#endif
     for (int i = 0; i < NET_MAX_PLAYERS; ++i) {
         const NetServerClient *cl = &s->c[i];
         if (cl->used && cl->welcomed && cl->started) NetHistory_Set(&s->hist, T, i, cl->player.position, cl->player.yaw);

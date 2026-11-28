@@ -10,6 +10,7 @@
 #include "net_proto.h"
 #include "net_transport.h"
 #include "../dungeon/dungeon_types.h"
+#include "../weapons/weapons.h"
 
 // The authoritative side: it owns the floor and every player, runs them at NET_TICK_RATE from the commands the clients send (never from
 // positions the clients claim), and tells each client the result in a snapshot every tick. The caller drives time: NetServer_Poll as
@@ -28,6 +29,7 @@ typedef struct {
     char        character[NET_CHARACTER_LEN];
     double      lastHeardMs, connectedMs;
     PlayerController player;
+    Arsenal     arsenal;             // what the player holds and how its attacks are timed (weapons.h): hands only for now; the fire button works it (RunHands, net_server.c)
     NetCmd      ring[NET_INPUT_RING];
     uint32_t    ringTick[NET_INPUT_RING];
     bool        ringHave[NET_INPUT_RING];
@@ -48,6 +50,7 @@ typedef struct {
     NetServerClient c[NET_MAX_PLAYERS];
     unsigned    snapshotsSent;
     NetHistory  hist;                // where everyone was at each of the last ticks (net_history.h)
+    NetMonHistory mhist;             // and where each creature was, for the same reason: a punch is judged where the puncher saw the creature
     struct GvexWorld *gvex;          // the creatures of the game (src/gvex/gvex_world.h, docs/gvex_session.md): NULL in a build without TOWER_GVEX
 } NetServer;
 
@@ -61,5 +64,10 @@ int  NetServer_PlayerCount(const NetServer *s);
 // Where player `id` was when a shooter whose command is for the tick being run saw the world `viewLag` ticks before (clamped to NET_REWIND_MAX):
 // the pose a shot is judged against. False if the player was not there. Call it while running that tick's commands (the server's `tick`).
 bool NetServer_RewoundPose(const NetServer *s, uint8_t viewLag, int id, Vector3 *pos, float *yaw);
+// The creatures a melee attack of `def` hits: a swing from `eye`, facing `yaw`, by a player whose screen showed the creatures `viewLag` ticks before the
+// tick being run (clamped to NET_REWIND_MAX). Each creature is taken where that screen had it (the shared rule of enemy_plan.h, EnemyMelee_Reaches: the
+// same as the single-player game's); one with no frame kept for that tick (a lag of 0, or older than the ring) is taken where it is now. Writes up to
+// `max` ids and returns how many. 0 in a build without TOWER_GVEX. It judges and changes nothing.
+int NetServer_MeleeTargets(const NetServer *s, uint8_t viewLag, Vector3 eye, float yaw, const WeaponDef *def, uint16_t *ids, int max);
 
 #endif
